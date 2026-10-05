@@ -63,20 +63,16 @@ export function Assessment({ state, update, notify, onProfile }: {
       <fieldset className="answer-options"><legend className="sr-only">Варианты ответа</legend>{current.options.map((answer, option) => <label key={current.id + ':' + option} className={'answer-option' + (answers[current.id] === option ? ' selected' : '')}><input type="radio" name={current.id} checked={answers[current.id] === option} onChange={() => setAnswers(previousAnswers => ({ ...previousAnswers, [current.id]: option }))} /><span>{answer}</span>{answers[current.id] === option && <Check size={17} />}</label>)}</fieldset>
       <div className="exam-actions"><button className="button secondary" disabled={index === 0} onClick={() => setIndex(index - 1)}>Назад</button><button className="button primary" disabled={answers[current.id] === undefined} onClick={() => index === exam.length - 1 ? finish() : setIndex(index + 1)}>{index === exam.length - 1 ? 'Завершить тест' : 'Далее'}</button></div>
     </section> : <div className="assessment-layout">
-      <section className="panel assessment-setup"><FormHeading /><div className="form-grid">
+      <section className="panel assessment-setup"><div className="form-grid">
         <label className="field"><span>Специализация</span><select value={specialization} onChange={event => setSpecialization(event.target.value as Specialization)}><option>Frontend</option><option>Backend</option></select></label>
         <label className="field"><span>Предполагаемый грейд</span><select value={grade} onChange={event => setGrade(event.target.value as Grade)}><option>Junior</option><option>Middle</option></select></label>
       </div><div className="assessment-info"><div><ClipboardCheck size={18} /><span>6 вопросов</span></div><div><Clock3 size={18} /><span>Без ограничения времени</span></div></div>
-        <h3 className="section-heading">Что проверяем</h3><div className="competency-list">{topics.map(topic => <div key={topic}><Check size={15} />{topic}<span>2 вопроса</span></div>)}</div>
-        <p className="field-help">Для подтверждения — не менее 70 из 100 баллов.</p>
+        <h2 className="section-heading">Программа</h2><div className="competency-list">{topics.map(topic => <div key={topic}><Check size={15} />{topic}</div>)}</div>
+        <p className="field-help">Порог подтверждения — 70/100.</p>
+        <p className="assessment-rules">Неудачный тест сохраняет грейд. Смена категории — раз в 90 дней.</p>
         {locked && <div className="inline-notice"><Clock3 size={17} />Смена категории доступна с {dateLabel(nextDate.toISOString())}</div>}
         <div className="form-actions"><button className="button primary" disabled={locked} onClick={start}>Начать тест</button></div>
       </section>
-      <aside className="panel assessment-aside"><BadgeCheck size={26} /><h2>Подтвердите свой уровень</h2><p>Результат теста определяет категорию, которую видит работодатель.</p><div className="section-divider" /><p>Неудачная попытка сохраняет прежний грейд.</p><p>Смена подтверждённой категории — раз в 90 дней.</p></aside>
     </div>}
   </>;
-}
-
-function FormHeading() {
-  return <div className="form-header"><div className="form-icon"><ClipboardCheck size={22} /></div><h2>Проверка квалификации</h2></div>;
 }

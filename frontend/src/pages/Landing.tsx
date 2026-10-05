@@ -51,44 +51,37 @@ export function Landing({ onStart }: { onStart: (role?: Role, query?: string) =>
           <img src="/assets/images/predel-keychain.png" alt="Брелоки со знаком predel" width="1024" height="1536" fetchPriority="high" />
         </motion.div>
         <motion.div className="hero-copy" initial={{ opacity: 0, y: 22 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: reduced ? 0 : .15, duration: reduced ? 0 : .65 }}>
-          <p className="eyebrow">ИТ-СПЕЦИАЛИСТЫ. ПОДТВЕРЖДЁННЫЕ НАВЫКИ.</p>
           <h1>Ваши навыки.<br /><span>Подходящая команда.</span></h1>
           <p className="hero-description">Подтвердите уровень и получайте предложения<br className="mobile-break" /> с зарплатной вилкой.</p>
           <div className="hero-actions"><button className="button primary" onClick={() => onStart()}>Попробовать<ArrowUpRight size={19} /></button><a href="#possibilities" className="text-link">Как это работает<ArrowDown size={15} /></a></div>
         </motion.div>
-        <div className="hero-bottom"><span>ЗНАКОМСТВО НАЧИНАЕТСЯ С НАВЫКОВ</span><a href="#possibilities" aria-label="Прокрутить к возможностям"><ArrowDown size={18} /></a><span>ПРОФИЛЬ · ГРЕЙД · ПРИГЛАШЕНИЕ</span></div>
+        <div className="hero-bottom"><a href="#possibilities" aria-label="Прокрутить к возможностям"><ArrowDown size={18} /></a></div>
       </section>
-      <section className="intro-statement section-pad" id="possibilities">
-        <motion.div {...reveal}>
-          <h2>Опыт — ваш.<span className="inline-shape" aria-hidden="true"><BadgeCheck /></span><br /><span className="text-muted">Подтверждение — в профиле.</span><br /><span className="inline-blue">Следующий шаг — за компанией.</span></h2>
-          <p className="section-description">Кандидат проходит тест.<br />Работодатель находит специалиста и отправляет предложение.</p>
-        </motion.div>
-      </section>
-      <motion.section {...reveal} className="showcase section-pad" aria-labelledby="showcaseTitle">
-        <div className="section-heading"><div><h2 id="showcaseTitle">Сначала навыки.<br /><span className="text-muted">Затем знакомство.</span></h2></div><p>Профиль, категория и предложение.<br />В одном месте.</p></div>
-        <div className="showcase-browser"><div className="showcase-toolbar"><div className="browser-dots" aria-hidden="true"><i /><i /><i /></div><span><span className="mini-brand">p</span>Личный кабинет</span><span className="showcase-label">Демо</span></div>
+      <motion.section {...reveal} id="possibilities" className="showcase section-pad" aria-labelledby="showcaseTitle">
+        <div className="section-heading"><h2 id="showcaseTitle">Сначала навыки.<br /><span className="text-muted">Затем знакомство.</span></h2></div>
+        <div className="showcase-browser"><div className="showcase-toolbar"><div className="browser-dots" aria-hidden="true"><i /><i /><i /></div><span className="mini-brand" aria-hidden="true">p</span><span className="showcase-label">Демо</span></div>
           <div className="showcase-body"><aside className="showcase-rail" aria-label="Примеры кабинетов">
             {variants.map((label, index) => <button key={label} className={variant === index ? 'selected' : ''} aria-label={label} aria-pressed={variant === index} onClick={() => setVariant(index)}><span>0{index + 1}</span><PlatformPreview variant={index} compact /></button>)}
-          </aside><div className="showcase-main"><div className="demo-stage"><motion.div key={variant} initial={reduced ? false : { opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .3 }}><PlatformPreview variant={variant} onStart={onStart} /></motion.div></div><div className="showcase-status"><span><CheckCheck size={15} />{variants[variant]}</span><span>0{variant + 1} — 03</span></div></div></div>
+          </aside><div className="showcase-main"><div className="demo-stage"><motion.div key={variant} initial={reduced ? false : { opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .3 }}><PlatformPreview variant={variant} onStart={onStart} /></motion.div></div><div className="showcase-status" aria-hidden="true"><span>0{variant + 1} / 03</span></div></div></div>
         </div>
         <div className="variant-switch" role="group" aria-label="Выбор примера">{variants.map((label, index) => <button key={label} onClick={() => setVariant(index)} className={variant === index ? 'active' : ''} aria-pressed={variant === index}>{index === 0 ? <Search size={16} /> : index === 1 ? <BadgeCheck size={16} /> : <UsersRound size={16} />}{label}</button>)}</div>
       </motion.section>
       <section className="workflow section-pad" id="how">
-        <motion.div {...reveal} className="section-heading"><div><h2>От первого профиля<br />до новой команды.</h2></div><button className="round-link" aria-label="Попробовать платформу" onClick={() => onStart()}><ArrowUpRight /></button></motion.div>
+        <motion.div {...reveal} className="section-heading"><h2>От профиля<br />до предложения.</h2></motion.div>
         <div className="workflow-grid">{[
           { number: '01', title: 'Заполните профиль.', text: 'Специализация, стек и опыт.', Icon: FileSliders, className: 'import-visual' },
           { number: '02', title: 'Подтвердите уровень.', text: 'Тест формирует вашу категорию.', Icon: Layers3, className: 'layers-visual' },
           { number: '03', title: 'Получите предложение.', text: 'Условия и зарплата известны заранее.', Icon: CheckCheck, className: 'audit-visual' },
         ].map((step, index) => <motion.article {...reveal} transition={{ duration: reduced ? 0 : .5, delay: reduced ? 0 : index * .08 }} key={step.number}>
           <div className={'workflow-visual ' + step.className} aria-hidden="true">
-            {index === 0 ? <><div className="file-object"><span>ПРОФИЛЬ</span><BadgeCheck size={50} /><small>ваши навыки</small></div><div className="file-object second"><span>ОПЫТ</span><i /><i /><i /></div></> : index === 1 ? <div className="stack-object"><i /><i /><i><span>p</span></i></div> : <div className="audit-object"><span><Check size={16} />Категория подтверждена</span><span><Check size={16} />Зарплатная вилка</span><span><Check size={16} />Контакты по согласию</span><b><CheckCheck size={32} /></b></div>}
+            {index === 0 ? <><div className="file-object"><BadgeCheck size={50} /><i /><i /></div><div className="file-object second"><i /><i /><i /></div></> : index === 1 ? <div className="stack-object"><i /><i /><i><span>p</span></i></div> : <div className="audit-object"><span><Check size={16} /><i /></span><span><Check size={16} /><i /></span><span><Check size={16} /><i /></span><b><CheckCheck size={32} /></b></div>}
           </div><div className="workflow-step"><span>{step.number}</span><step.Icon /></div><h3>{step.title}</h3><p>{step.text}</p>
         </motion.article>)}</div>
       </section>
       <section id="try" className="create-section section-pad"><motion.div {...reveal} className="create-inner">
-        <div className="create-title"><h2>Кто нужен<br /><span>вашей команде?</span></h2><p>Начните с задачи.<br />Подборка — на следующем шаге.</p></div>
-        <div className="brief-area"><form onSubmit={submit}><label htmlFor="brief">Кого вы ищете?</label>
-          <textarea ref={briefInput} id="brief" rows={4} maxLength={2000} value={brief} onChange={event => setBrief(event.target.value)} placeholder="Специализация, грейд, стек…" required />
+        <div className="create-title"><h2>Кто нужен<br /><span>вашей команде?</span></h2></div>
+        <div className="brief-area"><form onSubmit={submit}><label className="sr-only" htmlFor="brief">Кого вы ищете?</label>
+          <textarea ref={briefInput} id="brief" rows={4} maxLength={2000} value={brief} onChange={event => setBrief(event.target.value)} placeholder="Frontend · Middle · React…" required />
           <div className="brief-toolbar"><label className="count-select" htmlFor="direction"><UsersRound size={17} /><select id="direction" value={direction} onChange={event => setDirection(event.target.value)} aria-label="Направление поиска"><option value="">Направление</option><option>Frontend</option><option>Backend</option></select></label><button className="button ink" type="submit">Попробовать<ArrowUpRight size={18} /></button></div>
         </form><div className="prompt-examples">{examples.map(example => <button type="button" key={example.title} onClick={() => { setBrief(example.brief); setDirection(''); briefInput.current?.focus(); }}><Plus size={13} />{example.title}</button>)}</div></div>
       </motion.div></section>
@@ -101,10 +94,10 @@ export function Landing({ onStart }: { onStart: (role?: Role, query?: string) =>
         ].map(([question, answer]) => <details key={question}><summary>{question}<Plus size={19} /></summary><p>{answer}</p></details>)}
       </div></section>
     </main>
-    <footer className="footer section-pad"><div className="footer-top"><p>Ваши навыки.<br />Ваш следующий шаг.</p><button className="button ink" onClick={() => onStart()}>Попробовать<ArrowUpRight size={18} /></button></div>
+    <footer className="footer section-pad">
       <a className="footer-wordmark" href="/" aria-label="predel — главная">predel<span>↗</span></a>
       <div className="landing-partners"><img src="/brand/fsp.png" alt="Федерация спортивного программирования России" /><img src="/brand/partners.png" alt="Проект мэра Москвы, Бизнес Москвы, Развитие человеческого капитала, Лидеры цифровой трансформации" /></div>
-      <div className="footer-bottom"><span>© 2026 predel</span><span>Подтверждённые навыки.</span><a href="#main">Наверх<ArrowRight size={14} /></a></div>
+      <div className="footer-bottom"><span>© 2026 predel</span><a href="#main">Наверх<ArrowRight size={14} /></a></div>
     </footer>
   </div>;
 }

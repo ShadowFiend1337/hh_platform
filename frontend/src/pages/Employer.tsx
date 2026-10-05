@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { ArrowUpRight, BadgeCheck, Bookmark, Check, ChevronDown, MapPin, Medal, Search, SlidersHorizontal, X } from 'lucide-react';
+import { ArrowUpRight, BadgeCheck, Bookmark, Check, ChevronDown, Info, MapPin, Medal, Search, SlidersHorizontal, X } from 'lucide-react';
 import {
   emptyFilters, initials, searchCandidates, specializationLabels, stackOptions,
   type Candidate, type Filters, type PlatformState,
@@ -52,31 +52,28 @@ export function Employer({ state, candidates, update, onProfile, onInvite, notif
     notify('Подборка сохранена');
   }
   return <>
-    <div className="page-heading"><h1>Кандидаты<span className="heading-count">{results.length}</span></h1>
+    <div className="page-heading"><h1>Кандидаты</h1>
+      <div className="button-group">
+      <button className="icon-button save-search" aria-label="Сохранить подборку" title="Сохранить подборку" onClick={saveSearch}><Bookmark size={18} /></button>
       <div className="saved-control">
-        <button className="button secondary compact" aria-expanded={showSaved} onClick={() => setShowSaved(!showSaved)}><Bookmark size={16} />Подборки<ChevronDown size={15} /></button>
+        <button className="button secondary compact" aria-expanded={showSaved} onClick={() => setShowSaved(!showSaved)}>Подборки<ChevronDown size={15} /></button>
         {showSaved && <div className="saved-popover">
-          <h3>Сохранённые подборки</h3>
           {state.savedSearches.length ? state.savedSearches.map(saved => <div className="saved-item" key={saved.id}>
             <button onClick={() => {
               setQuery(saved.query); setDraft(saved.query); setFilters({ ...saved.filters, stack: [...saved.filters.stack] }); setShowSaved(false);
             }}>{saved.title}<ArrowUpRight size={15} /></button>
             <button className="icon-button" aria-label={'Удалить подборку ' + saved.title} onClick={() => update(previous => ({ ...previous, savedSearches: previous.savedSearches.filter(search => search.id !== saved.id) }))}><X size={14} /></button>
-          </div>) : <p className="muted">Пока нет сохранённых подборок</p>}
+          </div>) : <p className="muted">Подборок пока нет</p>}
         </div>}
-      </div>
+      </div></div>
     </div>
     <form className="search-panel" onSubmit={submit}>
       <Search size={21} aria-hidden="true" />
-      <input value={draft} onChange={event => setDraft(event.target.value)} aria-label="Потребность работодателя" placeholder="Кого ищете? Например, frontend-разработчика с React" />
+      <input value={draft} onChange={event => setDraft(event.target.value)} aria-label="Потребность работодателя" placeholder="Специализация, грейд, стек…" />
       {draft && <button type="button" className="icon-button search-clear" aria-label="Очистить поиск" onClick={() => { setDraft(''); setQuery(''); }}><X size={16} /></button>}
       <button className="button primary" type="submit">Подобрать</button>
     </form>
-    <div className="results-toolbar">
-      <span className="muted">{query ? 'Подборка по вашему запросу' : 'Подтверждённые профили'}</span>
-      <button className="text-button" onClick={saveSearch}><Bookmark size={15} />Сохранить подборку</button>
-    </div>
-    {query && <div className="query-label"><span>{query}</span><button className="icon-button" aria-label="Убрать запрос" onClick={() => { setQuery(''); setDraft(''); }}><X size={14} /></button></div>}
+    {query && query !== draft.trim() && <p className="search-context" role="status">Результаты по запросу «{query}»</p>}
     <button className="button secondary mobile-filter-button" onClick={() => setShowFilters(!showFilters)} aria-expanded={showFilters}><SlidersHorizontal size={16} />Фильтры{filterCount > 0 && ' · ' + filterCount}</button>
     <div className="search-layout">
       <aside className={'filters' + (showFilters ? ' filters-open' : '')} aria-label="Фильтры кандидатов">
@@ -98,9 +95,8 @@ export function Employer({ state, candidates, update, onProfile, onInvite, notif
               <p className="candidate-specialization">{specializationLabels[person.confirmed!.specialization]}<span className="dot-divider">·</span>{person.confirmed!.grade}</p>
               <span className="metadata"><MapPin size={13} />{person.city}<span className="dot-divider">·</span>{person.experience}<span className="dot-divider">·</span>{person.format}</span>
               <div className="tags">{person.stack.slice(0, 4).map(skill => <span className="tag" key={skill}>{skill}</span>)}{person.achievements.length > 0 && <span className="tag fsp-tag"><Medal size={12} />ФСП</span>}</div>
-              <p className="match-reason"><Check size={13} />{reason}</p>
             </div>
-            <div className="candidate-action"><div className="test-score"><strong>{person.confirmed!.score}<span>/100</span></strong><span>Тестирование</span></div>
+            <div className="candidate-action"><div className="score-with-context"><div className="test-score" title={'Результат теста: ' + person.confirmed!.score + ' из 100'}><strong>{person.confirmed!.score}<span>/100</span></strong></div><details className="match-details" name="matching"><summary aria-label={'Почему подходит ' + person.name} title="Почему подходит"><Info size={15} /></summary><p>{reason}</p></details></div>
               <button className="button secondary compact" disabled={pending} onClick={() => onInvite(person)}>{pending ? 'Отправлено' : 'Пригласить'}</button>
             </div>
           </article>;

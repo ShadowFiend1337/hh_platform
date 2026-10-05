@@ -81,6 +81,10 @@ try {
   await noOverflow(page);
   await page.screenshot({ path: resolve(output, 'desktop.png'), fullPage: true });
   await audit(page);
+  const explanation = page.locator('.match-details').first();
+  await explanation.locator('summary').click();
+  assert.equal(await explanation.locator('p').isVisible(), true, 'Matching explanation remains available');
+  await explanation.locator('summary').click();
   console.log('PASS Desktop, assets and accessibility');
 
   await page.getByRole('textbox', { name: 'Потребность работодателя' }).fill('Frontend Middle React TypeScript');
@@ -188,7 +192,18 @@ try {
   await mobile.screenshot({ path: resolve(output, 'mobile-profile.png'), fullPage: true });
   await mobile.keyboard.press('Escape');
   await mobile.setViewportSize({ width: 320, height: 750 });
+  await mobile.locator('.match-details').first().locator('summary').click();
   await noOverflow(mobile);
+  await mobile.locator('.match-details').last().locator('summary').click();
+  const noteBounds = await mobile.locator('.match-details').last().locator('p').boundingBox();
+  const listBounds = await mobile.locator('.candidate-list').boundingBox();
+  assert.ok(noteBounds && listBounds && noteBounds.x >= listBounds.x && noteBounds.x + noteBounds.width <= listBounds.x + listBounds.width
+    && noteBounds.y >= listBounds.y && noteBounds.y + noteBounds.height <= listBounds.y + listBounds.height, 'Explanation is not clipped by the result list');
+  for (const route of ['/', '/app?role=candidate&tab=profile', '/app?role=candidate&tab=assessment', '/app?role=candidate&tab=invitations', '/app?role=employer&tab=company']) {
+    await mobile.goto(base + route);
+    await mobile.evaluate(() => document.fonts.ready);
+    await noOverflow(mobile);
+  }
   await mobileContext.close();
   console.log('PASS Mobile 390px, 320px and keyboard dialog');
 

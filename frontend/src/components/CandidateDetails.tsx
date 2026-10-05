@@ -7,17 +7,16 @@ export function CandidateDetails({ person, contacts, onInvite }: {
   return <div className="candidate-details">
     <div className="detail-person">
       <div className="avatar avatar-large">{initials(person.name)}</div>
-      <div><h3>{person.name}</h3><p>{specializationLabels[person.confirmed?.specialization || person.specialization]}{person.confirmed && ' · ' + person.confirmed.grade}</p>
+      <div><h3>{person.name}</h3><p>{specializationLabels[person.confirmed?.specialization || person.specialization]}</p>
       <span className="metadata"><MapPin size={14} />{person.city} · {person.format}</span></div>
     </div>
     <div className="detail-grid">
       <div><span className="field-caption">Опыт</span><strong>{person.experience}</strong></div>
       <div><span className="field-caption">Тестирование</span><strong>{person.confirmed ? person.confirmed.score + ' из 100' : 'Не пройдено'}</strong></div>
-      <div><span className="field-caption">Категория</span><strong className="inline-icon">{person.confirmed && <BadgeCheck size={16} />}{person.confirmed?.grade || 'Не подтверждена'}</strong></div>
+      <div><span className="field-caption">Грейд</span><strong className="inline-icon">{person.confirmed && <BadgeCheck size={16} />}{person.confirmed?.grade || 'Не подтверждён'}</strong>{person.confirmed && <time className="confirmed-date" dateTime={person.confirmed.date}>{dateLabel(person.confirmed.date)}</time>}</div>
     </div>
     <section><h4>О себе</h4><p className="body-copy">{person.bio || 'Пока не заполнено'}</p></section>
     <section><h4>Стек</h4><div className="tags">{person.stack.map(skill => <span className="tag" key={skill}>{skill}</span>)}</div></section>
-    {person.confirmed && <p className="metadata">Категория подтверждена {dateLabel(person.confirmed.date)}</p>}
     <section><h4 className="inline-icon"><Medal size={17} />Достижения ФСП</h4>
       {person.achievements.length ? person.achievements.map((achievement, index) => <div key={index} className="achievement"><strong>{achievement.title}</strong><span>{achievement.result} · {achievement.year}</span></div>)
         : <p className="muted">Истории ФСП пока нет</p>}

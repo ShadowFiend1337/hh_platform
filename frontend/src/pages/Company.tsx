@@ -1,4 +1,4 @@
-import { Building2, type LucideIcon } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import type { FormEvent } from 'react';
 import type { PlatformState } from '../model';
 
@@ -24,7 +24,6 @@ export function Company({ state, update, notify }: {
     notify('Профиль компании сохранён');
   }
   return <><div className="page-heading"><h1>Компания</h1></div><form className="panel form-panel" onSubmit={submit}>
-    <FormHeader title="Профиль компании" Icon={Building2} />
     <div className="form-grid"><label className="field"><span>Название</span><input name="name" required maxLength={100} defaultValue={state.company.name} /></label><label className="field"><span>Направление</span><input name="industry" maxLength={100} defaultValue={state.company.industry} /></label></div>
     <div className="form-grid"><label className="field"><span>Сайт</span><input name="website" type="url" defaultValue={state.company.website} /></label><label className="field"><span>Контактный email</span><input name="contact" type="email" required defaultValue={state.company.contact} /></label></div>
     <label className="field"><span>О компании</span><textarea name="description" rows={4} maxLength={3000} defaultValue={state.company.description} /></label>

@@ -33,16 +33,16 @@ export function Invitations({ state, role, candidates, update, notify, onProfile
         const pending = invitation.status === 'sent' || invitation.status === 'viewed';
         return <article className="invitation-card" key={invitation.id}>
           <div className="invitation-top"><div className="invite-person"><div className="avatar">{initials(role === 'candidate' ? invitation.company : person?.name || '')}</div><div><strong>{role === 'candidate' ? invitation.company : person?.name}</strong><span>{dateLabel(invitation.date)}</span></div></div><span className={'status status-' + invitation.status}>{statusLabels[invitation.status]}</span></div>
-          <h2>{invitation.title}</h2><p className="salary">{money(invitation.salaryFrom)} – {money(invitation.salaryTo)} ₽<span> / месяц</span></p><span className="field-help">До вычета налогов</span>
+          <h2>{invitation.title}</h2><p className="salary">{money(invitation.salaryFrom)} – {money(invitation.salaryTo)} ₽<span> / месяц, до налогов</span></p>
           <p className="invitation-description">{invitation.description}</p>
-          {role === 'candidate' ? <><div className="invitation-contact"><span className="muted">Связь с компанией</span><a href={'mailto:' + invitation.contact}>{invitation.contact}</a></div>
+          {role === 'candidate' ? <><div className="invitation-contact"><a href={'mailto:' + invitation.contact}>{invitation.contact}</a></div>
             {pending && <div className="invitation-bottom"><span className="privacy-note"><LockKeyhole size={15} />При принятии компания получит ваши контакты</span><div className="button-group"><button className="button secondary" onClick={() => respond(invitation.id, 'rejected')}><X size={16} />Отклонить</button><button className="button primary" onClick={() => respond(invitation.id, 'accepted')}><Check size={16} />Принять</button></div></div>}
           </> : <div className="invitation-bottom">
             {person && hasContactAccess(state, person.id) ? <a className="contact-link" href={'mailto:' + person.email}>{person.email}</a> : <span className="privacy-note"><LockKeyhole size={15} />Контакты скрыты</span>}
-            {person && <button className="button secondary compact" onClick={() => onProfile(person)}>Профиль кандидата</button>}
+            {person && <button className="button secondary compact" onClick={() => onProfile(person)}>Профиль</button>}
           </div>}
         </article>;
-      }) : <div className="empty-state"><Inbox size={32} /><h2>Приглашений пока нет</h2><p>{role === 'candidate' ? 'Новые предложения появятся здесь.' : 'Выберите кандидата и отправьте предложение.'}</p></div>}
+      }) : <div className="empty-state"><Inbox size={32} /><h2>Приглашений пока нет</h2>{role === 'employer' && <p>Выберите кандидата и отправьте предложение.</p>}</div>}
     </div>
   </>;
 }

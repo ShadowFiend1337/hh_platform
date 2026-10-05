@@ -359,7 +359,7 @@ position: absolute;
   right: 32px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   font-size: 9px;
   letter-spacing: 1.2px;
   color: #606c7d;
@@ -630,7 +630,7 @@ transform: rotate(40deg) scaleX(0.6);
 }
 .landing .showcase-status {
 display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   color: #606c7d;
   font-size: 9px;
   margin-top: 18px;
@@ -641,7 +641,7 @@ display: flex;
   align-items: center;
 }
 .landing .variant-switch {
-display: flex;
+display: none;
   justify-content: center;
   gap: 8px;
   margin-top: 28px;
@@ -731,6 +731,7 @@ display: block;
   height: 5px;
   border-radius: 3px;
 }
+.landing .file-object:not(.second) i { background: #d7e3f6; }
 .landing .file-object i:last-child {
 width: 45px;
 }
@@ -781,8 +782,10 @@ display: flex;
   align-items: center;
   gap: 8px;
   font-size: 10px;
-  line-height: 3;
+  min-height: 30px;
 }
+.landing .audit-object > span i { display: block; width: 115px; height: 5px; border-radius: 3px; background: #d7e3f6; }
+.landing .audit-object > span:nth-child(2) i { width: 90px; }
 .landing .audit-object svg {
 color: #0068db;
 }
@@ -1462,6 +1465,7 @@ font-size: 7px;
 width: 11px;
 }
 .landing .variant-switch {
+display: flex;
 gap: 2px;
     margin-top: 19px;
     justify-content: space-between;
@@ -1677,7 +1681,6 @@ transform: none;
 
 /* Platform content inside the original landing composition. */
 .landing .platform-preview { width: 100%; height: 100%; padding: 4.4%; background: #f5f7fc; color: #202c43; overflow: hidden; position: relative; container-type: inline-size; }
-.landing .preview-top { display: flex; justify-content: space-between; font-size: 1.45cqw; font-weight: 650; color: #53627a; }
 .landing .platform-preview h3 { font-size: 3.6cqw; font-weight: 650; line-height: 1.2; letter-spacing: -.12cqw; margin: 5% 0 3%; }
 .landing .preview-search { display: flex; align-items: center; gap: 1.3cqw; padding: 1.2cqw 1.7cqw; border: 1px solid #dae1ec; background: #fff; border-radius: .9cqw; color: #516079; font-size: 1.7cqw; margin-bottom: 2.2cqw; }
 .landing .preview-search svg { width: 1.9cqw; height: 1.9cqw; }

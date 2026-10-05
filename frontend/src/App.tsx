@@ -92,7 +92,7 @@ export function App() {
       )}</nav>
       <div className="header-account"><span className="demo-label">Демо</span><div className="role-control">
         <button className="role-button" aria-expanded={roleMenu} aria-controls="role-options" onClick={() => setRoleMenu(!roleMenu)}>{route.role === 'employer' ? 'Работодатель' : 'Кандидат'}<ChevronDown size={15} /></button>
-        {roleMenu && <><button className="menu-dismiss" tabIndex={-1} aria-label="Закрыть выбор роли" onClick={() => setRoleMenu(false)} /><div className="role-menu" id="role-options"><span className="menu-caption">Личный кабинет</span>
+        {roleMenu && <><button className="menu-dismiss" tabIndex={-1} aria-label="Закрыть выбор роли" onClick={() => setRoleMenu(false)} /><div className="role-menu" id="role-options">
           {(['employer', 'candidate'] as const).map(role => <button key={role} onClick={() => navigate(role, navigation[role][0].page)}>{role === 'employer' ? 'Работодатель' : 'Кандидат'}{route.role === role && <Check size={15} />}</button>)}
         </div></>}
       </div></div>

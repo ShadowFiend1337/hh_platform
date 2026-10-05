@@ -4,11 +4,10 @@ import { initials, otherCandidates, type Role } from '../model';
 export function PlatformPreview({ variant, compact = false, onStart }: {
   variant: number; compact?: boolean; onStart?: (role: Role) => void;
 }) {
-  const people = otherCandidates.filter(person => person.confirmed?.specialization === 'Frontend').slice(0, 3);
+  const people = otherCandidates.filter(person => person.confirmed?.specialization === 'Frontend' && person.confirmed.grade === 'Middle').slice(0, 3);
   return <div className={'platform-preview preview-' + variant + (compact ? ' preview-compact' : '')}>
-    <div className="preview-top"><span>predel</span><span>{['Подбор', 'Профиль', 'Приглашение'][variant]}</span></div>
     {variant === 0 ? <>
-      <h3>Ваша следующая команда.</h3>
+      <h3>Кандидаты</h3>
       <div className="preview-search"><Search /><span>Frontend · React · Middle</span></div>
       <div className="preview-people">{people.map(person => <div className="preview-person" key={person.id}>
         <span className="preview-avatar">{initials(person.name)}</span>
