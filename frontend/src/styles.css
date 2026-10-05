@@ -242,6 +242,19 @@ fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
 .onboarding-privacy { margin-top: 28px; }
 .onboarding-privacy .checkbox-field:has(input:disabled) { color: #626875; cursor: default; }
 .assessment-category { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 24px; }
+.vacancy-builder { margin-top: 24px; border-top: 1px solid var(--border); padding-top: 17px; font-size: 13px; }
+.vacancy-builder summary { cursor: pointer; font-weight: 600; }
+.vacancy-builder[open] summary { margin-bottom: 18px; }
+.vacancy-builder .field { margin-bottom: 12px; }
+.vacancy-examples { display: flex; flex-wrap: wrap; gap: 7px; }
+.vacancy-examples .filter-chip { text-align: left; }
+.vacancy-summary { margin-bottom: 24px; padding-left: 12px; border-left: 2px solid var(--accent); }
+.vacancy-summary .tags span { color: #075dbc; font-size: 12px; }
+.vacancy-summary .field-help { margin-top: 7px; }
+.competency-results { display: flex; flex-wrap: wrap; justify-content: center; gap: 24px; margin: 24px 0; font-size: 13px; }
+.competency-results dt { color: var(--muted); }
+.competency-results dd { margin: 4px 0 0; font-weight: 600; }
+.assessment-error { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; max-width: 750px; padding: 13px 16px; margin-bottom: 20px; background: #fff3f5; border-radius: 7px; color: #b4032f; font-size: 13px; }
 .assessment-setup { padding: 30px; }
 .assessment-info { display: flex; align-items: center; flex-wrap: wrap; gap: 24px; font-size: 13px; color: #626875; padding: 20px 0 27px; border-top: 1px solid var(--border); }
 .assessment-info > div { display: inline-flex; gap: 8px; align-items: center; }

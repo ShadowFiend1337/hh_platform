@@ -3,6 +3,8 @@ import { mkdir } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { chromium } from 'playwright';
+// Node-only fixtures; they are never served or bundled with the browser app.
+import { programs } from '../../server/bank.mjs';
 
 const require = createRequire(import.meta.url);
 const base = process.env.PREDEL_URL || 'http://127.0.0.1:5173';
@@ -39,26 +41,21 @@ async function audit(target) {
   assert.deepEqual(violations, [], 'Accessibility violations: ' + JSON.stringify(violations));
 }
 
-const juniorAnswers = new Set([
-  'button type="button"', 'Связать label for и input id', 'main',
-  'Содержимое, padding и border', 'flex-wrap: wrap', '.card', 'map', 'Promise', 'false',
-]);
-const middleAnswers = new Set([
-  'Состояние может привязаться к другому элементу',
-  'setCount(previous => previous + 1)', 'Функцию удаления подписки',
-  'Отменять прошлый запрос и проверять актуальность результата', 'Отклонится', 'Promise.allSettled',
-  'Управлять фокусом, Escape и возвратом фокуса',
-  'Сначала измерить обновления профилировщиком', 'Выводить текст обычным JSX без HTML-вставки',
-]);
+const answerKey = grade => new Map(programs.Frontend[grade].families.flatMap(family => family.variants.map(variant => [variant.text, variant.options[variant.correct]])));
+const juniorAnswers = answerKey('Junior');
+const middleAnswers = answerKey('Middle');
 async function completeExam(answerSet, correct) {
   for (let index = 0; index < 6; index++) {
     const choices = page.locator('.answer-option');
     const texts = await choices.locator('span').allTextContents();
-    const chosen = texts.findIndex(text => answerSet.has(text.trim()) === correct);
+    const expected = answerSet.get(await page.locator('.question-text').textContent());
+    assert.ok(expected, 'Question must belong to the server fixture bank');
+    const chosen = texts.findIndex(text => (text.trim() === expected) === correct);
     assert.ok(chosen >= 0, 'Expected an answer option for this program');
     await choices.nth(chosen).click();
     await page.getByRole('button', { name: index === 5 ? 'Завершить тест' : 'Далее', exact: true }).click();
   }
+  await page.locator('.assessment-result').waitFor();
 }
 
 async function state() {

@@ -12,6 +12,9 @@ export interface TestResult {
   score: number;
   passed: boolean;
   surveyId: string | null;
+  bankVersion?: string;
+  competencies?: { topic: string; score: number; correct: number; total: number }[];
+  vacancySkills?: string[];
 }
 
 export interface CandidateSurvey {

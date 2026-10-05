@@ -1,0 +1,15 @@
+{
+  "name": "predel",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=24.0.0" },
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "start": "node server/server.mjs",
+    "build": "npm --prefix frontend run build",
+    "test:server": "node --test server/tests/*.test.mjs",
+    "test:browser": "npm --prefix frontend run test:browser",
+    "test:assessment": "npm --prefix frontend run test:assessment",
+    "validate:assessment": "node server/validate.mjs"
+  }
+}
