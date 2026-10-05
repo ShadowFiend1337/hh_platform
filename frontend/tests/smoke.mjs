@@ -9,7 +9,7 @@ const base = process.env.PREDEL_URL || 'http://127.0.0.1:5173';
 const output = resolve('test-results');
 await mkdir(output, { recursive: true });
 const browser = await chromium.launch({ headless: true });
-const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
 const page = await context.newPage();
 const errors = [];
 page.on('pageerror', error => errors.push(error.message));
@@ -62,7 +62,20 @@ async function completeExam(answerSet, correct) {
 
 try {
   await page.goto(base);
+  await page.locator('.hero-art img').waitFor();
+  await page.evaluate(() => document.fonts.ready);
+  await page.locator('.hero-art img').evaluate(image => image.decode());
+  await page.screenshot({ path: resolve(output, 'landing-desktop.png'), fullPage: false });
+  await noOverflow(page);
+  await audit(page);
+  await page.locator('.hero-actions').getByRole('button', { name: 'Попробовать', exact: true }).click();
   await rows(7);
+  assert.equal(new URL(page.url()).pathname, '/app');
+  await page.goBack();
+  await page.locator('.landing').waitFor();
+  await page.goForward();
+  await rows(7);
+  console.log('PASS Original landing, Try entry and browser history');
   await page.evaluate(() => document.fonts.ready);
   assert.equal(await page.locator('.partner-logos img').evaluateAll(images => images.every(image => image.complete && image.naturalWidth > 0)), true);
   await noOverflow(page);
@@ -151,10 +164,17 @@ try {
   assert.equal(await page.getByRole('button', { name: 'Начать тест', exact: true }).isDisabled(), true);
   console.log('PASS Privacy, failed attempt, confirmed category and 90 day interval');
 
-  const mobileContext = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, deviceScaleFactor: 1 });
+  const mobileContext = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, deviceScaleFactor: 1, reducedMotion: 'reduce' });
   const mobile = await mobileContext.newPage();
   await mobile.goto(base);
   await mobile.evaluate(() => document.fonts.ready);
+  await mobile.locator('.hero-art img').evaluate(image => image.decode());
+  await mobile.screenshot({ path: resolve(output, 'landing-mobile.png'), fullPage: false });
+  await noOverflow(mobile);
+  await mobile.getByRole('button', { name: 'Открыть меню', exact: true }).click();
+  await mobile.locator('.mobile-menu').getByRole('link', { name: 'Возможности', exact: true }).click();
+  assert.equal(await mobile.locator('.mobile-menu').count(), 0);
+  await mobile.locator('.hero-actions').getByRole('button', { name: 'Попробовать', exact: true }).click();
   await noOverflow(mobile);
   await mobile.screenshot({ path: resolve(output, 'mobile.png'), fullPage: true });
   await mobile.getByRole('button', { name: 'Фильтры', exact: true }).click();
@@ -171,6 +191,15 @@ try {
   await noOverflow(mobile);
   await mobileContext.close();
   console.log('PASS Mobile 390px, 320px and keyboard dialog');
+
+  await page.locator('.site-header .brand').click();
+  await page.getByLabel('Кого вы ищете?').fill('Backend Middle Python PostgreSQL');
+  await page.locator('.brief-toolbar').getByRole('button', { name: 'Попробовать', exact: true }).click();
+  await rows(1);
+  assert.equal(await page.getByRole('textbox', { name: 'Потребность работодателя' }).inputValue(), 'Backend Middle Python PostgreSQL');
+  await page.getByRole('button', { name: 'Очистить поиск', exact: true }).click();
+  await rows(7);
+  console.log('PASS Landing request is carried into the workspace');
 
   await page.evaluate(() => localStorage.setItem('predel:platform:v1', '{broken'));
   await page.goto(base + '?role=employer&tab=candidates');

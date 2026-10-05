@@ -8,8 +8,10 @@ import { Assessment } from './pages/Assessment';
 import { Dialog } from './components/Dialog';
 import { CandidateDetails } from './components/CandidateDetails';
 import { InviteForm } from './components/InviteForm';
+import { Brand } from './components/Brand';
+import { Landing } from './pages/Landing';
 import {
-  hasContactAccess, otherCandidates, ownCandidateId, readState, saveState,
+  emptyFilters, hasContactAccess, otherCandidates, ownCandidateId, readState, saveState,
   type Candidate, type Page, type Role,
 } from './model';
 
@@ -18,12 +20,13 @@ const navigation: Record<Role, { page: Page; label: string }[]> = {
   candidate: [{ page: 'profile', label: 'Профиль' }, { page: 'assessment', label: 'Тестирование' }, { page: 'invitations', label: 'Приглашения' }],
 };
 
-function routeFromLocation(): { role: Role; page: Page } {
+function routeFromLocation(): { role: Role; page: Page; home: boolean } {
   const params = new URLSearchParams(location.search);
   const role = params.get('role') === 'candidate' ? 'candidate' : 'employer';
   const requested = params.get('tab');
   const page = navigation[role].find(item => item.page === requested)?.page || navigation[role][0].page;
-  return { role, page };
+  const home = location.pathname === '/' && !params.has('role') && !params.has('tab');
+  return { role, page, home };
 }
 
 export function App() {
@@ -44,7 +47,7 @@ export function App() {
     return () => { window.removeEventListener('popstate', pop); window.removeEventListener('storage', sync); };
   }, []);
   useEffect(() => {
-    document.title = (navigation[route.role].find(item => item.page === route.page)?.label || 'predel') + ' · predel';
+    document.title = route.home ? 'predel · Ваша следующая команда' : (navigation[route.role].find(item => item.page === route.page)?.label || 'predel') + ' · predel';
   }, [route]);
   useEffect(() => {
     if (!toast) return;
@@ -59,17 +62,30 @@ export function App() {
   }, [roleMenu]);
 
   function navigate(role: Role, page: Page) {
-    history.pushState(null, '', '?role=' + role + '&tab=' + page);
-    setRoute({ role, page }); setRoleMenu(false); setDialog(null);
+    history.pushState(null, '', '/app?role=' + role + '&tab=' + page);
+    setRoute({ role, page, home: false }); setRoleMenu(false); setDialog(null);
     window.scrollTo({ top: 0, behavior: 'instant' });
   }
   const onProfile = (person: Candidate) => setDialog({ type: 'profile', person });
   const onInvite = (person: Candidate) => setDialog({ type: 'invite', person });
+  function goHome() {
+    history.pushState(null, '', '/');
+    setRoute({ role: 'employer', page: 'candidates', home: true }); setRoleMenu(false); setDialog(null);
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }
+  function start(role: Role = 'employer', query?: string) {
+    if (query) {
+      try { sessionStorage.setItem('predel:search', JSON.stringify({ draft: query, query, filters: { ...emptyFilters, stack: [] } })); }
+      catch { /* Opening the workspace still works when storage is disabled. */ }
+    }
+    navigate(role, navigation[role][0].page);
+  }
 
+  if (route.home) return <Landing onStart={start} />;
   return <div className="app-shell">
     <a className="skip-link" href="#main-content">К содержимому</a>
     <header className="site-header"><div className="header-inner">
-      <a className="brand" href="?role=employer&tab=candidates" onClick={event => { event.preventDefault(); navigate('employer', 'candidates'); }} aria-label="predel, главная"><span className="brand-symbol" aria-hidden="true"><i /></span>predel<span className="brand-period">.</span></a>
+      <Brand onHome={goHome} />
       <nav className="main-nav" aria-label="Основная навигация">{navigation[route.role].map(item =>
         <a href={'?role=' + route.role + '&tab=' + item.page} key={item.page} aria-current={route.page === item.page ? 'page' : undefined}
           onClick={event => { event.preventDefault(); navigate(route.role, item.page); }}>{item.label}{item.page === 'invitations' && pending > 0 && <span className="nav-count">{pending}</span>}</a>,
