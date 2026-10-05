@@ -7,6 +7,7 @@ import { chromium } from 'playwright';
 const require = createRequire(import.meta.url);
 const base = process.env.PREDEL_URL || 'http://127.0.0.1:5173';
 const output = resolve('test-results');
+const storageKey = 'predel:platform:v2';
 await mkdir(output, { recursive: true });
 const browser = await chromium.launch({ headless: true });
 const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
@@ -60,6 +61,23 @@ async function completeExam(answerSet, correct) {
   }
 }
 
+async function state() {
+  return page.evaluate(key => JSON.parse(localStorage.getItem(key)), storageKey);
+}
+
+async function fillSurvey(target = page) {
+  await target.getByLabel('Имя и фамилия', { exact: true }).fill('Анна Морозова');
+  await target.getByLabel('Email', { exact: true }).fill('anna@example.com');
+  await target.getByRole('combobox', { name: 'Отрасль', exact: true }).selectOption('ИТ');
+  await target.getByLabel('Роль в команде', { exact: true }).fill('Разработчик');
+  await target.getByRole('combobox', { name: 'Специализация', exact: true }).selectOption('Frontend');
+  await target.getByRole('combobox', { name: 'Предполагаемый грейд', exact: true }).selectOption('Middle');
+  await target.getByLabel('Стек', { exact: true }).fill('React, TypeScript, CSS');
+  await target.getByLabel('Опыт работы', { exact: true }).fill('3 года');
+  await target.getByLabel('Город', { exact: true }).fill('Москва');
+  await target.getByLabel('Согласен на обработку данных', { exact: true }).check();
+}
+
 try {
   await page.goto(base);
   await page.locator('.hero-art img').waitFor();
@@ -69,12 +87,12 @@ try {
   await noOverflow(page);
   await audit(page);
   await page.locator('.hero-actions').getByRole('button', { name: 'Попробовать', exact: true }).click();
-  await rows(7);
+  await rows(6);
   assert.equal(new URL(page.url()).pathname, '/app');
   await page.goBack();
   await page.locator('.landing').waitFor();
   await page.goForward();
-  await rows(7);
+  await rows(6);
   console.log('PASS Original landing, Try entry and browser history');
   await page.evaluate(() => document.fonts.ready);
   assert.equal(await page.locator('.partner-logos img').evaluateAll(images => images.every(image => image.complete && image.naturalWidth > 0)), true);
@@ -89,20 +107,82 @@ try {
 
   await page.getByRole('textbox', { name: 'Потребность работодателя' }).fill('Frontend Middle React TypeScript');
   await page.getByRole('button', { name: 'Подобрать', exact: true }).click();
-  await rows(3);
+  await rows(2);
   await page.getByRole('button', { name: 'Сохранить подборку', exact: true }).click();
   await page.getByLabel('Есть достижения ФСП').check();
   await rows(1);
   await page.getByRole('button', { name: 'Подборки', exact: true }).click();
   await page.locator('.saved-item').getByRole('button', { name: 'Frontend Middle React TypeScript', exact: true }).click();
-  await rows(3);
+  await rows(2);
   await tab('Приглашения');
   await tab('Кандидаты');
-  await rows(3);
+  await rows(2);
   assert.equal(await page.getByRole('textbox', { name: 'Потребность работодателя' }).inputValue(), 'Frontend Middle React TypeScript');
   await page.getByRole('button', { name: 'Очистить поиск', exact: true }).click();
-  await rows(7);
+  await rows(6);
   console.log('PASS Query, filters, FSP and saved selection');
+
+  await role('Кандидат');
+  await page.getByRole('heading', { name: 'Анкета', exact: true }).waitFor();
+  await page.goto(base + '/app?role=candidate&tab=invitations');
+  assert.equal(await page.getByRole('heading', { name: 'Анкета', exact: true }).isVisible(), true, 'A direct link cannot skip the questionnaire');
+  assert.equal(await page.getByLabel('Показывать профиль работодателям', { exact: true }).isChecked(), false);
+  await page.getByRole('button', { name: 'К тесту', exact: true }).click();
+  assert.equal(await page.getByRole('heading', { name: 'Анкета', exact: true }).isVisible(), true, 'Required answers prevent an empty submission');
+  await fillSurvey();
+  await page.getByRole('button', { name: 'К тесту', exact: true }).click();
+  assert.equal(await page.getByRole('heading', { name: 'Анкета', exact: true }).isVisible(), true, 'A soft skill is required');
+  await page.getByLabel('Коммуникация', { exact: true }).check();
+  await page.getByLabel('Работа в команде', { exact: true }).check();
+  await noOverflow(page);
+  await page.screenshot({ path: resolve(output, 'onboarding-desktop.png'), fullPage: true });
+  await audit(page);
+  await page.getByRole('button', { name: 'К тесту', exact: true }).click();
+  await page.getByRole('button', { name: 'Начать тест', exact: true }).waitFor();
+  let current = await state();
+  assert.equal(current.profile.confirmed, null);
+  assert.equal(current.profile.visible, false);
+  assert.equal(current.surveys.length, 1);
+  assert.deepEqual(current.profile.softSkills, ['Коммуникация', 'Работа в команде']);
+  assert.equal(current.history.length, 0);
+  assert.equal(current.invitations.length, 0);
+  await page.goto(base + '/app?role=candidate&tab=profile');
+  await page.getByRole('button', { name: 'Начать тест', exact: true }).waitFor();
+  await page.reload();
+  await page.getByRole('button', { name: 'Начать тест', exact: true }).click();
+  assert.equal(await page.getByRole('button', { name: 'Далее', exact: true }).isDisabled(), true);
+  await completeExam(middleAnswers, false);
+  await page.getByRole('heading', { name: 'Грейд не подтверждён', exact: true }).waitFor();
+  current = await state();
+  assert.equal(current.profile.confirmed, null, 'First failure cannot confirm a category');
+  assert.equal(current.history.length, 1);
+  assert.equal(current.history[0].surveyId, current.surveys[0].id);
+  await role('Работодатель');
+  await rows(6);
+  await role('Кандидат');
+  await page.getByRole('button', { name: 'Начать тест', exact: true }).click();
+  await completeExam(middleAnswers, true);
+  await page.getByRole('heading', { name: 'Грейд подтверждён', exact: true }).waitFor();
+  current = await state();
+  assert.equal(current.profile.confirmed.grade, 'Middle');
+  assert.equal(current.history.length, 2);
+  assert.ok(current.history.every(result => result.surveyId === current.surveys[0].id));
+  assert.equal(new URL(page.url()).searchParams.get('tab'), 'assessment', 'A direct profile entry retains the test result until the candidate continues');
+  const surveyDate = current.profile.surveyCompletedAt;
+  await page.getByRole('button', { name: 'К профилю', exact: true }).click();
+  assert.equal(await page.getByRole('combobox', { name: 'Отрасль', exact: true }).inputValue(), 'ИТ');
+  assert.equal(await page.getByLabel('Роль в команде', { exact: true }).inputValue(), 'Разработчик');
+  await role('Работодатель');
+  await rows(6);
+  assert.equal(await page.getByRole('button', { name: /^Анна Морозова/ }).count(), 0, 'Passing does not publish the profile automatically');
+  await role('Кандидат');
+  await page.getByLabel('Город', { exact: true }).fill('');
+  await page.getByLabel('Показывать профиль работодателям', { exact: true }).check();
+  await page.getByRole('button', { name: 'Сохранить изменения', exact: true }).click();
+  assert.equal((await state()).profile.surveyCompletedAt, surveyDate, 'Editing an optional city or privacy preserves the completed questionnaire');
+  await role('Работодатель');
+  await rows(7);
+  console.log('PASS Mandatory questionnaire, first failure, category confirmation, persistence and publication consent');
 
   await page.getByRole('button', { name: /^Анна Морозова/ }).click();
   assert.equal(await page.locator('dialog a[href="mailto:anna@example.com"]').count(), 0);
@@ -110,6 +190,11 @@ try {
   await page.keyboard.press('Escape');
   assert.equal(await page.locator('dialog').count(), 0);
   assert.equal(await page.getByRole('button', { name: /^Анна Морозова/ }).evaluate(element => document.activeElement === element), true);
+  await page.locator('.candidate-row').filter({ hasText: 'Анна Морозова' }).getByRole('button', { name: 'Пригласить', exact: true }).click();
+  await page.locator('input[name="salaryFrom"]').fill('180000');
+  await page.locator('input[name="salaryTo"]').fill('240000');
+  await page.getByLabel('Условия и задачи').fill('Разработка интерфейса продукта на React и TypeScript.');
+  await page.getByRole('button', { name: 'Отправить приглашение', exact: true }).click();
   await page.locator('.candidate-row').filter({ hasText: 'Михаил Соколов' }).getByRole('button', { name: 'Пригласить', exact: true }).click();
   await page.getByRole('button', { name: 'Отправить приглашение', exact: true }).click();
   assert.equal(await page.locator('dialog').count(), 1);
@@ -151,20 +236,28 @@ try {
   await page.getByRole('button', { name: 'Начать тест', exact: true }).click();
   assert.equal(await page.getByRole('button', { name: 'Далее', exact: true }).isDisabled(), true);
   await completeExam(middleAnswers, false);
-  assert.equal(await page.getByRole('heading', { name: 'Грейд не подтверждён', exact: true }).isVisible(), true);
+  await page.getByRole('heading', { name: 'Грейд не подтверждён', exact: true }).waitFor();
   assert.equal(await page.getByText('Ваша категория Frontend · Middle сохранена.', { exact: true }).isVisible(), true);
-  await tab('Профиль');
-  await page.getByLabel('Предполагаемый грейд').selectOption('Junior');
-  await page.getByRole('button', { name: 'Сохранить изменения', exact: true }).click();
-  assert.equal(await page.locator('.category-status strong').textContent(), 'Middle', 'Self reported grade cannot replace confirmed grade');
-  await tab('Тестирование');
+  await page.getByRole('button', { name: 'Изменить анкету', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Предполагаемый грейд', exact: true }).selectOption('Junior');
+  await page.getByRole('button', { name: 'К тесту', exact: true }).click();
+  assert.equal((await state()).profile.confirmed.grade, 'Middle', 'Self reported grade cannot replace confirmed grade');
+  assert.equal(await page.getByRole('button', { name: 'Начать тест', exact: true }).isDisabled(), true, 'A new category is locked for 90 days after confirmation');
+  await page.evaluate(key => {
+    const stored = JSON.parse(localStorage.getItem(key));
+    stored.profile.gradeChangedAt = new Date(Date.now() - 100 * 86400000).toISOString();
+    localStorage.setItem(key, JSON.stringify(stored));
+  }, storageKey);
+  await page.reload();
   await page.getByRole('button', { name: 'Начать тест', exact: true }).click();
   await completeExam(juniorAnswers, true);
-  assert.equal(await page.getByRole('heading', { name: 'Грейд подтверждён', exact: true }).isVisible(), true);
+  await page.getByRole('heading', { name: 'Грейд подтверждён', exact: true }).waitFor();
   await page.getByRole('button', { name: 'К профилю', exact: true }).click();
   assert.equal(await page.locator('.category-status strong').textContent(), 'Junior');
   await tab('Тестирование');
-  await page.getByLabel('Предполагаемый грейд').selectOption('Middle');
+  await page.getByRole('button', { name: 'Изменить анкету', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Предполагаемый грейд', exact: true }).selectOption('Middle');
+  await page.getByRole('button', { name: 'К тесту', exact: true }).click();
   assert.equal(await page.getByRole('button', { name: 'Начать тест', exact: true }).isDisabled(), true);
   console.log('PASS Privacy, failed attempt, confirmed category and 90 day interval');
 
@@ -184,10 +277,10 @@ try {
   await mobile.getByRole('button', { name: 'Фильтры', exact: true }).click();
   await mobile.locator('.filters').getByLabel('Специализация').selectOption('Frontend');
   await mobile.locator('.filter-group').getByRole('button', { name: 'Middle', exact: true }).click();
-  assert.equal(await mobile.locator('.candidate-row').count(), 3);
+  assert.equal(await mobile.locator('.candidate-row').count(), 2);
   await noOverflow(mobile);
   await audit(mobile);
-  await mobile.getByRole('button', { name: /^Анна Морозова/ }).click();
+  await mobile.getByRole('button', { name: /^Михаил Соколов/ }).click();
   await noOverflow(mobile);
   await mobile.screenshot({ path: resolve(output, 'mobile-profile.png'), fullPage: true });
   await mobile.keyboard.press('Escape');
@@ -203,7 +296,19 @@ try {
     await mobile.goto(base + route);
     await mobile.evaluate(() => document.fonts.ready);
     await noOverflow(mobile);
+    if (route.includes('role=candidate')) {
+      assert.equal(await mobile.getByRole('heading', { name: 'Анкета', exact: true }).isVisible(), true);
+    }
   }
+  await mobile.goto(base + '/app?role=candidate&tab=profile');
+  await fillSurvey(mobile);
+  await mobile.getByLabel('Коммуникация', { exact: true }).check();
+  await noOverflow(mobile);
+  await mobile.screenshot({ path: resolve(output, 'onboarding-mobile.png'), fullPage: true });
+  await audit(mobile);
+  await mobile.getByRole('button', { name: 'К тесту', exact: true }).click();
+  await mobile.getByRole('button', { name: 'Начать тест', exact: true }).waitFor();
+  await noOverflow(mobile);
   await mobileContext.close();
   console.log('PASS Mobile 390px, 320px and keyboard dialog');
 
@@ -216,9 +321,54 @@ try {
   await rows(7);
   console.log('PASS Landing request is carried into the workspace');
 
-  await page.evaluate(() => localStorage.setItem('predel:platform:v1', '{broken'));
+  const completedProfile = await state();
+  await page.evaluate(key => {
+    const stored = JSON.parse(localStorage.getItem(key));
+    const legacy = { ...stored, version: 1 };
+    delete legacy.surveys;
+    delete legacy.profile.industry;
+    delete legacy.profile.professionalRole;
+    delete legacy.profile.softSkills;
+    delete legacy.profile.surveyCompletedAt;
+    legacy.profile.email = 'edited@example.com';
+    const seedDate = new Date().toISOString();
+    legacy.profile.confirmed = { specialization: 'Frontend', grade: 'Middle', score: 86, date: seedDate };
+    legacy.history = [{ id: 'test-initial', specialization: 'Frontend', grade: 'Middle', score: 86, date: seedDate, passed: true }];
+    localStorage.setItem('predel:platform:v1', JSON.stringify(legacy));
+    localStorage.removeItem(key);
+  }, storageKey);
+  await page.goto(base + '/app?role=candidate&tab=profile');
+  await page.getByRole('heading', { name: 'Анкета', exact: true }).waitFor();
+  assert.equal(await page.getByLabel('Email', { exact: true }).inputValue(), 'edited@example.com', 'Migration preserves edited contacts');
+  current = await state();
+  assert.equal(current.version, 2);
+  assert.equal(current.profile.confirmed, null, 'Migration removes a synthetic initial category');
+  assert.equal(current.history.length, 0);
+  assert.equal(current.invitations.length, 2, 'Migration preserves invitations');
+  assert.equal(current.savedSearches.length, 1, 'Migration preserves saved searches');
+  console.log('PASS Legacy migration preserves edits while requiring a real questionnaire and test');
+
+  await page.evaluate(({ key, completed }) => {
+    const legacy = { ...completed, version: 1 };
+    delete legacy.surveys;
+    delete legacy.profile.industry;
+    delete legacy.profile.professionalRole;
+    delete legacy.profile.softSkills;
+    delete legacy.profile.surveyCompletedAt;
+    localStorage.setItem('predel:platform:v1', JSON.stringify(legacy));
+    localStorage.removeItem(key);
+  }, { key: storageKey, completed: completedProfile });
+  await page.reload();
+  await page.getByRole('heading', { name: 'Анкета', exact: true }).waitFor();
+  current = await state();
+  assert.equal(current.profile.confirmed.grade, 'Junior', 'Migration preserves a category earned through a real attempt');
+  assert.equal(current.history.length, completedProfile.history.length, 'Migration preserves real test history');
+  assert.equal(current.invitations.length, completedProfile.invitations.length);
+  console.log('PASS Legacy migration preserves earned categories and test history');
+
+  await page.evaluate(key => localStorage.setItem(key, '{broken'), storageKey);
   await page.goto(base + '?role=employer&tab=candidates');
-  await rows(7);
+  await rows(6);
   assert.deepEqual(errors, [], 'Browser runtime errors');
   console.log('PASS Recovery from corrupted storage, no browser errors');
 } finally {

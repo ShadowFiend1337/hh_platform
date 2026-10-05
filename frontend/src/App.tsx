@@ -5,13 +5,14 @@ import { Company } from './pages/Company';
 import { Invitations } from './pages/Invitations';
 import { Profile } from './pages/Profile';
 import { Assessment } from './pages/Assessment';
+import { Onboarding } from './pages/Onboarding';
 import { Dialog } from './components/Dialog';
 import { CandidateDetails } from './components/CandidateDetails';
 import { InviteForm } from './components/InviteForm';
 import { Brand } from './components/Brand';
 import { Landing } from './pages/Landing';
 import {
-  emptyFilters, hasContactAccess, otherCandidates, ownCandidateId, readState, saveState,
+  currentSurvey, emptyFilters, hasContactAccess, otherCandidates, ownCandidateId, readState, saveState, storageKey,
   type Candidate, type Page, type Role,
 } from './model';
 
@@ -24,7 +25,8 @@ function routeFromLocation(): { role: Role; page: Page; home: boolean } {
   const params = new URLSearchParams(location.search);
   const role = params.get('role') === 'candidate' ? 'candidate' : 'employer';
   const requested = params.get('tab');
-  const page = navigation[role].find(item => item.page === requested)?.page || navigation[role][0].page;
+  const page = role === 'candidate' && requested === 'onboarding' ? 'onboarding'
+    : navigation[role].find(item => item.page === requested)?.page || navigation[role][0].page;
   const home = location.pathname === '/' && !params.has('role') && !params.has('tab');
   return { role, page, home };
 }
@@ -36,19 +38,28 @@ export function App() {
   const [toast, setToast] = useState('');
   const [dialog, setDialog] = useState<{ type: 'profile' | 'invite'; person: Candidate } | null>(null);
   const candidates = [state.profile, ...otherCandidates];
+  const surveyComplete = Boolean(currentSurvey(state));
+  const candidatePage = !surveyComplete ? 'onboarding' : !state.profile.confirmed && route.page !== 'onboarding' ? 'assessment' : route.page;
+  const page = route.role === 'candidate' ? candidatePage : route.page;
+  const candidateStarted = Boolean(state.profile.confirmed && surveyComplete);
   const pending = state.invitations.filter(invitation => (invitation.status === 'sent' || invitation.status === 'viewed')
     && (route.role === 'candidate' ? invitation.candidateId === ownCandidateId : invitation.companyId === state.company.id)).length;
 
   useEffect(() => { if (!saveState(state)) setToast('Хранилище браузера недоступно. Изменения сохранятся до закрытия страницы.'); }, [state]);
   useEffect(() => {
+    if (route.home || route.role !== 'candidate' || route.page === candidatePage) return;
+    history.replaceState(null, '', '/app?role=candidate&tab=' + candidatePage);
+    setRoute(previous => ({ ...previous, page: candidatePage }));
+  }, [route, candidatePage]);
+  useEffect(() => {
     const pop = () => { setRoute(routeFromLocation()); setDialog(null); setRoleMenu(false); };
-    const sync = (event: StorageEvent) => { if (event.key === 'predel:platform:v1') setState(readState()); };
+    const sync = (event: StorageEvent) => { if (event.key === storageKey || event.key === null) setState(readState()); };
     window.addEventListener('popstate', pop); window.addEventListener('storage', sync);
     return () => { window.removeEventListener('popstate', pop); window.removeEventListener('storage', sync); };
   }, []);
   useEffect(() => {
-    document.title = route.home ? 'predel · Ваша следующая команда' : (navigation[route.role].find(item => item.page === route.page)?.label || 'predel') + ' · predel';
-  }, [route]);
+    document.title = route.home ? 'predel · Ваша следующая команда' : (page === 'onboarding' ? 'Анкета' : navigation[route.role].find(item => item.page === page)?.label || 'predel') + ' · predel';
+  }, [route, page]);
   useEffect(() => {
     if (!toast) return;
     const timer = window.setTimeout(() => setToast(''), 5000);
@@ -86,8 +97,8 @@ export function App() {
     <a className="skip-link" href="#main-content">К содержимому</a>
     <header className="site-header"><div className="header-inner">
       <Brand onHome={goHome} />
-      <nav className="main-nav" aria-label="Основная навигация">{navigation[route.role].map(item =>
-        <a href={'?role=' + route.role + '&tab=' + item.page} key={item.page} aria-current={route.page === item.page ? 'page' : undefined}
+      <nav className="main-nav" aria-label="Основная навигация">{(route.role === 'candidate' && !candidateStarted ? [{ page: 'onboarding' as Page, label: 'Анкета' }, { page: 'assessment' as Page, label: 'Тестирование' }] : navigation[route.role]).map(item =>
+        <a href={'?role=' + route.role + '&tab=' + item.page} key={item.page} aria-current={page === item.page ? 'page' : undefined}
           onClick={event => { event.preventDefault(); navigate(route.role, item.page); }}>{item.label}{item.page === 'invitations' && pending > 0 && <span className="nav-count">{pending}</span>}</a>,
       )}</nav>
       <div className="header-account"><span className="demo-label">Демо</span><div className="role-control">
@@ -97,12 +108,13 @@ export function App() {
         </div></>}
       </div></div>
     </div></header>
-    <main id="main-content" className="main-content" key={route.role + ':' + route.page}>
-      {route.page === 'candidates' && <Employer state={state} candidates={candidates} update={setState} onProfile={onProfile} onInvite={onInvite} notify={setToast} />}
-      {route.page === 'invitations' && <Invitations state={state} candidates={candidates} role={route.role} update={setState} notify={setToast} onProfile={onProfile} />}
-      {route.page === 'company' && <Company state={state} update={setState} notify={setToast} />}
-      {route.page === 'profile' && <Profile state={state} update={setState} notify={setToast} onTest={() => navigate('candidate', 'assessment')} onPreview={() => onProfile(state.profile)} />}
-      {route.page === 'assessment' && <Assessment state={state} update={setState} notify={setToast} onProfile={() => navigate('candidate', 'profile')} />}
+    <main id="main-content" className="main-content" key={route.role + ':' + page}>
+      {page === 'candidates' && <Employer state={state} candidates={candidates} update={setState} onProfile={onProfile} onInvite={onInvite} notify={setToast} />}
+      {page === 'invitations' && <Invitations state={state} candidates={candidates} role={route.role} update={setState} notify={setToast} onProfile={onProfile} />}
+      {page === 'company' && <Company state={state} update={setState} notify={setToast} />}
+      {page === 'profile' && <Profile state={state} update={setState} notify={setToast} onTest={() => navigate('candidate', 'assessment')} onPreview={() => onProfile(state.profile)} />}
+      {page === 'onboarding' && <Onboarding state={state} update={setState} onComplete={() => navigate('candidate', 'assessment')} />}
+      {page === 'assessment' && <Assessment state={state} update={setState} notify={setToast} onProfile={() => navigate('candidate', 'profile')} onSurvey={() => navigate('candidate', 'onboarding')} />}
     </main>
     <footer className="site-footer"><div className="footer-inner"><span className="footer-brand">predel</span><div className="partner-logos">
       <img className="fsp-logo" src="/brand/fsp.png" alt="Федерация спортивного программирования России" />

@@ -2,7 +2,7 @@ export type Role = 'employer' | 'candidate';
 export type Specialization = 'Frontend' | 'Backend';
 export type Grade = 'Junior' | 'Middle';
 export type InvitationStatus = 'sent' | 'viewed' | 'accepted' | 'rejected';
-export type Page = 'candidates' | 'invitations' | 'company' | 'profile' | 'assessment';
+export type Page = 'candidates' | 'invitations' | 'company' | 'profile' | 'assessment' | 'onboarding';
 
 export interface TestResult {
   id: string;
@@ -11,6 +11,19 @@ export interface TestResult {
   grade: Grade;
   score: number;
   passed: boolean;
+  surveyId: string | null;
+}
+
+export interface CandidateSurvey {
+  id: string;
+  date: string;
+  industry: string;
+  professionalRole: string;
+  specialization: Specialization;
+  desiredGrade: Grade;
+  stack: string[];
+  experience: string;
+  softSkills: string[];
 }
 
 export interface Candidate {
@@ -18,9 +31,13 @@ export interface Candidate {
   name: string;
   specialization: Specialization;
   desiredGrade: Grade;
-  confirmed: { specialization: Specialization; grade: Grade; score: number; date: string } | null;
+  confirmed: { specialization: Specialization; grade: Grade; score: number; date: string; surveyId?: string } | null;
   gradeChangedAt?: string;
   stack: string[];
+  industry: string;
+  professionalRole: string;
+  softSkills: string[];
+  surveyCompletedAt: string | null;
   experience: string;
   city: string;
   format: string;
@@ -56,11 +73,12 @@ export interface Filters {
 }
 
 export interface PlatformState {
-  version: 1;
+  version: 2;
   profile: Candidate;
   company: { id: string; name: string; industry: string; website: string; contact: string; description: string };
   invitations: Invitation[];
   history: TestResult[];
+  surveys: CandidateSurvey[];
   savedSearches: { id: string; title: string; query: string; filters: Filters }[];
 }
 
@@ -72,8 +90,10 @@ export const specializationLabels: Record<Specialization, string> = {
   Frontend: 'Frontend-разработчик', Backend: 'Backend-разработчик',
 };
 export const stackOptions = ['React', 'TypeScript', 'JavaScript', 'CSS', 'Python', 'FastAPI', 'Node.js', 'PostgreSQL', 'Docker'];
+export const industryOptions = ['ИТ', 'Финансы', 'Образование', 'Здравоохранение', 'Промышленность', 'Ритейл', 'Другое'];
+export const softSkillOptions = ['Коммуникация', 'Работа в команде', 'Самоорганизация', 'Решение задач', 'Лидерство'];
 export const ownCandidateId = 'candidate-anna';
-const storageKey = 'predel:platform:v1';
+export const storageKey = 'predel:platform:v2';
 
 function oldTestDate() {
   const date = new Date();
@@ -89,6 +109,7 @@ function candidate(
     id, name, specialization, desiredGrade: grade,
     confirmed: { specialization, grade, score, date: oldTestDate() }, gradeChangedAt: oldTestDate(),
     stack, city, experience, format: 'Удалённо',
+    industry: 'ИТ', professionalRole: 'Разработчик', softSkills: ['Коммуникация', 'Работа в команде'], surveyCompletedAt: oldTestDate(),
     bio: specialization === 'Frontend'
       ? 'Разрабатываю интерфейсы веб-приложений. Работаю с дизайн-системами, доступностью и производительностью.'
       : 'Разрабатываю API и сервисы. Работаю с базами данных, интеграциями и автоматизацией.',
@@ -109,30 +130,74 @@ export const otherCandidates: Candidate[] = [
 ];
 
 export function createInitialState(): PlatformState {
-  const profile = candidate(ownCandidateId, 'Анна Морозова', 'Frontend', 'Middle', 86, ['React', 'TypeScript', 'CSS'], 'Москва', '3 года', false);
+  const profile: Candidate = {
+    id: ownCandidateId, name: '', email: '', phone: '', bio: '', city: '', format: 'Удалённо',
+    industry: '', professionalRole: '', softSkills: [], surveyCompletedAt: null,
+    specialization: 'Frontend', desiredGrade: 'Junior', confirmed: null,
+    stack: [], experience: '', fspId: '', achievements: [], visible: false, consent: false,
+  };
   return {
-    version: 1, profile,
+    version: 2, profile,
     company: { id: 'company-line', name: 'Линия', industry: 'Продуктовая разработка', website: 'https://example.com', contact: 'team@example.com', description: 'Разрабатываем цифровые продукты для бизнеса.' },
-    invitations: [{
-      id: 'invitation-initial', candidateId: ownCandidateId, companyId: 'company-line', company: 'Линия',
-      title: 'Frontend-разработчик', description: 'Развитие интерфейса продукта на React и TypeScript. Небольшая команда, удалённая работа, участие в проектировании.',
-      contact: 'team@example.com', salaryFrom: 180000, salaryTo: 240000,
-      status: 'sent', date: new Date().toISOString(),
-    }],
-    history: [{ id: 'test-initial', date: profile.confirmed!.date, specialization: 'Frontend', grade: 'Middle', score: 86, passed: true }],
+    invitations: [], history: [], surveys: [],
     savedSearches: [],
   };
 }
 
 export function readState(): PlatformState {
   try {
-    const stored = JSON.parse(localStorage.getItem(storageKey) || 'null');
-    if (stored?.version === 1 && stored.profile?.id === ownCandidateId
+    const stored = JSON.parse(localStorage.getItem(storageKey) ?? localStorage.getItem('predel:platform:v1') ?? 'null');
+    if ((stored?.version === 1 || stored?.version === 2) && stored.profile?.id === ownCandidateId
       && Array.isArray(stored.profile.stack) && Array.isArray(stored.profile.achievements)
       && stored.company?.id && Array.isArray(stored.invitations)
-      && Array.isArray(stored.history) && Array.isArray(stored.savedSearches)) return stored;
+      && Array.isArray(stored.history) && Array.isArray(stored.savedSearches)) {
+      const legacy = stored.version === 1;
+      const history = stored.history.filter((item: TestResult) => item.id !== 'test-initial')
+        .map((item: TestResult) => ({ ...item, surveyId: item.surveyId || null }));
+      const confirmedWasSeed = legacy && stored.profile.confirmed
+        && stored.history.some((item: TestResult) => item.id === 'test-initial' && item.date === stored.profile.confirmed.date);
+      const profile: Candidate = {
+        ...stored.profile,
+        industry: typeof stored.profile.industry === 'string' ? stored.profile.industry : '',
+        professionalRole: typeof stored.profile.professionalRole === 'string' ? stored.profile.professionalRole : '',
+        softSkills: Array.isArray(stored.profile.softSkills) ? stored.profile.softSkills.filter((skill: string) => softSkillOptions.includes(skill)) : [],
+        surveyCompletedAt: legacy ? null : stored.profile.surveyCompletedAt || null,
+        confirmed: confirmedWasSeed ? null : stored.profile.confirmed,
+        gradeChangedAt: confirmedWasSeed ? undefined : stored.profile.gradeChangedAt,
+        consent: confirmedWasSeed ? false : stored.profile.consent,
+        visible: confirmedWasSeed ? false : stored.profile.visible,
+      };
+      const state: PlatformState = {
+        ...stored, version: 2, profile, history,
+        invitations: legacy ? stored.invitations.filter((item: Invitation) => item.id !== 'invitation-initial') : stored.invitations,
+        surveys: !legacy && Array.isArray(stored.surveys) ? stored.surveys : [],
+      };
+      if (!currentSurvey(state)) state.profile.surveyCompletedAt = null;
+      return state;
+    }
   } catch { /* Storage can be disabled or contain an older draft. */ }
   return createInitialState();
+}
+
+// Every attempt uses the saved questionnaire, including its self-reported skills.
+export function currentSurvey(state: PlatformState): CandidateSurvey | undefined {
+  const profile = state.profile;
+  if (!profile.surveyCompletedAt || !profile.name.trim() || !profile.email.trim()
+    || !industryOptions.includes(profile.industry) || !profile.professionalRole.trim()
+    || !profile.stack.length || !profile.experience.trim() || !profile.softSkills.length) return undefined;
+  const same = (a: string[], b: string[]) => a.length === b.length && a.every(value => b.includes(value));
+  return state.surveys.find(survey => survey.date === profile.surveyCompletedAt
+    && survey.industry === profile.industry && survey.professionalRole === profile.professionalRole
+    && survey.specialization === profile.specialization && survey.desiredGrade === profile.desiredGrade
+    && survey.experience === profile.experience && same(survey.stack, profile.stack) && same(survey.softSkills, profile.softSkills));
+}
+
+export function categoryChangeUnlock(profile: Candidate, specialization: Specialization, grade: Grade): number {
+  const category = profile.confirmed;
+  if (!category || (category.specialization === specialization && category.grade === grade)) return 0;
+  const date = new Date(profile.gradeChangedAt || category.date);
+  date.setDate(date.getDate() + 90);
+  return date.getTime();
 }
 
 export function saveState(state: PlatformState): boolean {
@@ -167,7 +232,7 @@ export function searchCandidates(candidates: Candidate[], filters: Filters, quer
   const recognized = requestedStack.length > 0 || requestedSpecialization || requestedGrade;
   const requiredStack = [...new Set([...filters.stack, ...requestedStack])];
   return candidates.filter(person => {
-    if (!person.visible || !person.consent || !person.confirmed) return false;
+    if (!person.visible || !person.consent || !person.confirmed || !person.surveyCompletedAt) return false;
     const category = person.confirmed;
     if ((filters.specialization && category.specialization !== filters.specialization)
       || (requestedSpecialization && category.specialization !== requestedSpecialization)
@@ -178,7 +243,7 @@ export function searchCandidates(candidates: Candidate[], filters: Filters, quer
     if (!requiredStack.every(skill => person.stack.includes(skill))) return false;
     if (normalized && !recognized) {
       const words = normalized.split(/\s+/).filter(word => word.length > 1);
-      const text = [person.name, person.city, person.bio, ...person.stack, category.specialization].join(' ').toLowerCase();
+      const text = [person.name, person.city, person.bio, person.industry, person.professionalRole, ...person.stack, ...person.softSkills, category.specialization].join(' ').toLowerCase();
       if (!words.every(word => text.includes(word))) return false;
     }
     return true;

@@ -8,7 +8,8 @@ export function CandidateDetails({ person, contacts, onInvite }: {
     <div className="detail-person">
       <div className="avatar avatar-large">{initials(person.name)}</div>
       <div><h3>{person.name}</h3><p>{specializationLabels[person.confirmed?.specialization || person.specialization]}</p>
-      <span className="metadata"><MapPin size={14} />{person.city} · {person.format}</span></div>
+      {(person.industry || person.professionalRole) && <p className="muted">{[person.industry, person.professionalRole].filter(Boolean).join(' · ')}</p>}
+      <span className="metadata">{person.city && <><MapPin size={14} />{person.city} · </>}{person.format}</span></div>
     </div>
     <div className="detail-grid">
       <div><span className="field-caption">Опыт</span><strong>{person.experience}</strong></div>
@@ -17,6 +18,7 @@ export function CandidateDetails({ person, contacts, onInvite }: {
     </div>
     <section><h4>О себе</h4><p className="body-copy">{person.bio || 'Пока не заполнено'}</p></section>
     <section><h4>Стек</h4><div className="tags">{person.stack.map(skill => <span className="tag" key={skill}>{skill}</span>)}</div></section>
+    <section><h4>Софт-скиллы · самооценка</h4>{person.softSkills?.length ? <div className="tags">{person.softSkills.map(skill => <span className="tag" key={skill}>{skill}</span>)}</div> : <p className="muted">Пока не заполнено</p>}</section>
     <section><h4 className="inline-icon"><Medal size={17} />Достижения ФСП</h4>
       {person.achievements.length ? person.achievements.map((achievement, index) => <div key={index} className="achievement"><strong>{achievement.title}</strong><span>{achievement.result} · {achievement.year}</span></div>)
         : <p className="muted">Истории ФСП пока нет</p>}

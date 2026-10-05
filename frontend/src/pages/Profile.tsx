@@ -1,7 +1,13 @@
 import { useState, type FormEvent } from 'react';
 import { BadgeCheck, Eye, FileText, Medal, UserRound } from 'lucide-react';
-import { dateLabel, specializationLabels, type Grade, type PlatformState, type Specialization } from '../model';
+import { dateLabel, industryOptions, softSkillOptions, specializationLabels, type Grade, type PlatformState, type Specialization } from '../model';
 import { FormHeader } from './Company';
+
+function sameValues(left: string[], right: string[]) {
+  const leftValues = new Set(left);
+  const rightValues = new Set(right);
+  return leftValues.size === rightValues.size && [...leftValues].every(value => rightValues.has(value));
+}
 
 export function Profile({ state, update, notify, onTest, onPreview }: {
   state: PlatformState; update: (fn: (state: PlatformState) => PlatformState) => void;
@@ -17,34 +23,52 @@ export function Profile({ state, update, notify, onTest, onPreview }: {
     const fields = new FormData(event.currentTarget);
     const name = String(fields.get('name')).trim();
     const stack = [...new Set(String(fields.get('stack')).split(',').map(skill => skill.trim()).filter(Boolean))];
+    const industry = String(fields.get('industry') || '').trim();
+    const professionalRole = String(fields.get('professionalRole') || '').trim();
+    const softSkills = softSkillOptions.filter(skill => fields.getAll('softSkills').includes(skill));
+    const specialization = String(fields.get('specialization')) as Specialization;
+    const desiredGrade = String(fields.get('desiredGrade')) as Grade;
+    const experience = String(fields.get('experience')).trim();
     if (!name || !stack.length) { setError('Заполните имя и стек.'); return; }
-    update(previous => ({ ...previous, profile: {
-      ...previous.profile, name, stack,
-      specialization: String(fields.get('specialization')) as Specialization,
-      desiredGrade: String(fields.get('desiredGrade')) as Grade,
-      city: String(fields.get('city')).trim(),
-      experience: String(fields.get('experience')).trim(),
-      format: String(fields.get('format')),
-      email: String(fields.get('email')).trim(),
-      phone: String(fields.get('phone')).trim(),
-      bio: String(fields.get('bio')).trim(),
-      fspId: fspId.trim(), achievements: fspId.trim() === previous.profile.fspId ? previous.profile.achievements : [],
-      consent, visible: visible && consent,
-    } }));
+    if (!industryOptions.includes(industry)) { setError('Выберите отрасль.'); return; }
+    if (!professionalRole || professionalRole.length > 100) { setError('Укажите роль в команде: не более 100 символов.'); return; }
+    if (!softSkills.length) { setError('Выберите хотя бы один софт-скилл.'); return; }
+    update(previous => {
+      const professionalChanged = specialization !== previous.profile.specialization
+        || desiredGrade !== previous.profile.desiredGrade
+        || industry !== previous.profile.industry
+        || professionalRole !== previous.profile.professionalRole
+        || experience !== previous.profile.experience
+        || !sameValues(stack, previous.profile.stack)
+        || !sameValues(softSkills, previous.profile.softSkills || []);
+      return { ...previous, profile: {
+        ...previous.profile, name, stack, specialization, desiredGrade, industry, professionalRole, softSkills, experience,
+        surveyCompletedAt: professionalChanged ? null : previous.profile.surveyCompletedAt,
+        city: String(fields.get('city')).trim(),
+        format: String(fields.get('format')),
+        email: String(fields.get('email')).trim(),
+        phone: String(fields.get('phone')).trim(),
+        bio: String(fields.get('bio')).trim(),
+        fspId: fspId.trim(), achievements: fspId.trim() === previous.profile.fspId ? previous.profile.achievements : [],
+        consent, visible: visible && consent,
+      } };
+    });
     setVisible(visible && consent); setError(''); notify('Профиль сохранён');
   }
   return <>
     <div className="page-heading"><h1>Мой профиль</h1><button className="button secondary compact" onClick={onPreview}><Eye size={16} />Предпросмотр</button></div>
     <div className="profile-layout">
-      <form className="panel profile-form" onSubmit={submit}>
+      <form className="panel profile-form" onSubmit={submit} onChange={() => setError('')}>
         <FormHeader title="Личные данные" Icon={UserRound} />
-        <div className="form-grid"><label className="field"><span>Имя и фамилия</span><input name="name" required maxLength={100} defaultValue={profile.name} /></label><label className="field"><span>Город</span><input name="city" required maxLength={100} defaultValue={profile.city} /></label></div>
+        <div className="form-grid"><label className="field"><span>Имя и фамилия</span><input name="name" required maxLength={100} defaultValue={profile.name} /></label><label className="field"><span>Город</span><input name="city" maxLength={100} defaultValue={profile.city} placeholder="Необязательно" /></label></div>
         <div className="form-grid"><label className="field"><span>Email</span><input name="email" type="email" required defaultValue={profile.email} /></label><label className="field"><span>Телефон</span><input name="phone" type="tel" maxLength={30} defaultValue={profile.phone} placeholder="+7" /></label></div>
         <div className="section-divider" />
         <FormHeader title="Навыки" Icon={FileText} />
         <div className="form-grid"><label className="field"><span>Специализация</span><select name="specialization" defaultValue={profile.specialization}><option>Frontend</option><option>Backend</option></select></label><label className="field"><span>Предполагаемый грейд</span><select name="desiredGrade" defaultValue={profile.desiredGrade}><option>Junior</option><option>Middle</option></select></label></div>
+        <div className="form-grid"><label className="field"><span>Отрасль</span><select name="industry" required defaultValue={profile.industry || ''}><option value="">Выберите отрасль</option>{industryOptions.map(industry => <option key={industry}>{industry}</option>)}</select></label><label className="field"><span>Роль в команде</span><input name="professionalRole" required maxLength={100} defaultValue={profile.professionalRole} placeholder="Например, разработчик интерфейсов" /></label></div>
         <div className="form-grid"><label className="field"><span>Опыт работы</span><input name="experience" required maxLength={100} defaultValue={profile.experience} /></label><label className="field"><span>Формат работы</span><select name="format" defaultValue={profile.format}><option>Удалённо</option><option>Гибрид</option><option>Офис</option></select></label></div>
         <label className="field"><span>Стек</span><input name="stack" required maxLength={500} defaultValue={profile.stack.join(', ')} placeholder="React, TypeScript, CSS" /></label>
+        <fieldset className="soft-skills-field"><legend>Софт-скиллы · самооценка</legend><div className="skill-choices">{softSkillOptions.map(skill => <label className="skill-choice" key={skill}><input name="softSkills" type="checkbox" value={skill} defaultChecked={profile.softSkills?.includes(skill)} /><span>{skill}</span></label>)}</div></fieldset>
         <label className="field"><span>О себе</span><textarea name="bio" rows={4} maxLength={3000} defaultValue={profile.bio} /></label>
         <div className="section-divider" />
         <FormHeader title="ФСП" Icon={Medal} />

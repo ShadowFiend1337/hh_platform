@@ -225,6 +225,23 @@ fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
 .privacy-note { display: inline-flex; align-items: center; gap: 7px; color: #626875; font-size: 12px; line-height: 1.6; }
 .contact-link { font-size: 14px; }
 .assessment-layout { max-width: 750px; }
+.onboarding-layout { max-width: 750px; margin: 0 auto; }
+.candidate-steps { display: flex; gap: 24px; list-style: none; padding: 0; margin: 0 0 28px; color: #626875; font-size: 13px; }
+.candidate-steps li { display: flex; align-items: center; gap: 8px; }
+.candidate-steps li > span { display: grid; place-items: center; width: 23px; height: 23px; border: 1px solid #d9dce4; border-radius: 50%; font-size: 11px; }
+.candidate-steps .reached { color: var(--accent); }
+.candidate-steps .reached > span { border-color: var(--accent); }
+.candidate-steps [aria-current] { font-weight: 600; }
+.soft-skills-field { margin-bottom: 24px; }
+.soft-skills-field legend { margin-bottom: 12px; font-size: 13px; font-weight: 600; }
+.skill-choices { display: flex; flex-wrap: wrap; gap: 8px; }
+.skill-choice { display: flex; align-items: center; gap: 7px; border: 1px solid #dee0e7; border-radius: 6px; padding: 8px 10px; font-size: 12px; cursor: pointer; }
+.skill-choice input { width: 14px; height: 14px; margin: 0; accent-color: var(--accent); }
+.skill-choice:has(input:checked) { background: #eff6ff; border-color: #94c2f6; color: #075dbc; }
+.skill-choice:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+.onboarding-privacy { margin-top: 28px; }
+.onboarding-privacy .checkbox-field:has(input:disabled) { color: #626875; cursor: default; }
+.assessment-category { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 24px; }
 .assessment-setup { padding: 30px; }
 .assessment-info { display: flex; align-items: center; flex-wrap: wrap; gap: 24px; font-size: 13px; color: #626875; padding: 20px 0 27px; border-top: 1px solid var(--border); }
 .assessment-info > div { display: inline-flex; gap: 8px; align-items: center; }
@@ -331,6 +348,9 @@ fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
   .partners-logo { width: 360px; }
 }
 @media (max-width: 560px) {
+  .candidate-steps { gap: 15px; font-size: 12px; }
+  .candidate-steps li { gap: 5px; }
+  .candidate-steps li > span { width: 20px; height: 20px; }
   .header-inner, .main-content, .footer-inner { padding-left: 19px; padding-right: 19px; }
   .brand { font-size: 24px; }
   .brand-symbol { transform: scale(.88); transform-origin: left center; margin-right: -3px; }
