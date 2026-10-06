@@ -6,6 +6,7 @@ export interface ResumeResult {
   text: string;
   method: 'text' | 'ocr' | 'mixed';
   pages: number;
+  truncatedFields: (keyof ResumeFields)[];
 }
 export interface ResumeOptions {
   onProgress?: (message: string) => void;
@@ -220,6 +221,46 @@ function readableText(text: string): boolean {
   return letters >= 100 && replacements < Math.max(2, text.length * .015);
 }
 
+function hasLargeRasterContent(
+  operations: { fnArray: number[]; argsArray: unknown[] },
+  ops: Record<string, number>, pageWidth: number, pageHeight: number,
+): boolean {
+  // A scanned page may have a text layer for its header only. Inspect image
+  // placement, rather than source pixel size, so small portraits keep native text.
+  let matrix = [1, 0, 0, 1, 0, 0];
+  const saved: number[][] = [];
+  const multiply = (left: number[], right: number[]) => [
+    left[0] * right[0] + left[2] * right[1], left[1] * right[0] + left[3] * right[1],
+    left[0] * right[2] + left[2] * right[3], left[1] * right[2] + left[3] * right[3],
+    left[0] * right[4] + left[2] * right[5] + left[4], left[1] * right[4] + left[3] * right[5] + left[5],
+  ];
+  const area = (value: number[]) => Math.abs(value[0] * value[3] - value[1] * value[2]);
+  let imageArea = 0;
+  for (let index = 0; index < operations.fnArray.length; index++) {
+    const op = operations.fnArray[index];
+    const args = operations.argsArray[index] as unknown[] | null;
+    if (op === ops.save) saved.push([...matrix]);
+    else if (op === ops.restore) matrix = saved.pop() || [1, 0, 0, 1, 0, 0];
+    else if (op === ops.transform && args) matrix = multiply(matrix, args as number[]);
+    else if (op === ops.paintFormXObjectBegin) {
+      saved.push([...matrix]);
+      if (args?.[0]) matrix = multiply(matrix, args[0] as number[]);
+    } else if (op === ops.paintFormXObjectEnd) matrix = saved.pop() || [1, 0, 0, 1, 0, 0];
+    else if ([ops.paintImageXObject, ops.paintInlineImageXObject, ops.paintImageMaskXObject].includes(op)) imageArea += area(matrix);
+    else if (op === ops.paintImageXObjectRepeat && args) {
+      imageArea += area(matrix) * Math.abs(Number(args[1]) * Number(args[2])) * ((args[3] as number[]).length / 2);
+    } else if (op === ops.paintImageMaskXObjectRepeat && args) {
+      imageArea += area(multiply(matrix, [Number(args[1]), Number(args[2]), Number(args[3]), Number(args[4]), 0, 0])) * ((args[5] as number[]).length / 2);
+    } else if (op === ops.paintInlineImageXObjectGroup && args) {
+      for (const entry of args[1] as { transform: number[] }[]) imageArea += area(multiply(matrix, entry.transform));
+    } else if (op === ops.paintImageMaskXObjectGroup && args) {
+      for (const entry of args[0] as { transform: number[] }[]) imageArea += area(multiply(matrix, entry.transform));
+    }
+    if (imageArea >= pageWidth * pageHeight * .25) return true;
+  }
+  return false;
+}
+
 export async function readResume(file: File, options: ResumeOptions = {}): Promise<ResumeResult> {
   checkAbort(options.signal);
   if (file.size > MAX_FILE_BYTES) throw new Error('Файл должен быть не больше 15 МБ.');
@@ -279,7 +320,13 @@ export async function readResume(file: File, options: ResumeOptions = {}): Promi
           try {
             const content = await guarded(page.getTextContent(), options, 20_000, destroy);
             let pageText = nativePdfText(content.items);
-            if (readableText(pageText)) {
+            let useNative = readableText(pageText);
+            if (useNative) {
+              const operations = await guarded(page.getOperatorList(), options, 20_000, destroy);
+              const [left, bottom, right, top] = page.view;
+              useNative = !hasLargeRasterContent(operations, pdfjs.OPS, right - left, top - bottom);
+            }
+            if (useNative) {
               nativePages++;
             } else {
               const worker = await getOcr();
@@ -338,8 +385,9 @@ export async function readResume(file: File, options: ResumeOptions = {}): Promi
     checkAbort(options.signal);
     text = boundedText(text);
     if ((text.match(/\p{L}/gu)?.length || 0) < 10) throw new Error('Текст не найден. Прикрепите более чёткое резюме.');
-    const fields = parseResumeText(text);
+    const truncatedFields = new Set<keyof ResumeFields>();
+    const fields = parseResumeText(text, { onTruncate: field => truncatedFields.add(field) });
     if (!Object.keys(fields).length) throw new Error('Не удалось найти данные анкеты. Попробуйте другой файл.');
-    return { fields, text, method, pages };
+    return { fields, text, method, pages, truncatedFields: [...truncatedFields] };
   } finally { await documentWorker?.stop(); }
 }

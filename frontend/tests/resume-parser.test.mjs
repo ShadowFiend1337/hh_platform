@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { parseResumeText } from '../src/resume-parser.ts';
+import { MAX_STACK_SKILLS, resumeTextLimits } from '../../shared/resume-limits.ts';
 
 test('Russian resume suggests fields and separates common sections', () => {
   const fields = parseResumeText(`Иван Соколов
@@ -141,4 +142,163 @@ test('expanded industries normalize explicit labels without guessing from employ
     assert.equal(parseResumeText(`Иван Соколов\nIndustry: ${industry}`).industry, expected);
   }
   assert.equal(parseResumeText('Иван Соколов\nBackend developer\nОпыт работы\nНефтяная компания').industry, undefined);
+});
+
+test('job achievements preserve subsequent jobs and remain separate from their company names', () => {
+  const fields = parseResumeText(`Иван Соколов
+Frontend разработчик
+Опыт работы: 6 лет 2 месяца
+ООО Север
+Январь 2023 - настоящее время
+Frontend разработчик
+1 год 4 месяца
+Разрабатывал интерфейсы.
+Достижения
+Ускорил загрузку страниц.
+ООО Вектор
+Март 2021 - Декабрь 2022
+Frontend разработчик
+Создал библиотеку компонентов.
+Достижения
+Сократил число ошибок.
+ООО Старт
+Август 2020 - Февраль 2021
+Frontend стажер
+Написал документацию.
+Достижения
+Автоматизировал сборку.
+Образование
+Тестовый университет`);
+  assert.equal(fields.experience, '6 лет 2 месяца');
+  for (const company of ['ООО Север', 'ООО Вектор', 'ООО Старт']) assert.match(fields.workHistory, new RegExp(company));
+  for (const result of ['Ускорил загрузку', 'Сократил число ошибок', 'Автоматизировал сборку']) {
+    assert.match(fields.workHistory, new RegExp(result));
+    assert.match(fields.careerAchievements, new RegExp(result));
+  }
+  assert.doesNotMatch(fields.careerAchievements, /ООО|202[0123]|Frontend/);
+  assert.doesNotMatch(fields.workHistory, /Образование|университет/);
+});
+
+test('a standalone achievement section after dated employment stays separate', () => {
+  const fields = parseResumeText(`Иван Соколов
+Опыт работы
+Тестовая компания
+03.2021 - 09.2022
+Разработчик
+Создал сервис.
+Достижения
+Финалист учебного конкурса.
+Образование
+Тестовый университет`);
+  assert.equal(fields.careerAchievements, 'Финалист учебного конкурса.');
+  assert.doesNotMatch(fields.workHistory, /Финалист|Достижения/);
+});
+
+test('date-first jobs do not remove the preceding career achievement', () => {
+  const fields = parseResumeText(`Опыт работы
+Январь 2024 — Март 2025
+Компания Первая
+Разработчик
+Достижения
+Запустил сервис.
+Апрель 2025 — настоящее время
+Компания Вторая
+Разработчик
+Поддерживал сервис.
+Навыки: Python`);
+  assert.equal(fields.careerAchievements, 'Запустил сервис.');
+  assert.match(fields.workHistory, /Компания Первая/);
+  assert.match(fields.workHistory, /Компания Вторая/);
+});
+
+test('a company and title before the next employment date remain only in history', () => {
+  const fields = parseResumeText(`Work experience
+First Company
+January 2023 - December 2023
+Backend developer
+Achievements
+Launched a service.
+Second Company
+Backend developer
+January 2024 - present
+Maintained the service.
+Skills: Python`);
+  assert.equal(fields.careerAchievements, 'Launched a service.');
+  assert.match(fields.workHistory, /Second Company\nBackend developer\nJanuary 2024/);
+});
+
+test('an overall summary takes priority over individual job durations', () => {
+  const fields = parseResumeText(`Иван Соколов
+Опыт работы
+Тестовая компания
+03.2021 - 09.2022
+1 год 7 месяцев
+Общий стаж: 4 года 6 месяцев`);
+  assert.equal(fields.experience, '4 года 6 месяцев');
+  assert.equal(parseResumeText('Опыт работы\n2 года 3 месяца\nТестовая компания').experience, '2 года 3 месяца');
+  assert.equal(parseResumeText('Experience: no work experience').experience, 'Без опыта');
+});
+
+test('the overall duration does not duplicate the employment history', () => {
+  for (const heading of ['Опыт работы: 3 года', 'Опыт работы\n3 года', 'Опыт работы\nОбщий стаж: 3 года']) {
+    const fields = parseResumeText(`${heading}\nТестовая компания\n03.2021 - 09.2022\n1 год 7 месяцев\nСоздал сервис.`);
+    assert.equal(fields.experience, '3 года');
+    assert.equal(fields.workHistory, 'Тестовая компания\n03.2021 - 09.2022\n1 год 7 месяцев\nСоздал сервис.');
+  }
+  assert.equal(parseResumeText('Опыт работы: 3 года').workHistory, undefined);
+  assert.equal(parseResumeText('Опыт работы: Без опыта').workHistory, undefined);
+});
+
+test('a job duration or company name alone is not presented as total experience', () => {
+  const fields = parseResumeText(`Иван Соколов
+Опыт работы
+Тестовая компания
+03.2021 - 09.2022
+1 год 7 месяцев
+Ещё одна компания
+2020 - 2021
+8 месяцев`);
+  assert.equal(fields.experience, undefined);
+  assert.match(fields.workHistory, /Ещё одна компания/);
+});
+
+test('long employment history preserves its final job beyond the former 4000 characters', () => {
+  const details = 'Разрабатывал тестовый сервис и улучшал документацию.\n'.repeat(130);
+  const history = `Тестовая компания\n03.2021 - 09.2022\n${details}Последняя тестовая компания\n2020 - 2021\nРазработчик`;
+  const truncated = [];
+  const fields = parseResumeText(`Опыт работы\n${history}\nОбразование\nТестовый университет`, { onTruncate: field => truncated.push(field) });
+  assert.equal(fields.workHistory, history);
+  assert.match(fields.workHistory, /Последняя тестовая компания/);
+  assert.deepEqual(truncated, []);
+});
+
+test('more than twenty technologies and explicitly listed unknown tools are imported', () => {
+  const fields = parseResumeText(`Иван Соколов
+Навыки: React, TypeScript, JavaScript, CSS, HTML, Vue, Angular, Next.js, Python, FastAPI, Django, Node.js, Java, C#, C++, PHP, SQL, PostgreSQL, MySQL, MongoDB, Redis, Docker, Kubernetes, Git, Linux, Rust, .NET, CI/CD, Линейная алгебра
+Есть опыт разработки
+Софт-скиллы: Коммуникация, Работа в команде`);
+  assert.equal(fields.stack.length, 29);
+  for (const skill of ['Git', 'Linux', 'Rust', '.NET', 'CI/CD', 'Линейная алгебра']) assert.ok(fields.stack.includes(skill), skill);
+  assert.ok(!fields.stack.includes('Есть опыт разработки'));
+  assert.ok(!fields.stack.includes('Коммуникация'));
+  assert.ok(!fields.stack.includes('Работа в команде'));
+});
+
+test('a later explicit skill is imported even if its first occurrence was negated', () => {
+  const fields = parseResumeText('Не использую React в старом проекте.\nНавыки: React, Python');
+  assert.deepEqual(fields.stack, ['React', 'Python']);
+});
+
+test('truncation callbacks identify only fields exceeding the shared limits', () => {
+  const truncated = [];
+  const fields = parseResumeText(`Опыт работы\n${'а'.repeat(resumeTextLimits.workHistory + 1)}\nОбразование\n${'б'.repeat(resumeTextLimits.education)}\nДостижения\n${'в'.repeat(resumeTextLimits.careerAchievements + 1)}`, { onTruncate: field => truncated.push(field) });
+  assert.equal(fields.workHistory.length, resumeTextLimits.workHistory);
+  assert.equal(fields.education.length, resumeTextLimits.education);
+  assert.equal(fields.careerAchievements.length, resumeTextLimits.careerAchievements);
+  assert.deepEqual(truncated, ['workHistory', 'careerAchievements']);
+
+  const tooMany = Array.from({ length: MAX_STACK_SKILLS + 1 }, (_, index) => `Tool${index}`).join(', ');
+  const skillTruncation = [];
+  assert.equal(parseResumeText(`Навыки: ${tooMany}`, { onTruncate: field => skillTruncation.push(field) }).stack.length, MAX_STACK_SKILLS);
+  assert.deepEqual(skillTruncation, ['stack']);
 });

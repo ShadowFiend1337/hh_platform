@@ -71,7 +71,7 @@ async function fillSurvey(target = page) {
   await target.getByRole('combobox', { name: 'Специализация', exact: true }).selectOption('Frontend');
   await target.getByRole('combobox', { name: 'Предполагаемый грейд', exact: true }).selectOption('Middle');
   await target.getByLabel('Стек', { exact: true }).fill('React, TypeScript, CSS');
-  await target.getByLabel('Опыт работы', { exact: true }).fill('3 года');
+  await target.getByLabel('Общий стаж', { exact: true }).fill('3 года');
   await target.getByLabel('Город', { exact: true }).fill('Москва');
   await target.getByLabel('Согласен на обработку персональных данных', { exact: true }).check();
 }
@@ -128,10 +128,7 @@ try {
   await page.getByRole('button', { name: 'К тесту', exact: true }).click();
   assert.equal(await page.getByRole('heading', { name: 'Анкета', exact: true }).isVisible(), true, 'Required answers prevent an empty submission');
   await fillSurvey();
-  await page.getByRole('button', { name: 'К тесту', exact: true }).click();
-  assert.equal(await page.getByRole('heading', { name: 'Анкета', exact: true }).isVisible(), true, 'A soft skill is required');
-  await page.getByLabel('Коммуникация', { exact: true }).check();
-  await page.getByLabel('Работа в команде', { exact: true }).check();
+  assert.equal(await page.locator('input[name="softSkills"]').count(), 0, 'The questionnaire does not display soft skill choices');
   await noOverflow(page);
   await page.screenshot({ path: resolve(output, 'onboarding-desktop.png'), fullPage: true });
   await audit(page);
@@ -141,12 +138,16 @@ try {
   assert.equal(current.profile.confirmed, null);
   assert.equal(current.profile.visible, false);
   assert.equal(current.surveys.length, 1);
-  assert.deepEqual(current.profile.softSkills, ['Коммуникация', 'Работа в команде']);
+  assert.deepEqual(current.profile.softSkills, [], 'Self-reported soft skills can remain empty');
+  assert.deepEqual(current.surveys[0].softSkills, []);
   assert.equal(current.history.length, 0);
   assert.equal(current.invitations.length, 0);
   await page.goto(base + '/app?role=candidate&tab=profile');
   await page.getByRole('button', { name: 'Начать тест', exact: true }).waitFor();
   await page.reload();
+  current = await state();
+  assert.deepEqual(current.profile.softSkills, []);
+  assert.equal(current.profile.surveyCompletedAt, current.surveys[0].date, 'Empty soft skills preserve the completed questionnaire after reload');
   await page.getByRole('button', { name: 'Начать тест', exact: true }).click();
   assert.equal(await page.getByRole('button', { name: 'Далее', exact: true }).isDisabled(), true);
   await completeExam(middleAnswers, false);
@@ -168,6 +169,7 @@ try {
   assert.equal(new URL(page.url()).searchParams.get('tab'), 'assessment', 'A direct profile entry retains the test result until the candidate continues');
   const surveyDate = current.profile.surveyCompletedAt;
   await page.getByRole('button', { name: 'К профилю', exact: true }).click();
+  assert.equal(await page.locator('input[name="softSkills"]').count(), 0, 'The profile does not display soft skill choices');
   assert.equal(await page.getByRole('combobox', { name: 'Отрасль', exact: true }).inputValue(), 'ИТ');
   assert.equal(await page.getByLabel('Роль в команде', { exact: true }).inputValue(), 'Разработчик');
   await role('Работодатель');
@@ -300,7 +302,7 @@ try {
   }
   await mobile.goto(base + '/app?role=candidate&tab=profile');
   await fillSurvey(mobile);
-  await mobile.getByLabel('Коммуникация', { exact: true }).check();
+  assert.equal(await mobile.locator('input[name="softSkills"]').count(), 0);
   await noOverflow(mobile);
   await mobile.screenshot({ path: resolve(output, 'onboarding-mobile.png'), fullPage: true });
   await audit(mobile);

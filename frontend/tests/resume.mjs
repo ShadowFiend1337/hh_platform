@@ -3,6 +3,7 @@ import { mkdir, readFile, readdir } from 'node:fs/promises';
 import { basename, extname, resolve } from 'node:path';
 import { createRequire } from 'node:module';
 import { chromium } from 'playwright';
+import { programs } from '../../server/bank.mjs';
 
 const base = process.env.PREDEL_URL || 'http://127.0.0.1:5173';
 const origin = new URL(base).origin;
@@ -47,53 +48,115 @@ async function docx(lines) {
   return zip.generateAsync({ type: 'nodebuffer' });
 }
 
-function nativePdf(lines) {
-  const stream = 'BT /F1 14 Tf 45 750 Td 24 TL\n' + lines.map((line, index) => (index ? 'T* ' : '') + '(' + line.replaceAll('\\', '\\\\').replaceAll('(', '\\(').replaceAll(')', '\\)') + ') Tj').join('\n') + '\nET';
-  const objects = [
-    '<< /Type /Catalog /Pages 2 0 R >>',
-    '<< /Type /Pages /Count 1 /Kids [3 0 R] >>',
-    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
-    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
-    '<< /Length ' + Buffer.byteLength(stream) + ' >>\nstream\n' + stream + '\nendstream',
-  ];
-  let output = '%PDF-1.4\n';
-  const offsets = [0];
-  objects.forEach((object, index) => { offsets.push(Buffer.byteLength(output)); output += `${index + 1} 0 obj\n${object}\nendobj\n`; });
-  const xref = Buffer.byteLength(output);
-  output += 'xref\n0 6\n0000000000 65535 f \n' + offsets.slice(1).map(offset => String(offset).padStart(10, '0') + ' 00000 n \n').join('');
-  output += `trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
-  return Buffer.from(output);
+function resumePdf(pages) {
+  const objects = [Buffer.from('<< /Type /Catalog /Pages 2 0 R >>'), null, Buffer.from('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>')];
+  const add = value => { objects.push(Buffer.isBuffer(value) ? value : Buffer.from(value)); return objects.length; };
+  const children = pages.map(source => {
+    const drawing = [], resources = [];
+    if (source.lines) {
+      drawing.push('BT ' + (source.invisibleText ? '3 Tr ' : '') + '/F1 14 Tf 45 750 Td 24 TL\n' + source.lines.map((line, index) => (index ? 'T* ' : '') + '(' + line.replaceAll('\\', '\\\\').replaceAll('(', '\\(').replaceAll(')', '\\)') + ') Tj').join('\n') + '\nET');
+      resources.push('/Font << /F1 3 0 R >>');
+    }
+    if (source.jpeg) {
+      const height = source.height || 1450;
+      const width = source.renderedWidth || 560;
+      const image = add(Buffer.concat([Buffer.from('<< /Type /XObject /Subtype /Image /Width 1500 /Height ' + height + ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' + source.jpeg.length + ' >>\nstream\n'), source.jpeg, Buffer.from('\nendstream')]));
+      if (source.formImage) {
+        const formStream = 'q 1 0 0 1 0 0 cm /Im1 Do Q';
+        const form = add(`<< /Type /XObject /Subtype /Form /BBox [0 0 1 1] /Matrix [${width} 0 0 ${width * height / 1500} 26 26] /Resources << /XObject << /Im1 ${image} 0 R >> >> /Length ${formStream.length} >>\nstream\n${formStream}\nendstream`);
+        drawing.push('q /Fm1 Do Q');
+        resources.push(`/XObject << /Fm1 ${form} 0 R >>`);
+      } else {
+        drawing.push(`q ${width} 0 0 ${width * height / 1500} 26 26 cm /Im1 Do Q`);
+        resources.push(`/XObject << /Im1 ${image} 0 R >>`);
+      }
+    }
+    const stream = Buffer.from(drawing.join('\n'));
+    const content = add(Buffer.concat([Buffer.from('<< /Length ' + stream.length + ' >>\nstream\n'), stream, Buffer.from('\nendstream')]));
+    return add(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << ${resources.join(' ')} >> /Contents ${content} 0 R >>`);
+  });
+  objects[1] = Buffer.from(`<< /Type /Pages /Count ${children.length} /Kids [${children.map(child => `${child} 0 R`).join(' ')}] >>`);
+  const parts = [Buffer.from('%PDF-1.4\n')], offsets = [0];
+  let length = parts[0].length;
+  for (const [index, object] of objects.entries()) {
+    offsets.push(length);
+    const chunk = Buffer.concat([Buffer.from(`${index + 1} 0 obj\n`), object, Buffer.from('\nendobj\n')]);
+    parts.push(chunk); length += chunk.length;
+  }
+  const size = objects.length + 1;
+  parts.push(Buffer.from(`xref\n0 ${size}\n0000000000 65535 f \n` + offsets.slice(1).map(offset => String(offset).padStart(10, '0') + ' 00000 n \n').join('') + `trailer\n<< /Size ${size} /Root 1 0 R >>\nstartxref\n${length}\n%%EOF\n`));
+  return Buffer.concat(parts);
 }
 
-async function imageResume(mimeType = 'image/png') {
-  const data = await page.evaluate(({ lines, mimeType }) => {
-    const canvas = document.createElement('canvas'); canvas.width = 1500; canvas.height = 1450;
+function nativePdf(lines) { return resumePdf([{ lines }]); }
+
+const imageHeight = lines => Math.max(1450, 160 + lines.length * 77);
+async function imageResume(mimeType = 'image/png', lines = resumeLines) {
+  const data = await page.evaluate(({ lines, mimeType, height }) => {
+    const canvas = document.createElement('canvas'); canvas.width = 1500; canvas.height = height;
     const canvasContext = canvas.getContext('2d');
     canvasContext.fillStyle = '#fff'; canvasContext.fillRect(0, 0, canvas.width, canvas.height);
     canvasContext.fillStyle = '#111'; canvasContext.font = '38px Arial';
     lines.forEach((line, index) => canvasContext.fillText(line, 65, 85 + index * 77));
     return canvas.toDataURL(mimeType, 0.98).split(',')[1];
-  }, { lines: resumeLines, mimeType });
+  }, { lines, mimeType, height: imageHeight(lines) });
   return Buffer.from(data, 'base64');
 }
 
-function scannedPdf(jpeg) {
-  const stream = Buffer.from('q 560 0 0 541 26 180 cm /Im1 Do Q');
-  const objects = [
-    Buffer.from('<< /Type /Catalog /Pages 2 0 R >>'),
-    Buffer.from('<< /Type /Pages /Count 1 /Kids [3 0 R] >>'),
-    Buffer.from('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /XObject << /Im1 4 0 R >> >> /Contents 5 0 R >>'),
-    Buffer.concat([Buffer.from('<< /Type /XObject /Subtype /Image /Width 1500 /Height 1450 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' + jpeg.length + ' >>\nstream\n'), jpeg, Buffer.from('\nendstream')]),
-    Buffer.concat([Buffer.from('<< /Length ' + stream.length + ' >>\nstream\n'), stream, Buffer.from('\nendstream')]),
-  ];
-  const parts = [Buffer.from('%PDF-1.4\n')], offsets = [0];
-  for (const [index, object] of objects.entries()) {
-    offsets.push(parts.reduce((length, part) => length + part.length, 0));
-    parts.push(Buffer.from(`${index + 1} 0 obj\n`), object, Buffer.from('\nendobj\n'));
+function scannedPdf(jpeg) { return resumePdf([{ jpeg }]); }
+
+const experiencePages = [
+  [
+    'Иван Соколов', 'Frontend разработчик Middle', 'ivan.test@example.com',
+    'Город: Москва', 'Навыки: React, TypeScript, CSS, Git', 'Опыт работы: 6 лет',
+    'North Company', 'Январь 2023 - настоящее время', 'Frontend разработчик',
+    'Разрабатывал личный кабинет и интеграцию платежей.',
+    'Достижения', 'Ускорил загрузку приложения на 42 процента.',
+    'Vector Company', 'Март 2021 - Декабрь 2022', 'Frontend разработчик',
+    'Создал библиотеку компонентов и панель аналитики.',
+    'Достижения', 'Снизил количество ошибок интерфейса на 35 процентов.',
+  ],
+  [
+    'Start Company', 'Август 2020 - Февраль 2021', 'Frontend стажер',
+    'Верстал каталог и писал модульные тесты.',
+    'Достижения', 'Покрыл тестами 80 процентов компонентов.',
+    'Образование', 'Тестовый университет, информатика, 2020',
+    'Языки', 'Английский B2', 'Портфолио', 'https://github.com/ivan-test',
+  ],
+];
+const nativeExperiencePage = [
+  'Ivan Sokolov', 'Frontend developer Middle', 'ivan.test@example.com',
+  'Skills: React, TypeScript, CSS, Git', 'Experience: 6 years',
+  'North Company', 'January 2023 - present', 'Frontend developer',
+  'Implemented account pages and payments.', 'Achievements', 'Improved loading by 42 percent.',
+  'Vector Company', 'March 2021 - December 2022', 'Frontend developer',
+  'Created a component library and analytics.', 'Achievements', 'Reduced errors by 35 percent.',
+];
+
+async function inspectDocument(file) {
+  importing = true;
+  try {
+    return await page.evaluate(async ({ name, data }) => {
+      const { readResume } = await import('/src/resume.ts');
+      return readResume(new File([Uint8Array.from(atob(data), char => char.charCodeAt(0))], name));
+    }, { name: file.name, data: file.buffer.toString('base64') });
+  } finally { importing = false; }
+}
+
+function assertCompleteExperience(result, method) {
+  assert.equal(result.method, method);
+  assert.equal(result.pages, 2);
+  assert.equal(result.fields.email, 'ivan.test@example.com');
+  assert.ok(result.fields.stack.includes('React'));
+  assert.ok(result.fields.stack.includes('TypeScript'));
+  for (const company of ['North Company', 'Vector Company', 'Start Company']) {
+    assert.ok(result.text.includes(company), `OCR lost ${company}`);
+    assert.ok(result.fields.workHistory.includes(company), `Import lost ${company} after a nested achievement heading`);
   }
-  const xref = parts.reduce((length, part) => length + part.length, 0);
-  parts.push(Buffer.from('xref\n0 6\n0000000000 65535 f \n' + offsets.slice(1).map(offset => String(offset).padStart(10, '0') + ' 00000 n \n').join('') + `trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`));
-  return Buffer.concat(parts);
+  for (const percentage of ['42', '35', '80']) assert.ok(result.fields.workHistory.includes(percentage), 'Job achievements must remain with their experience');
+  assert.match(result.fields.education, /университет/);
+  assert.match(result.fields.languages, /[BВ]2/, 'OCR must retain the language level, allowing its visually identical Cyrillic letter');
+  assert.match(result.fields.portfolio, /github\.com\/ivan-test/);
 }
 
 async function resetForm() {
@@ -189,6 +252,59 @@ try {
   assert.match(await page.locator('[name="stack"]').inputValue(), /React/);
   await assertNoAutomaticConsent();
 
+  // Every page is raster-only: actual OCR must retain all jobs across page
+  // boundaries even when their descriptions contain achievement headings.
+  await resetForm();
+  const experienceImages = [];
+  for (const lines of experiencePages) experienceImages.push({ jpeg: await imageResume('image/jpeg', lines), height: imageHeight(lines) });
+  const multipageScan = { name: 'multi-job-scan.pdf', mimeType: 'application/pdf', buffer: resumePdf(experienceImages) };
+  assertCompleteExperience(await inspectDocument(multipageScan), 'ocr');
+  await attach(multipageScan);
+  for (const company of ['North Company', 'Vector Company', 'Start Company']) assert.match(await page.locator('[name="workHistory"]').inputValue(), new RegExp(company));
+  assert.equal(await page.locator('[name="workHistory"]').isVisible(), true, 'Imported work history must be visible in the main questionnaire');
+  await assertNoAutomaticConsent();
+  await page.screenshot({ path: resolve('test-results', 'resume-desktop.png'), fullPage: true });
+  await page.setViewportSize({ width: 320, height: 750 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, 'Imported multi-job history must not overflow at 320px');
+  await page.screenshot({ path: resolve('test-results', 'resume-mobile.png'), fullPage: true });
+  await page.setViewportSize({ width: 1440, height: 1100 });
+
+  // A text page cannot suppress recognition of a later scanned page.
+  const mixedPdf = { name: 'mixed-job-resume.pdf', mimeType: 'application/pdf', buffer: resumePdf([{ lines: nativeExperiencePage }, experienceImages[1]]) };
+  assertCompleteExperience(await inspectDocument(mixedPdf), 'mixed');
+
+  // An interrupted text layer contains a readable header while the page image
+  // still contains two jobs absent from that layer. It must trigger OCR too.
+  const partialPdf = { name: 'partial-layer-job-resume.pdf', mimeType: 'application/pdf', buffer: resumePdf([
+    { ...experienceImages[0], lines: [...nativeExperiencePage.slice(0, 5), 'Phone: +7 900 111 22 33', 'City: Moscow', 'Format: hybrid'], invisibleText: true }, experienceImages[1],
+  ]) };
+  assertCompleteExperience(await inspectDocument(partialPdf), 'ocr');
+  const partialFormPdf = { name: 'partial-layer-form-resume.pdf', mimeType: 'application/pdf', buffer: resumePdf([
+    { ...experienceImages[0], lines: [...nativeExperiencePage.slice(0, 5), 'Phone: +7 900 111 22 33', 'City: Moscow', 'Format: hybrid'], invisibleText: true, formImage: true }, experienceImages[1],
+  ]) };
+  assertCompleteExperience(await inspectDocument(partialFormPdf), 'ocr');
+  const smallImagePdf = { name: 'native-with-small-image.pdf', mimeType: 'application/pdf', buffer: resumePdf([
+    { ...experienceImages[0], lines: nativeExperiencePage, renderedWidth: 80 },
+  ]) };
+  const smallImageResult = await inspectDocument(smallImagePdf);
+  assert.equal(smallImageResult.method, 'text', 'A small photo or logo must not force OCR of a readable text page');
+  assert.equal(smallImageResult.fields.email, 'ivan.test@example.com');
+
+  await resetForm();
+  const oversizedHistory = ['Long Synthetic Company', 'Январь 2020 - настоящее время', 'Frontend разработчик', ...Array.from({ length: 260 }, (_, index) => `Задача ${index + 1}: разработал страницу каталога, написал тесты и улучшил доступность интерфейса.`)].join('\n');
+  assert.ok(oversizedHistory.length > 20000);
+  const oversizedResume = { name: 'synthetic-long-history.txt', mimeType: 'text/plain', buffer: Buffer.from(['Иван Соколов', 'Frontend разработчик Middle', 'ivan.test@example.com', 'Навыки: React, TypeScript', 'Опыт работы: 6 лет', oversizedHistory, 'Образование', 'Тестовый университет'].join('\n')) };
+  const oversizedResult = await inspectDocument(oversizedResume);
+  assert.equal(oversizedResult.method, 'text');
+  assert.ok(oversizedResult.truncatedFields.includes('workHistory'));
+  assert.equal(oversizedResult.fields.workHistory.length, 20000);
+  await attach(oversizedResume);
+  assert.match(await page.locator('.resume-import [role="status"]').textContent(), /Сокращены длинные поля: Места работы и проекты/);
+  const boundedHistory = await page.locator('[name="workHistory"]').inputValue();
+  assert.ok(boundedHistory.length <= 20000 && boundedHistory.length > 19000);
+  assert.ok(boundedHistory.startsWith('Long Synthetic Company'));
+  await assertNoAutomaticConsent();
+
   await resetForm();
   const png = await imageResume();
   await attach({ name: 'scan.png', mimeType: 'image/png', buffer: png }, async () => {
@@ -216,17 +332,23 @@ try {
   await page.locator('[name="desiredGrade"]').selectOption('Middle');
   await page.locator('[name="experience"]').fill('3 года');
   await page.locator('[name="careerAchievements"]').fill('Ускорил интерфейс на 30 процентов');
+  const longHistory = ['Тестовая компания, разработка интерфейсов', ...Array.from({ length: 130 }, (_, index) => `Проект ${index + 1}: разработал страницу каталога, написал тесты и улучшил доступность интерфейса.`)].join('\n');
+  assert.ok(longHistory.length > 4000, 'Fixture must exceed the old truncation limit');
+  await page.locator('[name="workHistory"]').fill(longHistory);
   await page.getByText('Подробнее о себе', { exact: true }).click();
-  for (const [name, value] of Object.entries({ education: 'Тестовый университет', workHistory: 'Тестовая компания, разработка интерфейсов', languages: 'Английский B2', phone: '+79990001122', portfolio: 'https://github.com/ivan-test' })) await page.locator(`[name="${name}"]`).fill(value);
+  for (const [name, value] of Object.entries({ education: 'Тестовый университет', languages: 'Английский B2', phone: '+79990001122', portfolio: 'https://github.com/ivan-test' })) await page.locator(`[name="${name}"]`).fill(value);
   await page.locator('[name="format"]').selectOption('Гибрид');
-  await page.getByRole('checkbox', { name: 'Коммуникация', exact: true }).check();
+  assert.equal(await page.locator('[name="softSkills"]').count(), 0, 'The questionnaire must not show a soft-skills block');
   await page.locator('[name="consent"]').check();
   await page.getByRole('button', { name: 'К тесту', exact: true }).click();
   await page.getByRole('button', { name: 'Начать тест', exact: true }).waitFor();
   let saved = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), storageKey);
   assert.equal(saved.profile.education, 'Тестовый университет');
   assert.equal(saved.profile.careerAchievements, 'Ускорил интерфейс на 30 процентов');
-  assert.equal(saved.surveys[0].workHistory, 'Тестовая компания, разработка интерфейсов');
+  assert.equal(saved.profile.workHistory, longHistory);
+  assert.equal(saved.surveys[0].workHistory, longHistory);
+  assert.deepEqual(saved.profile.softSkills, []);
+  assert.deepEqual(saved.surveys[0].softSkills, []);
   assert.equal(saved.profile.format, 'Гибрид');
   assert.equal(saved.profile.visible, false);
   assert.equal(saved.profile.confirmed, null);
@@ -235,14 +357,43 @@ try {
   await page.getByRole('button', { name: 'Начать тест', exact: true }).waitFor();
   saved = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), storageKey);
   assert.equal(saved.profile.education, 'Тестовый университет');
+  assert.equal(saved.profile.workHistory, longHistory, 'Reload must preserve long work history');
   const requestPromise = page.waitForRequest(request => request.url().endsWith('/api/assessment/attempts') && request.method() === 'POST');
   const responsePromise = page.waitForResponse(response => response.url().endsWith('/api/assessment/attempts') && response.request().method() === 'POST');
   await page.getByRole('button', { name: 'Начать тест', exact: true }).click();
   const body = (await requestPromise).postDataJSON();
   assert.deepEqual(Object.keys(body.survey).sort(), ['date', 'desiredGrade', 'experience', 'id', 'industry', 'professionalRole', 'softSkills', 'specialization', 'stack'].sort(), 'Assessment request must omit contacts and additional resume sections');
+  assert.deepEqual(body.survey.softSkills, [], 'Assessment must start without self-reported soft skills');
   for (const privateValue of ['ivan.test@example.com', '+79990001122', 'Тестовый университет', 'Ускорил интерфейс', 'github.com/ivan-test']) assert.ok(!JSON.stringify(body).includes(privateValue));
   const serverAttempt = await (await responsePromise).json();
   await page.locator('.question-text').waitFor();
+
+  // The profile opens after a successful assessment. Answer keys stay in this
+  // Node-only test and never enter the application bundle.
+  const answers = new Map(programs.Frontend.Middle.families.flatMap(family => family.variants.map(variant => [variant.text, variant.options[variant.correct]])));
+  for (let index = 0; index < 6; index++) {
+    await page.locator(`.exam-progress[aria-valuenow="${index + 1}"]`).waitFor();
+    const expected = answers.get(await page.locator('.question-text').textContent());
+    assert.ok(expected, 'Question must belong to the existing server fixture bank');
+    const choices = page.locator('.answer-option');
+    const choice = (await choices.locator('span').allTextContents()).findIndex(text => text.trim() === expected);
+    assert.ok(choice >= 0);
+    await choices.nth(choice).click();
+    await page.getByRole('button', { name: index === 5 ? 'Завершить тест' : 'Далее', exact: true }).click();
+  }
+  await page.getByRole('button', { name: 'К профилю', exact: true }).click();
+  await page.getByRole('heading', { name: 'Мой профиль', exact: true }).waitFor();
+  assert.equal(await page.locator('[name="workHistory"]').inputValue(), longHistory);
+  assert.equal(await page.locator('[name="softSkills"]').count(), 0, 'The profile must not show a soft-skills block');
+  const editedHistory = longHistory + '\nПоследний проект: обновил систему уведомлений.';
+  await page.locator('[name="workHistory"]').fill(editedHistory);
+  await page.getByRole('button', { name: 'Сохранить изменения', exact: true }).click();
+  await page.getByText('Профиль сохранён', { exact: true }).waitFor();
+  await page.reload();
+  await page.getByRole('heading', { name: 'Мой профиль', exact: true }).waitFor();
+  saved = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), storageKey);
+  assert.equal(saved.profile.workHistory, editedHistory, 'Profile save must preserve long work history');
+  assert.deepEqual(saved.profile.softSkills, [], 'Profile must save without self-reported soft skills');
 
   // Local deletion is explicit, reversible until confirmed, and synchronized to
   // other tabs. It intentionally leaves separately stored server attempts intact.
@@ -313,5 +464,5 @@ try {
   assert.deepEqual(importsRequests, []);
   assert.deepEqual(externalRequests, [], 'All parser and OCR assets must be loaded from this site');
   assert.deepEqual(errors, []);
-  console.log('PASS PDF and DOCX text, actual Russian/English OCR, errors and cancellation, edit preservation, consent, policy and confirmed local deletion across tabs, saved fields, private API payload, mobile accessibility');
+  console.log('PASS PDF/DOCX text, actual Russian/English OCR, complete multi-job history across scan/mixed/partial/Form PDFs, small-image native text, visible truncation, errors and cancellation, edit preservation, long-history persistence, assessment and profile without soft skills, private API payload, consent and deletion across tabs, mobile accessibility');
 } finally { await context.close(); await browser.close(); }

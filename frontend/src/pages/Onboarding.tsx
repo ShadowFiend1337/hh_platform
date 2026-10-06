@@ -1,20 +1,24 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Paperclip, Trash2 } from 'lucide-react';
+import { MAX_STACK_SKILLS, resumeTextLimits as textLimits } from '../../../shared/resume-limits';
 import { CandidateSteps } from '../components/CandidateSteps';
-import { industryOptions, isSpecialization, specializationOptions, softSkillOptions, type CandidateSurvey, type Grade, type PlatformState, type Specialization } from '../model';
+import { industryOptions, isSpecialization, specializationOptions, type CandidateSurvey, type Grade, type PlatformState, type Specialization } from '../model';
+import type { ResumeFields } from '../resume-parser';
 
 type Draft = {
   name: string; email: string; phone: string; city: string; industry: string; professionalRole: string;
-  specialization: string; desiredGrade: string; stack: string; experience: string; softSkills: string[];
+  specialization: string; desiredGrade: string; stack: string; experience: string;
   careerAchievements: string; education: string; workHistory: string; portfolio: string; languages: string; format: string;
 };
 
-const textLimits = {
-  name: 100, email: 254, phone: 30, city: 100, industry: 100, professionalRole: 100,
-  specialization: 20, desiredGrade: 20, stack: 500, experience: 100,
-  careerAchievements: 2000, education: 2000, workHistory: 4000, portfolio: 1000, languages: 500, format: 50,
-} satisfies Record<Exclude<keyof Draft, 'softSkills'>, number>;
 const workFormats = ['Удалённо', 'Гибрид', 'Офис'];
+const fieldLabels: Record<keyof ResumeFields, string> = {
+  name: 'Имя и фамилия', email: 'Email', phone: 'Телефон', city: 'Город',
+  industry: 'Отрасль', professionalRole: 'Роль в команде', specialization: 'Специализация',
+  desiredGrade: 'Предполагаемый грейд', experience: 'Общий стаж', softSkills: 'Софт-скиллы',
+  workHistory: 'Места работы и проекты', careerAchievements: 'Достижения',
+  education: 'Образование', stack: 'Стек', portfolio: 'Портфолио', languages: 'Языки', format: 'Формат работы',
+};
 
 export function Onboarding({ state, update, onComplete }: {
   state: PlatformState; update: (fn: (state: PlatformState) => PlatformState) => void; onComplete: () => void;
@@ -25,7 +29,7 @@ export function Onboarding({ state, update, onComplete }: {
     industry: profile.industry, professionalRole: profile.professionalRole,
     specialization: state.surveys.length || profile.confirmed ? profile.specialization : '',
     desiredGrade: state.surveys.length || profile.confirmed ? profile.desiredGrade : '',
-    stack: profile.stack.join(', '), experience: profile.experience, softSkills: profile.softSkills,
+    stack: profile.stack.join(', '), experience: profile.experience,
     careerAchievements: profile.careerAchievements || '', education: profile.education || '',
     workHistory: profile.workHistory || '', portfolio: profile.portfolio || '', languages: profile.languages || '',
     format: profile.format,
@@ -60,7 +64,8 @@ export function Onboarding({ state, update, onComplete }: {
       });
       if (controller.signal.aborted) return;
       const recognized: Partial<Draft> = {};
-      for (const key of Object.keys(textLimits) as (Exclude<keyof Draft, 'softSkills'>)[]) {
+      const truncated = new Set(result.truncatedFields);
+      for (const key of Object.keys(textLimits) as (keyof Draft)[]) {
         if (key === 'stack') continue;
         const value = result.fields[key];
         if (typeof value !== 'string' || !value.trim()) continue;
@@ -68,28 +73,28 @@ export function Onboarding({ state, update, onComplete }: {
         if (key === 'specialization' && !isSpecialization(value)) continue;
         if (key === 'desiredGrade' && !['Junior', 'Middle'].includes(value)) continue;
         if (key === 'format' && !workFormats.includes(value)) continue;
+        if (value.trim().length > textLimits[key]) truncated.add(key);
         recognized[key] = value.trim().slice(0, textLimits[key]);
       }
       if (result.fields.stack?.length) {
-        const skills = [...new Set(result.fields.stack.map(skill => skill.trim().slice(0, 80)).filter(Boolean))].slice(0, 20);
-        while (skills.join(', ').length > 500) skills.pop();
+        const skills = [...new Set(result.fields.stack.map(skill => skill.trim().slice(0, 80)).filter(Boolean))].slice(0, MAX_STACK_SKILLS);
+        if (skills.length < result.fields.stack.length || skills.join(', ').length > textLimits.stack) truncated.add('stack');
+        while (skills.join(', ').length > textLimits.stack) skills.pop();
         if (skills.length) recognized.stack = skills.join(', ');
       }
-      const skills = softSkillOptions.filter(skill => result.fields.softSkills?.includes(skill));
-      if (skills.length) recognized.softSkills = skills;
       setDraft(previous => {
         const next = { ...previous };
         for (const key of Object.keys(recognized) as (keyof Draft)[]) {
-          const unchanged = key === 'softSkills'
-            ? previous.softSkills.join('\n') === original.softSkills.join('\n')
-            : previous[key] === original[key];
+          const unchanged = previous[key] === original[key];
           if (unchanged) Object.assign(next, { [key]: recognized[key] });
         }
         return next;
       });
-      setResumeStatus(Object.keys(recognized).length
+      const status = Object.keys(recognized).length
         ? 'Проверьте данные и заполните пустые обязательные поля.'
-        : 'Текст прочитан, но поля не распознаны. Заполните анкету.');
+        : 'Текст прочитан, но поля не распознаны. Заполните анкету.';
+      const labels = [...truncated].map(key => fieldLabels[key]);
+      setResumeStatus(labels.length ? `${status} Сокращены длинные поля: ${labels.join(', ')}. Проверьте их содержимое.` : status);
     } catch (cause) {
       if (controller.signal.aborted) return;
       setResumeStatus('');
@@ -110,13 +115,12 @@ export function Onboarding({ state, update, onComplete }: {
     const desiredGrade = draft.desiredGrade as Grade;
     const industry = draft.industry.trim(), professionalRole = draft.professionalRole.trim(), experience = draft.experience.trim();
     const stack = [...new Set(draft.stack.split(',').map(skill => skill.trim()).filter(Boolean))];
-    const softSkills = softSkillOptions.filter(skill => draft.softSkills.includes(skill));
+    const softSkills: string[] = [];
     if (!name || !email || !industryOptions.includes(industry) || !professionalRole || !experience || !stack.length
       || !isSpecialization(specialization) || !['Junior', 'Middle'].includes(desiredGrade)) {
       setError('Заполните обязательные поля анкеты.'); return;
     }
-    if (stack.length > 20 || stack.some(skill => skill.length > 80)) { setError('Укажите до 20 навыков, не более 80 символов каждый.'); return; }
-    if (!softSkills.length) { setError('Выберите хотя бы один софт-скилл.'); return; }
+    if (stack.length > MAX_STACK_SKILLS || stack.some(skill => skill.length > 80)) { setError(`Укажите до ${MAX_STACK_SKILLS} навыков, не более 80 символов каждый.`); return; }
     if (!consent) { setError('Нужно согласие на обработку персональных данных.'); return; }
     const details = {
       careerAchievements: draft.careerAchievements.trim(), education: draft.education.trim(),
@@ -168,17 +172,16 @@ export function Onboarding({ state, update, onComplete }: {
         <label className="field"><span>Специализация</span><select name="specialization" required value={draft.specialization} onChange={event => change('specialization', event.target.value)}><option value="">Выберите</option>{specializationOptions.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}</select></label>
         <label className="field"><span>Предполагаемый грейд</span><select name="desiredGrade" required value={draft.desiredGrade} onChange={event => change('desiredGrade', event.target.value)}><option value="">Выберите</option><option>Junior</option><option>Middle</option></select></label>
       </div>
-      <label className="field"><span>Стек</span><input name="stack" required maxLength={500} value={draft.stack} onChange={event => change('stack', event.target.value)} placeholder="React, TypeScript, CSS" /></label>
+      <label className="field"><span>Стек</span><input name="stack" required maxLength={textLimits.stack} value={draft.stack} onChange={event => change('stack', event.target.value)} placeholder="React, TypeScript, CSS" /></label>
       <div className="form-grid">
-        <label className="field"><span>Опыт работы</span><input name="experience" required maxLength={100} value={draft.experience} onChange={event => change('experience', event.target.value)} placeholder="Без опыта" /></label>
+        <label className="field"><span>Общий стаж</span><input name="experience" required maxLength={100} value={draft.experience} onChange={event => change('experience', event.target.value)} placeholder="3 года 4 месяца или без опыта" /></label>
         <label className="field"><span>Город</span><input name="city" maxLength={100} autoComplete="address-level2" value={draft.city} onChange={event => change('city', event.target.value)} placeholder="Необязательно" /></label>
       </div>
-      <label className="field"><span>Достижения</span><textarea name="careerAchievements" rows={3} maxLength={2000} value={draft.careerAchievements} onChange={event => change('careerAchievements', event.target.value)} placeholder="Результаты работы, проекты или награды" /></label>
-      <fieldset className="soft-skills-field"><legend>Софт-скиллы</legend><div className="skill-choices">{softSkillOptions.map(skill => <label className="skill-choice" key={skill}><input name="softSkills" type="checkbox" value={skill} checked={draft.softSkills.includes(skill)} onChange={event => change('softSkills', event.target.checked ? [...draft.softSkills, skill] : draft.softSkills.filter(value => value !== skill))} /><span>{skill}</span></label>)}</div></fieldset>
+      <label className="field"><span>Места работы и проекты</span><textarea name="workHistory" rows={6} maxLength={textLimits.workHistory} value={draft.workHistory} onChange={event => change('workHistory', event.target.value)} placeholder="Компания, период работы, роль и задачи" /></label>
+      <label className="field"><span>Достижения</span><textarea name="careerAchievements" rows={3} maxLength={textLimits.careerAchievements} value={draft.careerAchievements} onChange={event => change('careerAchievements', event.target.value)} placeholder="Результаты работы, проектов или соревнований" /></label>
       <details className="onboarding-details">
         <summary>Подробнее о себе</summary>
-        <label className="field"><span>Образование</span><textarea name="education" rows={3} maxLength={2000} value={draft.education} onChange={event => change('education', event.target.value)} /></label>
-        <label className="field"><span>Места работы и задачи</span><textarea name="workHistory" rows={4} maxLength={4000} value={draft.workHistory} onChange={event => change('workHistory', event.target.value)} /></label>
+        <label className="field"><span>Образование</span><textarea name="education" rows={3} maxLength={textLimits.education} value={draft.education} onChange={event => change('education', event.target.value)} /></label>
         <div className="form-grid">
           <label className="field"><span>Языки</span><input name="languages" maxLength={500} value={draft.languages} onChange={event => change('languages', event.target.value)} placeholder="Английский B2" /></label>
           <label className="field"><span>Телефон</span><input name="phone" type="tel" maxLength={30} autoComplete="tel" value={draft.phone} onChange={event => change('phone', event.target.value)} /></label>

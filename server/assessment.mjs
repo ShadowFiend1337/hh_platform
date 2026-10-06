@@ -2,6 +2,7 @@ import { createHash, randomInt, randomUUID } from 'node:crypto';
 import { bankVersion, programs } from './bank.mjs';
 import { analyzeVacancy, vacancyExamples } from './vacancies.mjs';
 import { industryOptions } from '../shared/catalog.ts';
+import { MAX_STACK_SKILLS } from '../shared/resume-limits.ts';
 
 export const threshold = 70;
 export const expiresInMinutes = 30;
@@ -33,10 +34,10 @@ export function programInfo(specialization, grade) {
 
 export function validateSurvey(survey) {
   const text = (value, max) => typeof value === 'string' && value.trim().length > 0 && value.length <= max;
-  const list = (value, max) => Array.isArray(value) && value.length > 0 && value.length <= max && value.every(item => text(item, 80)) && new Set(value).size === value.length;
+  const list = (value, max, min = 1) => Array.isArray(value) && value.length >= min && value.length <= max && value.every(item => text(item, 80)) && new Set(value).size === value.length;
   if (!survey || !text(survey.id, 100) || !text(survey.date, 40) || !Number.isFinite(Date.parse(survey.date))
     || !text(survey.industry, 100) || !industryOptions.includes(survey.industry) || !text(survey.professionalRole, 100) || !text(survey.experience, 100)
-    || !list(survey.stack, 20) || !list(survey.softSkills, 10)) throw new RequestError(400, 'Сначала заполните анкету.');
+    || !list(survey.stack, MAX_STACK_SKILLS) || !list(survey.softSkills, 10, 0)) throw new RequestError(400, 'Сначала заполните анкету.');
   getProgram(survey.specialization, survey.desiredGrade);
   return { id: survey.id, date: survey.date, industry: survey.industry, professionalRole: survey.professionalRole,
     specialization: survey.specialization, desiredGrade: survey.desiredGrade, experience: survey.experience,

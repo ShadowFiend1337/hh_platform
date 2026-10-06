@@ -139,6 +139,43 @@ test('server grading uses its answer keys: four of six fails and five of six pas
   assert.equal(passed.competencies.reduce((count, topic) => count + topic.total, 0), 6);
 });
 
+test('empty self-reported soft skills allow every program without changing its blueprint or grade threshold', () => {
+  for (const [specialization, grades] of Object.entries(programs)) for (const [grade, program] of Object.entries(grades)) {
+    const attempt = createAttempt({ ...survey(specialization, grade), softSkills: [] }, '', [], initialTime);
+    assert.deepEqual(attempt.survey.softSkills, []);
+    assert.equal(attempt.specialization, specialization);
+    assert.equal(attempt.grade, grade);
+    assertBlueprint(attempt, program);
+    const failed = evaluate(attempt, answersFor(attempt, 4), initialTime + 1000).result;
+    const passed = evaluate(attempt, answersFor(attempt, 5), initialTime + 1000).result;
+    assert.equal(failed.score, 67); assert.equal(failed.passed, false);
+    assert.equal(passed.score, 83); assert.equal(passed.passed, true);
+    assert.equal(passed.specialization, specialization);
+    assert.equal(passed.grade, grade);
+  }
+});
+
+test('optional soft skill selection retains the array contract and rejects malformed values', () => {
+  const missing = survey(); delete missing.softSkills;
+  rejectsStatus(() => validateSurvey(missing), 400);
+  for (const softSkills of [undefined, null, 'Коммуникация', {}, [''], [' '.repeat(3)], [1],
+    ['Повтор', 'Повтор'], ['x'.repeat(81)], Array.from({ length: 11 }, (_, index) => `Навык ${index}`)]) {
+    rejectsStatus(() => validateSurvey({ ...survey(), softSkills }), 400);
+  }
+  rejectsStatus(() => validateSurvey({ ...survey(), stack: [], softSkills: [] }), 400);
+});
+
+test('resume stacks above twenty skills survive validation up to the shared one hundred skill limit', () => {
+  const stack = Array.from({ length: 100 }, (_, index) => `Технология ${index + 1}`);
+  for (const count of [21, 100]) {
+    const input = { ...survey(), stack: stack.slice(0, count), softSkills: [] };
+    const validated = validateSurvey(input);
+    assert.deepEqual(validated.stack, input.stack);
+    assert.notStrictEqual(validated.stack, input.stack);
+  }
+  rejectsStatus(() => validateSurvey({ ...survey(), stack: [...stack, 'Лишняя технология'] }), 400);
+});
+
 test('forged IDs, duplicate questions, missing answers and injected scores are rejected', () => {
   const attempt = createAttempt(survey(), '', [], initialTime);
   const correct = answersFor(attempt);

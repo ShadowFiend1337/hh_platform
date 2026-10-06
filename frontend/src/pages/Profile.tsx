@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from 'react';
 import { BadgeCheck, Eye, FileText, Medal, UserRound } from 'lucide-react';
-import { dateLabel, industryOptions, isSpecialization, specializationOptions, softSkillOptions, specializationLabels, type Grade, type PlatformState, type Specialization } from '../model';
+import { dateLabel, industryOptions, isSpecialization, specializationOptions, specializationLabels, type Grade, type PlatformState, type Specialization } from '../model';
 import { FormHeader } from './Company';
+import { MAX_STACK_SKILLS, resumeTextLimits } from '../../../shared/resume-limits';
 
 function sameValues(left: string[], right: string[]) {
   const leftValues = new Set(left);
@@ -25,7 +26,7 @@ export function Profile({ state, update, notify, onTest, onPreview }: {
     const stack = [...new Set(String(fields.get('stack')).split(',').map(skill => skill.trim()).filter(Boolean))];
     const industry = String(fields.get('industry') || '').trim();
     const professionalRole = String(fields.get('professionalRole') || '').trim();
-    const softSkills = softSkillOptions.filter(skill => fields.getAll('softSkills').includes(skill));
+    const softSkills: string[] = [];
     const specialization = String(fields.get('specialization')) as Specialization;
     const desiredGrade = String(fields.get('desiredGrade')) as Grade;
     const experience = String(fields.get('experience')).trim();
@@ -33,7 +34,7 @@ export function Profile({ state, update, notify, onTest, onPreview }: {
     if (!industryOptions.includes(industry)) { setError('Выберите отрасль.'); return; }
     if (!isSpecialization(specialization)) { setError('Выберите специализацию.'); return; }
     if (!professionalRole || professionalRole.length > 100) { setError('Укажите роль в команде: не более 100 символов.'); return; }
-    if (!softSkills.length) { setError('Выберите хотя бы один софт-скилл.'); return; }
+    if (stack.length > MAX_STACK_SKILLS || stack.some(skill => skill.length > 80)) { setError(`Укажите до ${MAX_STACK_SKILLS} навыков, не более 80 символов каждый.`); return; }
     update(previous => {
       const professionalChanged = specialization !== previous.profile.specialization
         || desiredGrade !== previous.profile.desiredGrade
@@ -72,14 +73,13 @@ export function Profile({ state, update, notify, onTest, onPreview }: {
         <FormHeader title="Навыки" Icon={FileText} />
         <div className="form-grid"><label className="field"><span>Специализация</span><select name="specialization" defaultValue={profile.specialization}>{specializationOptions.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}</select></label><label className="field"><span>Предполагаемый грейд</span><select name="desiredGrade" defaultValue={profile.desiredGrade}><option>Junior</option><option>Middle</option></select></label></div>
         <div className="form-grid"><label className="field"><span>Отрасль</span><select name="industry" required defaultValue={profile.industry || ''}><option value="">Выберите отрасль</option>{industryOptions.map(industry => <option key={industry}>{industry}</option>)}</select></label><label className="field"><span>Роль в команде</span><input name="professionalRole" required maxLength={100} defaultValue={profile.professionalRole} placeholder="Например, разработчик интерфейсов" /></label></div>
-        <div className="form-grid"><label className="field"><span>Опыт работы</span><input name="experience" required maxLength={100} defaultValue={profile.experience} /></label><label className="field"><span>Формат работы</span><select name="format" defaultValue={profile.format}><option>Удалённо</option><option>Гибрид</option><option>Офис</option></select></label></div>
-        <label className="field"><span>Стек</span><input name="stack" required maxLength={500} defaultValue={profile.stack.join(', ')} placeholder="React, TypeScript, CSS" /></label>
-        <fieldset className="soft-skills-field"><legend>Софт-скиллы</legend><div className="skill-choices">{softSkillOptions.map(skill => <label className="skill-choice" key={skill}><input name="softSkills" type="checkbox" value={skill} defaultChecked={profile.softSkills?.includes(skill)} /><span>{skill}</span></label>)}</div></fieldset>
+        <div className="form-grid"><label className="field"><span>Общий стаж</span><input name="experience" required maxLength={100} defaultValue={profile.experience} /></label><label className="field"><span>Формат работы</span><select name="format" defaultValue={profile.format}><option>Удалённо</option><option>Гибрид</option><option>Офис</option></select></label></div>
+        <label className="field"><span>Стек</span><input name="stack" required maxLength={resumeTextLimits.stack} defaultValue={profile.stack.join(', ')} placeholder="React, TypeScript, CSS" /></label>
+        <label className="field"><span>Места работы и проекты</span><textarea name="workHistory" rows={6} maxLength={resumeTextLimits.workHistory} defaultValue={profile.workHistory || ''} /></label>
         <label className="field"><span>О себе</span><textarea name="bio" rows={4} maxLength={3000} defaultValue={profile.bio} /></label>
-        <label className="field"><span>Достижения</span><textarea name="careerAchievements" rows={3} maxLength={2000} defaultValue={profile.careerAchievements || ''} placeholder="Результаты проектов, награды, соревнования" /></label>
+        <label className="field"><span>Достижения</span><textarea name="careerAchievements" rows={3} maxLength={resumeTextLimits.careerAchievements} defaultValue={profile.careerAchievements || ''} placeholder="Результаты проектов, награды, соревнования" /></label>
         <details className="onboarding-details"><summary>Подробнее о себе</summary>
-          <label className="field"><span>Места работы и проекты</span><textarea name="workHistory" rows={3} maxLength={4000} defaultValue={profile.workHistory || ''} /></label>
-          <label className="field"><span>Образование</span><textarea name="education" rows={2} maxLength={2000} defaultValue={profile.education || ''} /></label>
+          <label className="field"><span>Образование</span><textarea name="education" rows={2} maxLength={resumeTextLimits.education} defaultValue={profile.education || ''} /></label>
           <div className="form-grid"><label className="field"><span>Языки</span><input name="languages" maxLength={500} defaultValue={profile.languages || ''} /></label><label className="field"><span>Портфолио</span><input name="portfolio" maxLength={1000} defaultValue={profile.portfolio || ''} placeholder="GitHub или ссылка на проекты" /></label></div>
         </details>
         <div className="section-divider" />

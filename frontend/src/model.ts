@@ -1,4 +1,5 @@
 import { detectSpecialization, industryOptions, isSpecialization, stackOptions, type Specialization } from '../../shared/catalog.ts';
+import { resumeTextLimits } from '../../shared/resume-limits.ts';
 export { defaultStackOptions, industryOptions, isSpecialization, specializationLabels, specializationNames, specializationOptions, specializationStacks } from '../../shared/catalog.ts';
 export { stackOptions } from '../../shared/catalog.ts';
 export type { Specialization } from '../../shared/catalog.ts';
@@ -171,9 +172,9 @@ export function readState(): PlatformState {
         && stored.history.some((item: TestResult) => item.id === 'test-initial' && item.date === stored.profile.confirmed.date);
       const profile: Candidate = {
         ...stored.profile,
-        careerAchievements: typeof stored.profile.careerAchievements === 'string' ? stored.profile.careerAchievements.slice(0, 2000) : '',
-        education: typeof stored.profile.education === 'string' ? stored.profile.education.slice(0, 2000) : '',
-        workHistory: typeof stored.profile.workHistory === 'string' ? stored.profile.workHistory.slice(0, 4000) : '',
+        careerAchievements: typeof stored.profile.careerAchievements === 'string' ? stored.profile.careerAchievements.slice(0, resumeTextLimits.careerAchievements) : '',
+        education: typeof stored.profile.education === 'string' ? stored.profile.education.slice(0, resumeTextLimits.education) : '',
+        workHistory: typeof stored.profile.workHistory === 'string' ? stored.profile.workHistory.slice(0, resumeTextLimits.workHistory) : '',
         portfolio: typeof stored.profile.portfolio === 'string' ? stored.profile.portfolio.slice(0, 1000) : '',
         languages: typeof stored.profile.languages === 'string' ? stored.profile.languages.slice(0, 500) : '',
         industry: typeof stored.profile.industry === 'string' ? stored.profile.industry : '',
@@ -202,7 +203,7 @@ export function currentSurvey(state: PlatformState): CandidateSurvey | undefined
   const profile = state.profile;
   if (!profile.surveyCompletedAt || !profile.name.trim() || !profile.email.trim()
     || !industryOptions.includes(profile.industry) || !isSpecialization(profile.specialization) || !profile.professionalRole.trim()
-    || !profile.stack.length || !profile.experience.trim() || !profile.softSkills.length) return undefined;
+    || !profile.stack.length || !profile.experience.trim()) return undefined;
   const same = (a: string[], b: string[]) => a.length === b.length && a.every(value => b.includes(value));
   return state.surveys.find(survey => survey.date === profile.surveyCompletedAt
     && survey.industry === profile.industry && survey.professionalRole === profile.professionalRole
