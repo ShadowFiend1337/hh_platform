@@ -62,7 +62,7 @@ async function session() {
 
 async function stored(page) { return page.evaluate(key => JSON.parse(localStorage.getItem(key)), storageKey); }
 async function editBio(page, text) {
-  await page.getByLabel('О себе', { exact: true }).fill(text);
+  await page.locator('.profile-form textarea[name="bio"]').fill(text);
   await page.getByRole('button', { name: 'Сохранить изменения', exact: true }).click();
 }
 async function saved(page) { await page.locator('.data-status').getByText('Изменения сохранены', { exact: true }).waitFor(); }
@@ -83,13 +83,26 @@ try {
   await recover.page.reload();
   await recover.page.locator('.profile-form').waitFor();
   await recover.page.getByRole('button', { name: 'Повторить сохранение', exact: true }).waitFor();
-  assert.equal(await recover.page.getByLabel('О себе', { exact: true }).inputValue(), 'Несохранённые профессиональные изменения');
+  assert.equal(await recover.page.locator('.profile-form textarea[name="bio"]').inputValue(), 'Несохранённые профессиональные изменения');
   recover.backend.fail = false;
   await recover.page.getByRole('button', { name: 'Повторить сохранение', exact: true }).click();
   await saved(recover.page);
   assert.equal(recover.backend.state.profile.bio, 'Несохранённые профессиональные изменения');
   assert.equal(await recover.page.evaluate(key => JSON.parse(localStorage.getItem(key)).dirty, syncKey), false);
   console.log('PASS Failed PUT keeps draft across reload and explicit retry saves it');
+
+  recover.backend.fail = true;
+  await editBio(recover.page, 'Первый отклонённый вариант');
+  await recover.page.getByRole('button', { name: 'Повторить сохранение', exact: true }).waitFor();
+  const failedPuts = recover.backend.puts.length;
+  await recover.page.waitForTimeout(600);
+  assert.equal(recover.backend.puts.length, failedPuts, 'An unchanged failed draft must not enter an automatic retry loop');
+  recover.backend.fail = false;
+  await editBio(recover.page, 'Исправленный вариант после ошибки');
+  await saved(recover.page);
+  assert.equal(recover.backend.state.profile.bio, 'Исправленный вариант после ошибки');
+  assert.equal(recover.backend.puts.length, failedPuts + 1, 'Submitting a changed draft is a new save and clears the stale error');
+  console.log('PASS A corrected draft saves after failure while an unchanged draft requires retry');
 
   const conflict = await session();
   conflict.backend.conflict = backend => {

@@ -5,7 +5,7 @@ import json
 import sys
 import time
 import numpy as np
-from common import Encoder, MODEL_DIR, DIMENSION, MAX_LENGTH, sha256_file
+from common import Encoder, MODEL_DIR, DIMENSION, sha256_file, encoding_fingerprint, policy_from_metadata
 
 def main():
     if hasattr(sys.stdin, "reconfigure"):
@@ -23,6 +23,10 @@ def main():
         raise ValueError("Expected the trained 312-dimensional encoder artifact")
     if sha256_file(model_dir / "model.safetensors") != metadata["weightsSha256"]:
         raise ValueError("Model weight hash does not match metadata")
+    policy = policy_from_metadata(metadata)
+    fingerprint = encoding_fingerprint(metadata["weightsSha256"], policy)
+    if metadata.get("encodingFingerprint", fingerprint) != fingerprint:
+        raise ValueError("Encoding policy fingerprint does not match metadata")
     encoder = Encoder(model_dir, threads=args.threads)
     durations = deque(maxlen=200)
     for line in sys.stdin:
@@ -37,7 +41,8 @@ def main():
             if request.get("kind") == "health":
                 response = dict(id=identifier, dimension=DIMENSION, modelVersion=metadata["modelVersion"],
                                 trained=True, baseModel=metadata["baseModel"], license=metadata["license"],
-                                threshold=metadata["threshold"], maxSequenceLength=MAX_LENGTH,
+                                threshold=metadata["threshold"], maxSequenceLength=policy["maxLength"],
+                                encodingPolicy=policy, encodingFingerprint=fingerprint,
                                 cpuThreads=args.threads, batchSize=16,
                                 p95LatencyMs=round(float(np.percentile(durations, 95)), 3) if durations else None,
                                 latencySamples=len(durations))

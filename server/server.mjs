@@ -149,8 +149,11 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const port = Number(process.env.PORT || 8787);
-  const { server } = createAssessmentServer({ dbPath: process.env.ASSESSMENT_DB || undefined });
-  server.listen(port, process.env.HOST || '127.0.0.1', () => console.log('Assessment server: http://' + (process.env.HOST || '127.0.0.1') + ':' + port));
+  const { server, directory } = createAssessmentServer({ dbPath: process.env.ASSESSMENT_DB || undefined });
+  server.listen(port, process.env.HOST || '127.0.0.1', () => {
+    console.log('Assessment server: http://' + (process.env.HOST || '127.0.0.1') + ':' + port);
+    void directory.ensureIndex().catch(() => console.log('Semantic model is unavailable. Run npm run train:search.'));
+  });
   const shutdown = () => server.close(() => process.exit(0));
   process.on('SIGINT', shutdown); process.on('SIGTERM', shutdown);
 }

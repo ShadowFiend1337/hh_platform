@@ -420,13 +420,25 @@ try {
   const migration = await migrationContext.newPage();
   await migration.goto(base + '/app?role=candidate&tab=profile');
   await migration.getByRole('heading', { name: 'Анкета', exact: true }).waitFor();
-  await saved(migration);
-  assert.equal(await migration.getByLabel('Email', { exact: true }).inputValue(), 'edited@example.com', 'A new session may migrate its private edited contact');
+  await migration.getByRole('button', { name: 'Повторить сохранение', exact: true }).waitFor();
+  assert.match(await migration.locator('.data-status').textContent(), /Для сохранения личной анкеты необходимо согласие/u);
+  assert.equal(await migration.getByLabel('Email', { exact: true }).inputValue(), 'edited@example.com', 'An unconsented legacy draft stays editable locally');
+  assert.equal(await migration.getByLabel('Согласен на обработку персональных данных', { exact: true }).isChecked(), false, 'Synthetic legacy consent is never accepted automatically');
+  assert.equal((await (await migrationContext.request.get(base + '/api/platform/state')).json()).state, null, 'The server rejects private legacy contacts before explicit consent');
+  await migration.getByRole('combobox', { name: 'Отрасль', exact: true }).selectOption('ИТ');
+  await migration.getByLabel('Роль в команде', { exact: true }).fill('Разработчик');
+  await migration.getByRole('combobox', { name: 'Специализация', exact: true }).selectOption('Frontend');
+  await migration.getByRole('combobox', { name: 'Предполагаемый грейд', exact: true }).selectOption('Middle');
+  await migration.getByLabel('Согласен на обработку персональных данных', { exact: true }).check();
+  assert.equal(await migration.locator('.onboarding-form').evaluate(form => form.checkValidity()), true);
+  await persist(() => migration.getByRole('button', { name: 'К тесту', exact: true }).click(), migration);
   const migrated = await (await migrationContext.request.get(base + '/api/platform/state')).json();
+  assert.equal(migrated.state.profile.email, 'edited@example.com', 'Explicit consent permits the private edited contact to migrate');
+  assert.equal(migrated.state.profile.consent, true);
   assert.equal(migrated.state.profile.confirmed, null, 'An old synthetic category is not a server assessment');
   assert.equal(migrated.state.history.length, 0);
   assert.equal(migrated.state.profile.visible, false);
-  console.log('PASS Isolated legacy migration preserves private edits without accepting a synthetic qualification');
+  console.log('PASS Isolated legacy migration requires explicit consent and rejects a synthetic qualification');
   await migrationContext.request.delete(base + '/api/platform/state');
   await migrationContext.close();
 

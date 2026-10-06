@@ -20,7 +20,11 @@ export interface DirectorySearch {
   offset: number;
   limit: number;
   query: string;
-  interpreted: { salaryMax?: number; specialization?: string; grade?: string; format?: string; city?: string };
+  interpreted: { salaryMax?: number; specialization?: string; grade?: string; format?: string; city?: string;
+    experienceMin?: number; experienceMax?: number; stack?: string[]; language?: string; hasPortfolio?: boolean;
+    queryConstraints?: { exclude?: Record<string, string[]>; any?: Record<string, string[]>; all?: Record<string, string[]>;
+      groups?: Record<string, string[][]> } };
+  effectiveFilters?: SearchFilters;
   model: { status: 'ready' | 'unavailable'; name: string; version: string; dimension: number; trained: boolean };
   warnings?: string[];
 }

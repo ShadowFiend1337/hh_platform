@@ -37,9 +37,12 @@ export function Employer({ state, update, onProfile, onInvite, notify, directory
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
   const [pageError, setPageError] = useState('');
+  const [pageNotice, setPageNotice] = useState('');
+  const [exhausted, setExhausted] = useState(false);
   const [retry, setRetry] = useState(0);
   const generation = useRef(0);
   const pageRequest = useRef<AbortController | null>(null);
+  const pageOffset = useRef(0);
   const previousRequest = useRef<{ query: string; retry: number; revision: number } | null>(null);
   const filterStackOptions = [...new Set([...(isSpecialization(filters.specialization) ? specializationStacks[filters.specialization] : defaultStackOptions), ...filters.stack])];
   const filterCount = Object.entries(filters).reduce((count, [key, value]) => count + (key === 'stack' ? filters.stack.length : Number(value !== '' && value !== null && value !== false)), 0);
@@ -61,10 +64,14 @@ export function Employer({ state, update, onProfile, onInvite, notify, directory
     const previous = previousRequest.current;
     const immediate = !previous || previous.query !== query || previous.retry !== retry || previous.revision !== directoryRevision;
     previousRequest.current = { query, retry, revision: directoryRevision };
-    setLoading(true); setLoadingMore(false); setError(''); setPageError('');
+    setLoading(true); setLoadingMore(false); setError(''); setPageError(''); setPageNotice('');
     const timer = window.setTimeout(() => {
       void searchDirectory(query, filters, 0, controller.signal).then(result => {
-        if (!controller.signal.aborted && generation.current === version) setResponse(result);
+        if (!controller.signal.aborted && generation.current === version) {
+          pageOffset.current = result.offset + result.items.length;
+          setExhausted(result.items.length === 0 || pageOffset.current >= result.total);
+          setResponse(result);
+        }
       }).catch(cause => {
         if (!controller.signal.aborted && generation.current === version) setError(cause instanceof Error ? cause.message : 'Не удалось получить подборку.');
       }).finally(() => {
@@ -88,14 +95,24 @@ export function Employer({ state, update, onProfile, onInvite, notify, directory
     notify('Подборка сохранена');
   }
   async function loadMore() {
-    if (!response || loading || loadingMore || error || pageRequest.current) return;
+    if (!response || loading || loadingMore || error || exhausted || pageRequest.current) return;
     const controller = new AbortController(); pageRequest.current = controller;
     const version = generation.current;
     setLoadingMore(true); setPageError('');
     try {
-      const result = await searchDirectory(query, filters, response.items.length, controller.signal);
+      const requestedOffset = pageOffset.current;
+      const result = await searchDirectory(query, filters, requestedOffset, controller.signal);
       if (controller.signal.aborted || generation.current !== version) return;
-      setResponse(previous => previous ? { ...result, offset: 0, items: [...previous.items, ...result.items.filter(item => !previous.items.some(old => old.person.id === item.person.id))] } : result);
+      const nextOffset = result.offset + result.items.length;
+      pageOffset.current = Math.max(requestedOffset, nextOffset);
+      const atEnd = result.items.length === 0 || nextOffset <= requestedOffset || nextOffset >= result.total;
+      setExhausted(atEnd);
+      const added = result.items.filter(item => !response.items.some(old => old.person.id === item.person.id));
+      const items = [...response.items, ...added];
+      if (added.length !== result.items.length || atEnd && items.length !== result.total) {
+        setPageNotice('Каталог изменился. Обновите подборку.');
+      }
+      setResponse({ ...result, offset: 0, items });
     } catch (cause) {
       if (!controller.signal.aborted && generation.current === version) setPageError(cause instanceof Error ? cause.message : 'Не удалось загрузить следующую страницу.');
     } finally {
@@ -103,11 +120,29 @@ export function Employer({ state, update, onProfile, onInvite, notify, directory
     }
   }
   const interpreted = response?.interpreted;
+  const effective = response?.effectiveFilters;
+  const constraintLabel = (key: string, value: string) => key === 'specialization'
+    ? specializationOptions.find(item => item.value === value)?.label || value
+    : key === 'grade' ? gradeLabels[value as keyof typeof gradeLabels] || value
+    : key === 'language' ? languageOptions.find(item => item.value === value)?.label || value : value;
   const interpretation = [
-    interpreted?.salaryMax !== undefined ? 'Зарплата до ' + amount(interpreted.salaryMax) + ' ₽' : '',
+    interpreted?.salaryMax !== undefined ? 'Зарплата до ' + amount(effective?.salaryMax ?? interpreted.salaryMax) + ' ₽' : '',
     interpreted?.specialization ? specializationOptions.find(item => item.value === interpreted.specialization)?.label || interpreted.specialization : '',
     interpreted?.grade ? gradeOptions.find(item => item.value === interpreted.grade)?.label || interpreted.grade : '',
     interpreted?.format || '', interpreted?.city || '',
+    interpreted?.experienceMin !== undefined ? 'Стаж от ' + years(effective?.experienceMin ?? interpreted.experienceMin) + ' лет' : '',
+    interpreted?.experienceMax !== undefined ? 'Стаж до ' + years(effective?.experienceMax ?? interpreted.experienceMax) + ' лет' : '',
+    ...(interpreted?.stack || []),
+    interpreted?.language ? constraintLabel('language', interpreted.language) : '',
+    interpreted?.hasPortfolio ? 'Есть портфолио' : '',
+    ...Object.entries(interpreted?.queryConstraints?.any || {}).filter(([, values]) => values.length > 1)
+      .map(([key, values]) => values.map(value => constraintLabel(key, value)).join(' или ')),
+    ...Object.entries(interpreted?.queryConstraints?.all || {}).filter(([key, values]) => key === 'language' && values.length > 1)
+      .map(([key, values]) => values.map(value => constraintLabel(key, value)).join(' и ')),
+    ...Object.entries(interpreted?.queryConstraints?.groups || {})
+      .flatMap(([key, groups]) => groups.map(values => values.map(value => constraintLabel(key, value)).join(' или '))),
+    ...Object.entries(interpreted?.queryConstraints?.exclude || {})
+      .map(([key, values]) => 'Без: ' + values.map(value => constraintLabel(key, value)).join(', ')),
   ].filter(Boolean);
   const unavailable = Boolean(query && response?.model.status === 'unavailable');
   return <>
@@ -178,7 +213,8 @@ export function Employer({ state, update, onProfile, onInvite, notify, directory
           </article>;
         })}
         {!loading && !error && !unavailable && response?.items.length === 0 && <div className="empty-state"><Search size={30} /><h3>Кандидатов пока нет</h3><p>Попробуйте изменить запрос или фильтры.</p><button className="button secondary" onClick={reset}>Сбросить поиск</button></div>}
-        {response && response.items.length < response.total && <div className="directory-pagination"><span className="muted">Показано {response.items.length} из {response.total}</span><button className="button secondary" disabled={loading || loadingMore || Boolean(error)} onClick={() => void loadMore()}>{loadingMore ? 'Загружаем…' : 'Показать ещё'}</button></div>}
+        {response && !exhausted && response.items.length < response.total && <div className="directory-pagination"><span className="muted">Показано {response.items.length} из {response.total}</span><button className="button secondary" disabled={loading || loadingMore || Boolean(error)} onClick={() => void loadMore()}>{loadingMore ? 'Загружаем…' : 'Показать ещё'}</button></div>}
+        {pageNotice && <div className="directory-warnings"><p>{pageNotice}</p><button className="text-button" disabled={loading || loadingMore} onClick={() => setRetry(value => value + 1)}>Обновить подборку</button></div>}
         {pageError && <div className="directory-error" role="alert"><p>{pageError}</p><button className="button secondary compact" disabled={loading || loadingMore} onClick={() => void loadMore()}>Повторить загрузку</button></div>}
       </section>
     </div>

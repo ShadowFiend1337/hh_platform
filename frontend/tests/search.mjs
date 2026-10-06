@@ -52,6 +52,7 @@ try {
   }, 'Older saved searches acquire neutral new defaults');
   assert.equal(normalizeSearchFilters({ minScore: 101, experienceMin: -1 }).minScore, null);
 
+  if (process.env.PREDEL_SEARCH_MOCK_ONLY !== '1') {
   const live = await context();
   const params = new URLSearchParams({ q: example, filters: '{}', limit: '30', offset: '0' });
   const exampleResponse = await live.request.get(base + '/api/directory/search?' + params, { timeout: 90000 });
@@ -142,6 +143,7 @@ try {
   assert.equal(await page.getByLabel('Стаж от, лет', { exact: true }).inputValue(), '5');
   assert.equal(await page.getByLabel('Баллы теста от', { exact: true }).inputValue(), '100');
   console.log('PASS API-backed pagination, explicit query submission, salary/experience/city/stack/language/portfolio/score and reload');
+  }
 
   const mocked = await context();
   let platform = createInitialState(), revision = 0;
@@ -154,18 +156,31 @@ try {
   });
   await mocked.route('**/api/directory/options', route => route.fulfill({ json: { cities: ['Москва', 'Казань'], industries: ['ИТ'], languages: [{ value: 'en', label: 'Английский' }], employmentTypes: ['Полная занятость'] } }));
   let fail = true;
+  let shiftedPagination = false;
   const mockRequests = [];
   await mocked.route('**/api/directory/search?*', async route => {
     const url = new URL(route.request().url()), query = queryOf(url), offset = Number(url.searchParams.get('offset'));
     mockRequests.push({ query, filters: filtersOf(url), offset });
     if (query === 'долгий') await pause(700);
     if (query === 'сбой' && fail) { fail = false; return route.fulfill({ status: 503, json: { error: 'Поиск по смыслу недоступен. Повторите запрос.' } }).catch(() => {}); }
-    const selected = query ? [{ ...mockPeople[0], name: query === 'новый' ? 'Новый результат' : 'Повторный результат' }] : mockPeople;
+    const selected = query ? [{ ...mockPeople[0], name: query === 'новый' ? 'Новый результат' : 'Повторный результат' }]
+      : shiftedPagination ? [{ ...mockPeople[0], id: 'inserted-first', name: 'Новый демонстрационный специалист' }, ...mockPeople] : mockPeople;
     await route.fulfill({ json: { items: selected.slice(offset, offset + 30).map(person => ({ person, reason: 'Серверное основание из опыта кандидата. Вымышленный профиль.', semanticScore: query ? 0.7 : null, rank: 1 })), total: selected.length, offset, limit: 30, query, interpreted: {}, model: { status: 'ready', trained: true, name: 'Тестовая модель', version: 'fixture', dimension: 312 }, warnings: [] } }).catch(() => {});
   });
   const race = await mocked.newPage(); watch(race);
   await race.goto(base + '/app'); await complete(race); await count(race, 30);
   assert.equal(await race.locator('.candidate-row').first().getByRole('button', { name: 'Отправлено', exact: true }).isDisabled(), true);
+  shiftedPagination = true;
+  await race.getByRole('button', { name: 'Показать ещё', exact: true }).click();
+  await complete(race); await count(race, 59);
+  await race.getByRole('button', { name: 'Показать ещё', exact: true }).click();
+  await complete(race); await count(race, 65);
+  assert.deepEqual(mockRequests.filter(request => request.offset > 0).map(request => request.offset), [30, 60], 'Raw offsets progress despite a duplicate caused by a rank change');
+  assert.equal(await race.getByRole('button', { name: 'Показать ещё', exact: true }).count(), 0, 'Pagination stops after consuming the raw last page');
+  await race.getByRole('button', { name: 'Обновить подборку', exact: true }).click();
+  await complete(race); await count(race, 30);
+  assert.match(await race.locator('.person-link').first().textContent(), /Новый демонстрационный/u, 'A refreshed first page includes the newly ranked profile');
+  console.log('PASS Changed ranking, advancing raw page offset, bounded append and explicit refresh');
   await race.locator('.directory-extra summary').click();
   const beforeFilters = mockRequests.length;
   await race.getByRole('combobox', { name: 'Город', exact: true }).selectOption('Москва');

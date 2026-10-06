@@ -56,6 +56,7 @@ export function usePlatformPersistence(state: PlatformState, update: Dispatch<Se
   const current = useRef(state); current.current = state;
   const baseline = useRef<PlatformState | null>(null);
   const persisted = useRef('');
+  const failedWriteHash = useRef<string | null>(null);
   const serverRevision = useRef(0);
   const writing = useRef<Promise<void> | null>(null);
   const blocked = useRef(false);
@@ -77,8 +78,12 @@ export function usePlatformPersistence(state: PlatformState, update: Dispatch<Se
       if (!active) return;
       const buffered = recovery.current;
       const recover = buffered?.dirty && buffered.draftHash === hash(current.current);
-      const merged = result.state && recover ? rebaseState(current.current, buffered.baseline, result.state) : result.state;
+      // A known server account that disappeared was deleted elsewhere. Do
+      // not migrate its browser cache back as a newly created account.
+      const deleted = !result.state && Boolean(buffered?.baseline);
+      const merged = deleted ? createInitialState() : result.state && recover ? rebaseState(current.current, buffered.baseline, result.state) : result.state;
       receive(result);
+      if (deleted) persisted.current = hash(merged);
       recovery.current = null;
       if (merged) { current.current = merged; update(merged); }
       setReady(true); setStatus(merged && hash(merged) === persisted.current ? 'saved' : 'saving');
@@ -93,16 +98,25 @@ export function usePlatformPersistence(state: PlatformState, update: Dispatch<Se
   }, [ready, state, revision, status]);
 
   useEffect(() => {
-    if (!ready || blocked.current || writing.current || status === 'error' || hash(state) === persisted.current) return;
+    if (!ready || blocked.current || writing.current) return;
+    if (status === 'error') {
+      // Keep an unchanged failed draft available for explicit retry. A user
+      // correction (for example new consent) is a new save, not that retry.
+      if (failedWriteHash.current === null || hash(state) === failedWriteHash.current) return;
+      failedWriteHash.current = null; setError(''); setStatus(hash(state) === persisted.current ? 'saved' : 'saving'); return;
+    }
+    if (hash(state) === persisted.current) return;
     setStatus('saving');
     const timer = window.setTimeout(() => {
       if (blocked.current || writing.current) return;
       writing.current = (async () => {
         let conflicts = 0;
+        let attemptedHash = hash(current.current);
         try {
           while (mounted.current && !blocked.current && hash(current.current) !== persisted.current) {
             const snapshot = current.current;
             const snapshotHash = hash(snapshot);
+            attemptedHash = snapshotHash;
             let result: PlatformResponse;
             try { result = await request('PUT', { state: snapshot, baseRevision: serverRevision.current }); }
             catch (cause) {
@@ -122,9 +136,10 @@ export function usePlatformPersistence(state: PlatformState, update: Dispatch<Se
             receive(result);
             if (hash(current.current) === snapshotHash && result.state) { current.current = result.state; update(result.state); }
           }
-          if (mounted.current && !blocked.current) { setStatus('saved'); setError(''); }
+          if (mounted.current && !blocked.current) { failedWriteHash.current = null; setStatus('saved'); setError(''); }
         } catch (cause) {
           if (mounted.current && !blocked.current) {
+            failedWriteHash.current = attemptedHash;
             setStatus('error'); setError(cause instanceof Error ? cause.message : 'Не удалось сохранить данные.');
           }
         } finally { writing.current = null; }
