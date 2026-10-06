@@ -15,8 +15,9 @@
     "test:browser": "node tests/smoke.mjs",
     "test:assessment": "node tests/assessment.mjs",
     "test:resume": "node tests/resume.mjs",
-    "test:resume-parser": "node --test tests/resume-parser.test.mjs tests/catalog.test.mjs",
-    "test:directions": "node tests/directions.mjs"
+    "test:resume-parser": "node --test tests/resume-parser.test.mjs tests/catalog.test.mjs tests/grading.test.mjs",
+    "test:directions": "node tests/directions.mjs",
+    "test:grades": "node tests/grades.mjs"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",

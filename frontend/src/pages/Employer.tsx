@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { ArrowUpRight, BadgeCheck, Bookmark, Check, ChevronDown, Info, MapPin, Medal, Search, SlidersHorizontal, X } from 'lucide-react';
 import {
-  defaultStackOptions, emptyFilters, initials, isSpecialization, searchCandidates, specializationLabels, specializationNames, specializationOptions, specializationStacks,
+  defaultStackOptions, emptyFilters, gradeLabels, gradeOptions, initials, isSpecialization, searchCandidates, specializationLabels, specializationNames, specializationOptions, specializationStacks,
   type Candidate, type Filters, type PlatformState,
 } from '../model';
 
@@ -80,7 +80,7 @@ export function Employer({ state, candidates, update, onProfile, onInvite, notif
       <aside className={'filters' + (showFilters ? ' filters-open' : '')} aria-label="Фильтры кандидатов">
         <div className="filter-heading"><h2>Фильтры</h2>{filterCount > 0 && <button className="text-button" onClick={() => setFilters({ ...emptyFilters, stack: [] })}>Сбросить</button>}</div>
         <label className="field"><span>Специализация</span><select value={filters.specialization} onChange={event => change('specialization', event.target.value)}><option value="">Все направления</option>{specializationOptions.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}</select></label>
-        <fieldset className="filter-group"><legend>Грейд</legend><div className="segmented">{['', 'Junior', 'Middle'].map(grade => <button key={grade} type="button" aria-pressed={filters.grade === grade} className={filters.grade === grade ? 'selected' : ''} onClick={() => change('grade', grade)}>{grade || 'Все'}</button>)}</div></fieldset>
+        <fieldset className="filter-group"><legend>Грейд</legend><div className="segmented">{[{ value: '', label: 'Все' }, ...gradeOptions].map(({ value, label }) => <button key={value} type="button" aria-pressed={filters.grade === value} className={filters.grade === value ? 'selected' : ''} onClick={() => change('grade', value)}>{label}</button>)}</div></fieldset>
         <label className="field"><span>Формат работы</span><select value={filters.format} onChange={event => change('format', event.target.value)}><option value="">Любой</option><option>Удалённо</option><option>Гибрид</option><option>Офис</option></select></label>
         <fieldset className="filter-group"><legend>Стек</legend><div className="stack-filters">{filterStackOptions.map(skill => <button type="button" key={skill} className={'filter-chip' + (filters.stack.includes(skill) ? ' selected' : '')} aria-pressed={filters.stack.includes(skill)} onClick={() => change('stack', filters.stack.includes(skill) ? filters.stack.filter(value => value !== skill) : [...filters.stack, skill])}>{filters.stack.includes(skill) && <Check size={12} />}{skill}</button>)}</div></fieldset>
         <label className="checkbox-field fsp-filter"><input type="checkbox" checked={filters.fsp} onChange={event => change('fsp', event.target.checked)} /><span><Medal size={16} />Есть достижения ФСП</span></label>
@@ -93,7 +93,7 @@ export function Employer({ state, candidates, update, onProfile, onInvite, notif
             <button className={'avatar avatar-tone-' + (index % 4)} onClick={() => onProfile(person)} aria-label={'Открыть профиль ' + person.name}>{initials(person.name)}</button>
             <div className="candidate-main">
               <button className="person-link" onClick={() => onProfile(person)}>{person.name}<BadgeCheck size={17} className="confirmed-icon" aria-label="Категория подтверждена" /></button>
-              <p className="candidate-specialization">{specializationLabels[person.confirmed!.specialization]}<span className="dot-divider">·</span>{person.confirmed!.grade}</p>
+              <p className="candidate-specialization">{specializationLabels[person.confirmed!.specialization]}<span className="dot-divider">·</span>{gradeLabels[person.confirmed!.grade]}</p>
               <span className="metadata"><MapPin size={13} />{person.city}<span className="dot-divider">·</span>{person.experience}<span className="dot-divider">·</span>{person.format}</span>
               <div className="tags">{person.stack.slice(0, 4).map(skill => <span className="tag" key={skill}>{skill}</span>)}{person.achievements.length > 0 && <span className="tag fsp-tag"><Medal size={12} />ФСП</span>}</div>
             </div>

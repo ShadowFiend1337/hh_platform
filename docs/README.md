@@ -17,7 +17,7 @@
 | [resume_requirements.md](resume_requirements.md) | Требования ТЗ к импорту резюме, дополнительные поля анкеты и фактическая обработка данных |
 | [resume_validation.md](resume_validation.md) | Результаты проверки импорта четырёх резюме, OCR и сценариев приватности |
 | [directions_validation.md](directions_validation.md) | Проверки 13 специализаций, 25 отраслей и полного пути ML-кандидата |
-| [assessment_validation.md](assessment_validation.md) | Проверки структуры 26 программ, формирования из вакансий и скрытых ответов |
+| [assessment_validation.md](assessment_validation.md) | Проверки структуры 65 программ, формирования из вакансий и скрытых ответов |
 | [interface.md](interface.md) | Реализованные сценарии интерфейсного прототипа, запуск и границы демонстрации |
 
 ## Как читать

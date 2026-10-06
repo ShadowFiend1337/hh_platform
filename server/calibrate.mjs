@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isSpecialization } from '../shared/catalog.ts';
+import { isGrade } from '../shared/grading.ts';
 
 const mean = values => values.reduce((sum, value) => sum + value, 0) / values.length;
 function percentile(values, fraction) {
@@ -17,7 +18,7 @@ export function calibrate(input) {
   for (const row of input.participants) {
     const [specialization, grade, extra] = typeof row?.program === 'string' ? row.program.split('/') : [];
     if (!row || typeof row.id !== 'string' || !row.id.trim() || people.has(row.id)
-      || !isSpecialization(specialization || '') || !['Junior', 'Middle'].includes(grade) || extra !== undefined) throw new Error('Участник должен иметь уникальный ID и одну поддерживаемую программу.');
+      || !isSpecialization(specialization || '') || !isGrade(grade || '') || extra !== undefined) throw new Error('Участник должен иметь уникальный ID и одну поддерживаемую программу.');
     people.add(row.id);
     for (const attempt of [row.first, row.second]) {
       if (!attempt || typeof attempt.id !== 'string' || !attempt.id || attempts.has(attempt.id)

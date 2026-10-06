@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { BadgeCheck, Check, ClipboardCheck, Clock3, RotateCcw } from 'lucide-react';
 import { AssessmentError, createAssessment, getAssessmentProgram, readAssessment, resumeAssessment, saveAssessment, submitAssessment, type AssessmentAttempt, type AssessmentProgram } from '../assessment';
 import { CandidateSteps } from '../components/CandidateSteps';
-import { categoryChangeUnlock, currentSurvey, dateLabel, specializationNames, type PlatformState, type TestResult } from '../model';
+import { categoryChangeUnlock, currentSurvey, dateLabel, gradeLabels, specializationNames, type PlatformState, type TestResult } from '../model';
 
 function errorMessage(error: unknown) {
   return error instanceof AssessmentError ? error.message : 'Не удалось загрузить тест. Попробуйте ещё раз.';
@@ -183,12 +183,12 @@ export function Assessment({ state, update, notify, onProfile, onSurvey }: {
         <div className={'result-icon ' + (result.passed ? 'result-passed' : '')}>{result.passed ? <BadgeCheck size={34} /> : <RotateCcw size={30} />}</div>
         <span className="result-score">{result.score}<small>/100</small></span>
         <h2>{result.passed ? 'Грейд подтверждён' : 'Грейд не подтверждён'}</h2>
-        <p className="muted">{specializationNames[result.specialization]} · {result.grade}</p>
+        <p className="muted">{specializationNames[result.specialization]} · {gradeLabels[result.grade]}</p>
         {result.competencies?.length ? <dl className="competency-results">{result.competencies.map(item => <div key={item.topic}><dt>{item.topic}</dt><dd>{item.score}/100</dd></div>)}</dl> : null}
-        {!result.passed && state.profile.confirmed && <p className="result-note">Ваша категория {specializationNames[state.profile.confirmed.specialization]} · {state.profile.confirmed.grade} сохранена.</p>}
+        {!result.passed && state.profile.confirmed && <p className="result-note">Ваша категория {specializationNames[state.profile.confirmed.specialization]} · {gradeLabels[state.profile.confirmed.grade]} сохранена.</p>}
         <div className="button-group"><button className="button secondary" onClick={onSurvey}>Изменить анкету</button>{result.passed ? <button className="button primary" onClick={onProfile}>К профилю</button> : <button className="button primary" onClick={() => setResult(null)}>Попробовать снова</button>}</div>
       </section> : current ? <section className="panel exam-panel" aria-busy={busy === 'submitting'}>
-        <div className="exam-header"><span>{specializationNames[specialization]} · {grade}</span><span className="muted">Вопрос {index + 1} из {exam.length}</span></div>
+        <div className="exam-header"><span>{specializationNames[specialization]} · {gradeLabels[grade]}</span><span className="muted">Вопрос {index + 1} из {exam.length}</span></div>
         <div className="exam-progress" role="progressbar" aria-label="Прогресс теста" aria-valuemin={0} aria-valuemax={exam.length} aria-valuenow={index + 1}><span style={{ width: ((index + 1) / exam.length * 100) + '%' }} /></div>
         {index === 0 && session?.vacancy && <div className="vacancy-summary">
           {session.vacancy.matchedSkills.length ? <div className="tags" aria-label="Навыки из вакансии">{session.vacancy.matchedSkills.map(skill => <span key={skill}>{skill}</span>)}</div> : <p className="field-help">Совпадений для этого варианта нет. Используется стандартная программа.</p>}
@@ -198,7 +198,7 @@ export function Assessment({ state, update, notify, onProfile, onSurvey }: {
         <fieldset className="answer-options" disabled={busy === 'submitting'}><legend className="sr-only">Варианты ответа</legend>{current.options.map(option => <label key={option.id} className={'answer-option' + (answers[current.id] === option.id ? ' selected' : '')}><input type="radio" name={current.id} checked={answers[current.id] === option.id} onChange={() => setAnswers(previousAnswers => ({ ...previousAnswers, [current.id]: option.id }))} /><span>{option.text}</span>{answers[current.id] === option.id && <Check size={17} />}</label>)}</fieldset>
         <div className="exam-actions"><button className="button secondary" disabled={index === 0 || busy === 'submitting'} onClick={() => { setError(''); setIndex(index - 1); }}>Назад</button><button className="button primary" disabled={!answers[current.id] || busy === 'submitting'} onClick={() => index === exam.length - 1 ? finish() : setIndex(index + 1)}>{busy === 'submitting' ? 'Проверяем…' : index === exam.length - 1 ? 'Завершить тест' : 'Далее'}</button></div>
       </section> : <div className="assessment-layout">
-        <section className="panel assessment-setup"><div className="assessment-category"><strong>{specializationNames[specialization]} · {grade}</strong><button className="text-button" onClick={onSurvey}>Изменить анкету</button></div>
+        <section className="panel assessment-setup"><div className="assessment-category"><strong>{specializationNames[specialization]} · {gradeLabels[grade]}</strong><button className="text-button" onClick={onSurvey}>Изменить анкету</button></div>
           {programBusy ? <p className="muted" role="status">Загружаем программу…</p> : programError ? <div className="assessment-error" role="alert"><span>{programError}</span><button className="text-button" onClick={() => setProgramVersion(value => value + 1)}>Повторить</button></div> : program && <>
             <div className="assessment-info"><div><ClipboardCheck size={18} /><span>{program.questionCount} вопросов</span></div><div><Clock3 size={18} /><span>{program.expiresInMinutes} минут</span></div></div>
             <h2 className="section-heading">Программа</h2><div className="competency-list">{program.topics.map(topic => <div key={topic}><Check size={15} />{topic}</div>)}</div>

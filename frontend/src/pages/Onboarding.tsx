@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Paperclip, Trash2 } from 'lucide-react';
 import { MAX_STACK_SKILLS, resumeTextLimits as textLimits } from '../../../shared/resume-limits';
 import { CandidateSteps } from '../components/CandidateSteps';
-import { industryOptions, isSpecialization, specializationOptions, type CandidateSurvey, type Grade, type PlatformState, type Specialization } from '../model';
+import { gradeOptions, industryOptions, isGrade, isSpecialization, specializationOptions, type CandidateSurvey, type Grade, type PlatformState, type Specialization } from '../model';
 import type { ResumeFields } from '../resume-parser';
 
 type Draft = {
@@ -71,7 +71,7 @@ export function Onboarding({ state, update, onComplete }: {
         if (typeof value !== 'string' || !value.trim()) continue;
         if (key === 'industry' && !industryOptions.includes(value)) continue;
         if (key === 'specialization' && !isSpecialization(value)) continue;
-        if (key === 'desiredGrade' && !['Junior', 'Middle'].includes(value)) continue;
+        if (key === 'desiredGrade' && !isGrade(value)) continue;
         if (key === 'format' && !workFormats.includes(value)) continue;
         if (value.trim().length > textLimits[key]) truncated.add(key);
         recognized[key] = value.trim().slice(0, textLimits[key]);
@@ -94,7 +94,8 @@ export function Onboarding({ state, update, onComplete }: {
         ? 'Проверьте данные и заполните пустые обязательные поля.'
         : 'Текст прочитан, но поля не распознаны. Заполните анкету.';
       const labels = [...truncated].map(key => fieldLabels[key]);
-      setResumeStatus(labels.length ? `${status} Сокращены длинные поля: ${labels.join(', ')}. Проверьте их содержимое.` : status);
+      const truncatedNotice = labels.length ? `Сокращены длинные поля: ${labels.join(', ')}. Проверьте их содержимое.` : '';
+      setResumeStatus([status, truncatedNotice, ...result.warnings].filter(Boolean).join(' '));
     } catch (cause) {
       if (controller.signal.aborted) return;
       setResumeStatus('');
@@ -117,7 +118,7 @@ export function Onboarding({ state, update, onComplete }: {
     const stack = [...new Set(draft.stack.split(',').map(skill => skill.trim()).filter(Boolean))];
     const softSkills: string[] = [];
     if (!name || !email || !industryOptions.includes(industry) || !professionalRole || !experience || !stack.length
-      || !isSpecialization(specialization) || !['Junior', 'Middle'].includes(desiredGrade)) {
+      || !isSpecialization(specialization) || !isGrade(desiredGrade)) {
       setError('Заполните обязательные поля анкеты.'); return;
     }
     if (stack.length > MAX_STACK_SKILLS || stack.some(skill => skill.length > 80)) { setError(`Укажите до ${MAX_STACK_SKILLS} навыков, не более 80 символов каждый.`); return; }
@@ -170,7 +171,7 @@ export function Onboarding({ state, update, onComplete }: {
       </div>
       <div className="form-grid">
         <label className="field"><span>Специализация</span><select name="specialization" required value={draft.specialization} onChange={event => change('specialization', event.target.value)}><option value="">Выберите</option>{specializationOptions.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}</select></label>
-        <label className="field"><span>Предполагаемый грейд</span><select name="desiredGrade" required value={draft.desiredGrade} onChange={event => change('desiredGrade', event.target.value)}><option value="">Выберите</option><option>Junior</option><option>Middle</option></select></label>
+        <label className="field"><span>Предполагаемый грейд</span><select name="desiredGrade" required value={draft.desiredGrade} onChange={event => change('desiredGrade', event.target.value)}><option value="">Выберите</option>{gradeOptions.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}</select></label>
       </div>
       <label className="field"><span>Стек</span><input name="stack" required maxLength={textLimits.stack} value={draft.stack} onChange={event => change('stack', event.target.value)} placeholder="React, TypeScript, CSS" /></label>
       <div className="form-grid">

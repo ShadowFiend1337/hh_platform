@@ -7,6 +7,7 @@ export interface ResumeResult {
   method: 'text' | 'ocr' | 'mixed';
   pages: number;
   truncatedFields: (keyof ResumeFields)[];
+  warnings: string[];
 }
 export interface ResumeOptions {
   onProgress?: (message: string) => void;
@@ -386,8 +387,9 @@ export async function readResume(file: File, options: ResumeOptions = {}): Promi
     text = boundedText(text);
     if ((text.match(/\p{L}/gu)?.length || 0) < 10) throw new Error('Текст не найден. Прикрепите более чёткое резюме.');
     const truncatedFields = new Set<keyof ResumeFields>();
-    const fields = parseResumeText(text, { onTruncate: field => truncatedFields.add(field) });
+    const warnings = new Set<string>();
+    const fields = parseResumeText(text, { onTruncate: field => truncatedFields.add(field), onWarning: message => warnings.add(message) });
     if (!Object.keys(fields).length) throw new Error('Не удалось найти данные анкеты. Попробуйте другой файл.');
-    return { fields, text, method, pages, truncatedFields: [...truncatedFields] };
+    return { fields, text, method, pages, truncatedFields: [...truncatedFields], warnings: [...warnings] };
   } finally { await documentWorker?.stop(); }
 }

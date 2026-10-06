@@ -5,8 +5,9 @@ import { bankVersion, programs } from './bank.mjs';
 import { createAttempt, publicAttempt } from './assessment.mjs';
 import { vacancyExamples } from './vacancies.mjs';
 import { specializationNames } from '../shared/catalog.ts';
+import { gradeLabels } from '../shared/grading.ts';
 
-const survey = (specialization, desiredGrade) => ({ id: 'validation-survey', date: new Date().toISOString(), industry: 'ИТ', professionalRole: 'Разработчик', specialization, desiredGrade, stack: ['JavaScript'], experience: '3 года', softSkills: ['Коммуникация'] });
+const survey = (specialization, desiredGrade) => ({ id: 'validation-survey', date: new Date().toISOString(), industry: 'ИТ', professionalRole: 'Разработчик', specialization, desiredGrade, stack: ['JavaScript'], experience: '3 года', softSkills: [] });
 const rows = [];
 let variantCount = 0;
 for (const [specialization, grades] of Object.entries(programs)) for (const [grade, program] of Object.entries(grades)) {
@@ -29,7 +30,7 @@ for (const [specialization, grades] of Object.entries(programs)) for (const [gra
     previous = [attempt, ...previous].slice(0, 2);
   }
   assert.ok(samples.size >= 20, 'Variant selection has become a predictable short cycle');
-  rows.push(`| ${specializationNames[specialization]} ${grade} | ${variants.length} | ${combinations} | 200 | ${samples.size} | 9 |`);
+  rows.push(`| ${specializationNames[specialization]} ${gradeLabels[grade]} | ${variants.length} | ${combinations} | 200 | ${samples.size} | 9 |`);
 }
 const assets = new URL('../frontend/dist/assets/', import.meta.url);
 const names = await readdir(assets);

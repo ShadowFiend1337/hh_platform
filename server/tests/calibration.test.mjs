@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { calibrate } from '../calibrate.mjs';
+import { gradeOptions } from '../../shared/grading.ts';
 
 test('paired metrics are computed per program; synthetic fixtures test arithmetic only', () => {
   const result = calibrate({ bankVersion: 'fixture', participants: [
@@ -29,7 +30,15 @@ test('new specializations are separate calibration groups and unknown programs a
   assert.deepEqual(result.programs.map(program => program.program), ['ML/Middle', 'Security/Junior']);
   assert.equal(result.programs[0].confirmationAgreement, 0);
   assert.equal(result.programs[1].confirmationAgreement, 1);
-  for (const program of ['Unknown/Junior', 'ML/Senior', 'ML/Middle/extra', 'constructor/Junior']) {
+  for (const program of ['Unknown/Junior', 'ML/Principal', 'ML/Middle/extra', 'constructor/Junior']) {
     assert.throws(() => calibrate({ bankVersion: 'fixture', participants: [{ ...row, program }] }));
   }
+});
+
+test('the five grades remain separate calibration groups', () => {
+  const participants = gradeOptions.map(({ value }, index) => ({ id: `candidate-${value}`, program: `Frontend/${value}`,
+    first: { id: `${value}-first`, score: 50 + index * 10 }, second: { id: `${value}-second`, score: 55 + index * 10 } }));
+  const result = calibrate({ bankVersion: 'fixture', participants });
+  assert.deepEqual(result.programs.map(item => item.program), gradeOptions.map(({ value }) => `Frontend/${value}`));
+  assert.ok(result.programs.every(item => item.pairs === 1 && item.meanDifference === 5));
 });

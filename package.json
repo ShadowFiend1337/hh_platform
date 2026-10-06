@@ -12,6 +12,7 @@
     "test:assessment": "npm --prefix frontend run test:assessment",
     "test:resume": "npm --prefix frontend run test:resume",
     "test:directions": "npm --prefix frontend run test:directions",
+    "test:grades": "npm --prefix frontend run test:grades",
     "validate:assessment": "node server/validate.mjs"
   }
 }

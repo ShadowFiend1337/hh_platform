@@ -14,6 +14,7 @@ const JSZip = mammothRequire('jszip');
 const browser = await chromium.launch();
 const context = await browser.newContext({ viewport: { width: 1440, height: 1100 }, reducedMotion: 'reduce' });
 const page = await context.newPage();
+await page.clock.setFixedTime(new Date('2026-10-06T09:00:00+03:00'));
 page.setDefaultTimeout(20000);
 const errors = [], externalRequests = [], importsRequests = [];
 let importing = false;
@@ -263,6 +264,24 @@ try {
   for (const company of ['North Company', 'Vector Company', 'Start Company']) assert.match(await page.locator('[name="workHistory"]').inputValue(), new RegExp(company));
   assert.equal(await page.locator('[name="workHistory"]').isVisible(), true, 'Imported work history must be visible in the main questionnaire');
   await assertNoAutomaticConsent();
+
+  const datedLines = experiencePages[0].map(line => line.replace('Опыт работы: 6 лет', 'Опыт работы'));
+  const datedScan = { name: 'synthetic-dated-scan.pdf', mimeType: 'application/pdf', buffer: resumePdf([
+    { jpeg: await imageResume('image/jpeg', datedLines), height: imageHeight(datedLines) }, experienceImages[1],
+  ]) };
+  const datedResult = await inspectDocument(datedScan);
+  assert.equal(datedResult.fields.experience, '6 лет 3 месяца', 'Actual OCR dates must automatically fill the total without an explicit summary');
+  assertCompleteExperience(datedResult, 'ocr');
+  await attach(datedScan);
+  assert.equal(await page.locator('[name="experience"]').inputValue(), '6 лет 3 месяца');
+
+  const invalidPeriodResume = { name: 'synthetic-invalid-dates.txt', mimeType: 'text/plain', buffer: Buffer.from([
+    'Иван Соколов', 'Frontend Senior', 'grade.test@example.com', 'Навыки: React', 'Опыт работы',
+    'Компания Север 03.2021 — 09.2021', 'Компания Вектор 09.2022 — 03.2022',
+  ].join('\n')) };
+  await attach(invalidPeriodResume);
+  assert.equal(await page.locator('[name="experience"]').inputValue(), '7 месяцев (по корректным датам)');
+  assert.match(await page.locator('.resume-import [role="status"]').textContent(), /Некоторые периоды работы не учтены/);
   await page.screenshot({ path: resolve('test-results', 'resume-desktop.png'), fullPage: true });
   await page.setViewportSize({ width: 320, height: 750 });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, 'Imported multi-job history must not overflow at 320px');
@@ -464,5 +483,5 @@ try {
   assert.deepEqual(importsRequests, []);
   assert.deepEqual(externalRequests, [], 'All parser and OCR assets must be loaded from this site');
   assert.deepEqual(errors, []);
-  console.log('PASS PDF/DOCX text, actual Russian/English OCR, complete multi-job history across scan/mixed/partial/Form PDFs, small-image native text, visible truncation, errors and cancellation, edit preservation, long-history persistence, assessment and profile without soft skills, private API payload, consent and deletion across tabs, mobile accessibility');
+  console.log('PASS PDF/DOCX text, actual Russian/English OCR, complete multi-job history across scan/mixed/partial/Form PDFs, automatic total from OCR dates and invalid-period warning, small-image native text, visible truncation, errors and cancellation, edit preservation, long-history persistence, assessment and profile without soft skills, private API payload, consent and deletion across tabs, mobile accessibility');
 } finally { await context.close(); await browser.close(); }

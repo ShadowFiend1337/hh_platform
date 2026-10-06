@@ -1,5 +1,6 @@
 import { detectIndustry, detectSpecialization, type Specialization } from '../../shared/catalog.ts';
 import { MAX_STACK_SKILLS, resumeTextLimits } from '../../shared/resume-limits.ts';
+import { detectGrade, type Grade } from '../../shared/grading.ts';
 
 /** Fields are suggestions from explicit resume text; category and consent are never inferred. */
 export interface ResumeFields {
@@ -10,7 +11,7 @@ export interface ResumeFields {
   industry?: string;
   professionalRole?: string;
   specialization?: Specialization;
-  desiredGrade?: 'Junior' | 'Middle';
+  desiredGrade?: Grade;
   stack?: string[];
   experience?: string;
   softSkills?: string[];
@@ -24,6 +25,9 @@ export interface ResumeFields {
 
 export interface ResumeParseOptions {
   onTruncate?: (field: keyof ResumeFields) => void;
+  onWarning?: (message: string) => void;
+  /** Reference date for ongoing employment; defaults to the browser's date. */
+  asOf?: Date;
 }
 
 type SectionKind = 'experience' | 'education' | 'achievements' | 'skills' | 'softSkills' | 'languages' | 'portfolio' | 'role' | 'other';
@@ -39,9 +43,37 @@ const sectionPatterns: Array<[SectionKind, RegExp]> = [
   ['other', /^(?:о себе|обо мне|контакты|дополнительная информация|summary|about(?: me)?|contacts?|references|projects|проекты|специализации|занятость|график работы)(?:\s*[:—–-]\s*|\s*$)(.*)$/iu],
 ];
 
-const monthName = '(?:январ[ья]|феврал[ья]|март[а]?|апрел[ья]|ма[йя]|июн[ья]|июл[ья]|август[а]?|сентябр[ья]|октябр[ья]|ноябр[ья]|декабр[ья]|january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)';
-const employmentDate = `(?:${monthName}\\s+\\d{4}|\\d{1,2}[./]\\d{4}|\\d{4}[./-]\\d{1,2}|\\d{4})`;
-const employmentPeriod = new RegExp(`^${employmentDate}\\s*[-—–]\\s*(?:${employmentDate}|(?:по\\s+)?настоящее время|present|current|now)`, 'iu');
+const monthAliases = [
+  ['январь', 'января', 'янв', 'january', 'jan'], ['февраль', 'февраля', 'февр', 'фев', 'february', 'feb'],
+  ['март', 'марта', 'мар', 'march', 'mar'], ['апрель', 'апреля', 'апр', 'april', 'apr'],
+  ['май', 'мая', 'may'], ['июнь', 'июня', 'июн', 'june', 'jun'],
+  ['июль', 'июля', 'июл', 'july', 'jul'], ['август', 'августа', 'авг', 'august', 'aug'],
+  ['сентябрь', 'сентября', 'сент', 'сен', 'september', 'sept', 'sep'], ['октябрь', 'октября', 'окт', 'october', 'oct'],
+  ['ноябрь', 'ноября', 'нояб', 'ноя', 'november', 'nov'], ['декабрь', 'декабря', 'дек', 'december', 'dec'],
+];
+const monthName = `(?:${monthAliases.flat().sort((a, b) => b.length - a.length).join('|')})\\.?`;
+const employmentDate = `(?:${monthName}\\s+\\d{4}|\\d{1,2}[./]\\d{1,2}[./]\\d{4}|\\d{4}[./-]\\d{1,2}[./-]\\d{1,2}|\\d{1,2}[./]\\d{4}|\\d{4}[./-]\\d{1,2}|\\d{4})`;
+const ongoingEmployment = '(?:(?:по\\s+)?настоящее время|до настоящего времени|present|current|now)';
+const employmentPeriod = new RegExp(`(?<![\\p{L}\\p{N}])(${employmentDate})\\s*[-—–−]\\s*(${employmentDate}|${ongoingEmployment})(?=$|[\\s,;().])`, 'iu');
+function employmentPeriodAt(lines: string[], index: number): { match: RegExpExecArray; lineCount: number } | undefined {
+  const candidates = lines.slice(index, index + 5).map((line, offset) => offset === 0 ? line.replace(/^[•*·]\s*/u, '') : line);
+  const match = employmentPeriod.exec(candidates.join(' '));
+  // PDF text extraction may combine the employer/title and date range.
+  // Its first date must still begin on this line; otherwise an achievement
+  // could capture a future employment entry from the lookahead.
+  if (!match || match.index >= candidates[0].length) return undefined;
+  const prefix = candidates[0].slice(0, match.index).trim();
+  if (/^\d{4}$/u.test(match[1]) && new RegExp(`${monthName}$`, 'iu').test(prefix)) return undefined;
+  if (/^(?:создал|создала|разработал|разработала|запустил|запустила|реализовал|реализовала|участвовал|участвовала|built|created|developed|launched)(?:\s|$)/iu.test(prefix)) return undefined;
+  let lineCount = 0;
+  let consumed = 0;
+  for (const line of candidates) {
+    consumed += line.length + (lineCount ? 1 : 0);
+    lineCount++;
+    if (consumed >= match.index + match[0].length) break;
+  }
+  return { match, lineCount };
+}
 const headerFrom = (line: string) => sectionPatterns.map(([kind, pattern]) => ({ kind, match: pattern.exec(line) })).find(item => item.match);
 const employerLine = /^(?:ООО|АО|ПАО|ЗАО|ИП|ОАО|компания|работодатель|company|employer)(?:\s|:|$)|(?:компания|company|ltd\.?|llc)\s*$/iu;
 const employmentRoleLine = (line: string) => line.length <= 100 && roleWords.test(line)
@@ -60,7 +92,7 @@ function sections(lines: string[]): Partial<Record<SectionKind, string[]>> {
       for (let next = index + 1; next < lines.length; next++) {
         const nextHeader = headerFrom(lines[next]);
         if (nextHeader && nextHeader.kind !== 'achievements') break;
-        if (employmentPeriod.test(`${lines[next]} ${lines[next + 1] || ''}`)) { nextEmployment = next; break; }
+        if (employmentPeriodAt(lines, next)) { nextEmployment = next; break; }
       }
       if (nextEmployment >= 0 || embeddedAchievements) {
         embeddedAchievements = true;
@@ -80,7 +112,7 @@ function sections(lines: string[]): Partial<Record<SectionKind, string[]>> {
     } else if (current) {
       result[current]?.push(line);
       if (collectingAchievements) {
-        if (employmentPeriod.test(`${line} ${lines[index + 1] || ''}`)) {
+        if (employmentPeriodAt(lines, index)) {
           // Remove only recognizable employer/title metadata, never a result
           // immediately followed by the next date-first employment entry.
           const previous = lines[index - 1];
@@ -95,6 +127,80 @@ function sections(lines: string[]): Partial<Record<SectionKind, string[]>> {
     }
   }
   return result;
+}
+
+function employmentMonth(value: string, endpoint: 'start' | 'end'): { month: number; yearOnly: boolean; day?: number } | undefined {
+  const normalized = value.toLowerCase().trim();
+  let year: number;
+  let month: number;
+  let day: number | undefined;
+  let yearOnly = false;
+  const named = new RegExp(`^(${monthName})\\s+(\\d{4})$`, 'iu').exec(normalized);
+  const iso = /^(\d{4})[./-](\d{1,2})(?:[./-](\d{1,2}))?$/u.exec(normalized);
+  const numeric = /^(?:(\d{1,2})[./])?(\d{1,2})[./](\d{4})$/u.exec(normalized);
+  if (named) {
+    year = Number(named[2]);
+    month = monthAliases.findIndex(aliases => aliases.includes(named[1].replace(/\.$/u, ''))) + 1;
+  } else if (iso) {
+    year = Number(iso[1]); month = Number(iso[2]); day = iso[3] ? Number(iso[3]) : undefined;
+  } else if (numeric) {
+    year = Number(numeric[3]); month = Number(numeric[2]); day = numeric[1] ? Number(numeric[1]) : undefined;
+  } else if (/^\d{4}$/u.test(normalized)) {
+    year = Number(normalized); month = endpoint === 'start' ? 1 : 12; yearOnly = true;
+  } else return undefined;
+  if (year < 1900 || month < 1 || month > 12) return undefined;
+  if (day !== undefined && (day < 1 || day > new Date(Date.UTC(year, month, 0)).getUTCDate())) return undefined;
+  return { month: year * 12 + month - 1, yearOnly, day };
+}
+
+function experienceFromPeriods(history: string[], asOf: Date, onWarning?: (message: string) => void): string | undefined {
+  if (!Number.isFinite(asOf.getTime())) return undefined;
+  const currentMonth = asOf.getFullYear() * 12 + asOf.getMonth();
+  const intervals: Array<{ start: number; end: number; yearOnly: boolean }> = [];
+  let skippedPeriods = false;
+  for (let index = 0; index < history.length; index++) {
+    const period = employmentPeriodAt(history, index);
+    if (!period) continue;
+    const { match, lineCount } = period;
+    // Skip consumed PDF fragments so a year on the next line cannot be
+    // interpreted again as a less precise independent period.
+    index += lineCount - 1;
+    const start = employmentMonth(match[1], 'start');
+    const ongoing = new RegExp(`^${ongoingEmployment}$`, 'iu').test(match[2]);
+    const end = ongoing ? { month: currentMonth, yearOnly: false } : employmentMonth(match[2], 'end');
+    if (!start || !end || end.month < start.month || start.month > currentMonth
+      || start.day && start.month === currentMonth && start.day > asOf.getDate()
+      || start.day && 'day' in end && end.day && start.month === end.month && end.day < start.day) {
+      skippedPeriods = true;
+      continue;
+    }
+    // Resume periods identify months, including the stated ending month.
+    intervals.push({ start: start.month, end: Math.min(end.month, currentMonth) + 1, yearOnly: start.yearOnly || end.yearOnly });
+  }
+  if (skippedPeriods) onWarning?.('Некоторые периоды работы не учтены. Проверьте даты в истории работы.');
+  if (!intervals.length) return undefined;
+  intervals.sort((a, b) => a.start - b.start);
+  let totalMonths = 0;
+  let start = intervals[0].start;
+  let end = intervals[0].end;
+  for (const interval of intervals.slice(1)) {
+    if (interval.start <= end) end = Math.max(end, interval.end);
+    else { totalMonths += end - start; start = interval.start; end = interval.end; }
+  }
+  totalMonths += end - start;
+  const plural = (count: number, forms: [string, string, string]) => {
+    const last = count % 10;
+    return count % 100 >= 11 && count % 100 <= 14 ? forms[2] : last === 1 ? forms[0] : last >= 2 && last <= 4 ? forms[1] : forms[2];
+  };
+  const years = Math.floor(totalMonths / 12);
+  const months = totalMonths % 12;
+  const yearOnly = intervals.some(interval => interval.yearOnly);
+  const yearForms: [string, string, string] = yearOnly ? ['года', 'лет', 'лет'] : ['год', 'года', 'лет'];
+  const monthForms: [string, string, string] = yearOnly ? ['месяца', 'месяцев', 'месяцев'] : ['месяц', 'месяца', 'месяцев'];
+  const duration = [years ? `${years} ${plural(years, yearForms)}` : '', months ? `${months} ${plural(months, monthForms)}` : ''].filter(Boolean).join(' ');
+  // Year-only dates cannot provide exact months. Expanded year boundaries
+  // give an upper bound, which must remain visible in the suggested value.
+  return `${yearOnly ? `До ${duration}` : duration}${skippedPeriods ? ' (по корректным датам)' : ''}`;
 }
 
 const stackPatterns: Array<[string, RegExp]> = [
@@ -189,8 +295,8 @@ export function parseResumeText(raw: string, options: ResumeParseOptions = {}): 
     const desired = fields.professionalRole;
     const specialization = detectSpecialization(desired);
     if (specialization) fields.specialization = specialization;
-    if (/\bjunior\b|джуниор/iu.test(desired) && !/\b(?:middle|senior)\b|мидл|сеньор/iu.test(desired)) fields.desiredGrade = 'Junior';
-    if (/\bmiddle\b|мидл/iu.test(desired) && !/\b(?:junior|senior)\b|джуниор|сеньор/iu.test(desired)) fields.desiredGrade = 'Middle';
+    const grade = detectGrade(desired);
+    if (grade) fields.desiredGrade = grade;
   }
   const explicitSpecialization = directLabel(lines.slice(0, 25), /^(?:специализация|specialization)\s*[:—-]\s*(.+)$/iu);
   if (explicitSpecialization) {
@@ -200,8 +306,10 @@ export function parseResumeText(raw: string, options: ResumeParseOptions = {}): 
   }
   const explicitGrade = directLabel(lines.slice(0, 25), /^(?:предполагаемый грейд|грейд|grade|seniority)\s*[:—-]\s*(.+)$/iu);
   if (explicitGrade) delete fields.desiredGrade;
-  if (explicitGrade && /^(?:junior|джуниор)$/iu.test(explicitGrade)) fields.desiredGrade = 'Junior';
-  if (explicitGrade && /^(?:middle|мидл)$/iu.test(explicitGrade)) fields.desiredGrade = 'Middle';
+  if (explicitGrade) {
+    const grade = detectGrade(explicitGrade);
+    if (grade) fields.desiredGrade = grade;
+  }
   const industry = directLabel(lines, /^(?:отрасль|сфера(?: деятельности)?|industry)\s*[:—-]\s*(.+)$/iu);
   if (industry) fields.industry = detectIndustry(industry);
 
@@ -235,6 +343,10 @@ export function parseResumeText(raw: string, options: ResumeParseOptions = {}): 
   if (summary) fields.experience = /^(?:без опыта|no (?:work )?experience)$/iu.test(summary) ? 'Без опыта' : boundedField('experience', summary);
   const historyRows = [...(parts.experience || [])];
   if (summary && (historyRows[0] === summary || totalExperienceLabel.exec(historyRows[0] || '')?.[1]?.trim() === summary)) historyRows.shift();
+  if (!summary) {
+    const computedExperience = experienceFromPeriods(historyRows, options.asOf || new Date(), options.onWarning);
+    if (computedExperience) fields.experience = boundedField('experience', computedExperience);
+  }
   const history = historyRows.join('\n').trim();
   if (history) fields.workHistory = boundedField('workHistory', history);
   const achievements = sectionText('achievements');

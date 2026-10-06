@@ -1,5 +1,5 @@
 import { BadgeCheck, LockKeyhole, MapPin, Medal, Printer } from 'lucide-react';
-import { dateLabel, initials, specializationLabels, type Candidate } from '../model';
+import { dateLabel, gradeLabels, initials, specializationLabels, type Candidate } from '../model';
 
 export function CandidateDetails({ person, contacts, onInvite }: {
   person: Candidate; contacts: boolean; onInvite?: () => void;
@@ -14,7 +14,7 @@ export function CandidateDetails({ person, contacts, onInvite }: {
     <div className="detail-grid">
       <div><span className="field-caption">Опыт</span><strong>{person.experience}</strong></div>
       <div><span className="field-caption">Тестирование</span><strong>{person.confirmed ? person.confirmed.score + ' из 100' : 'Не пройдено'}</strong></div>
-      <div><span className="field-caption">Грейд</span><strong className="inline-icon">{person.confirmed && <BadgeCheck size={16} />}{person.confirmed?.grade || 'Не подтверждён'}</strong>{person.confirmed && <time className="confirmed-date" dateTime={person.confirmed.date}>{dateLabel(person.confirmed.date)}</time>}</div>
+      <div><span className="field-caption">Грейд</span><strong className="inline-icon">{person.confirmed && <BadgeCheck size={16} />}{person.confirmed ? gradeLabels[person.confirmed.grade] : 'Не подтверждён'}</strong>{person.confirmed && <time className="confirmed-date" dateTime={person.confirmed.date}>{dateLabel(person.confirmed.date)}</time>}</div>
     </div>
     <section><h4>О себе</h4><p className="body-copy">{person.bio || 'Пока не заполнено'}</p></section>
     <section><h4>Стек</h4><div className="tags">{person.stack.map(skill => <span className="tag" key={skill}>{skill}</span>)}</div></section>

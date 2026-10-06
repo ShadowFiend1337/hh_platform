@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { BadgeCheck, Eye, FileText, Medal, UserRound } from 'lucide-react';
-import { dateLabel, industryOptions, isSpecialization, specializationOptions, specializationLabels, type Grade, type PlatformState, type Specialization } from '../model';
+import { dateLabel, gradeLabels, gradeOptions, industryOptions, isGrade, isSpecialization, specializationOptions, specializationLabels, type Grade, type PlatformState, type Specialization } from '../model';
 import { FormHeader } from './Company';
 import { MAX_STACK_SKILLS, resumeTextLimits } from '../../../shared/resume-limits';
 
@@ -33,6 +33,7 @@ export function Profile({ state, update, notify, onTest, onPreview }: {
     if (!name || !stack.length) { setError('Заполните имя и стек.'); return; }
     if (!industryOptions.includes(industry)) { setError('Выберите отрасль.'); return; }
     if (!isSpecialization(specialization)) { setError('Выберите специализацию.'); return; }
+    if (!isGrade(desiredGrade)) { setError('Выберите предполагаемый грейд.'); return; }
     if (!professionalRole || professionalRole.length > 100) { setError('Укажите роль в команде: не более 100 символов.'); return; }
     if (stack.length > MAX_STACK_SKILLS || stack.some(skill => skill.length > 80)) { setError(`Укажите до ${MAX_STACK_SKILLS} навыков, не более 80 символов каждый.`); return; }
     update(previous => {
@@ -71,7 +72,7 @@ export function Profile({ state, update, notify, onTest, onPreview }: {
         <div className="form-grid"><label className="field"><span>Email</span><input name="email" type="email" required defaultValue={profile.email} /></label><label className="field"><span>Телефон</span><input name="phone" type="tel" maxLength={30} defaultValue={profile.phone} placeholder="+7" /></label></div>
         <div className="section-divider" />
         <FormHeader title="Навыки" Icon={FileText} />
-        <div className="form-grid"><label className="field"><span>Специализация</span><select name="specialization" defaultValue={profile.specialization}>{specializationOptions.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}</select></label><label className="field"><span>Предполагаемый грейд</span><select name="desiredGrade" defaultValue={profile.desiredGrade}><option>Junior</option><option>Middle</option></select></label></div>
+        <div className="form-grid"><label className="field"><span>Специализация</span><select name="specialization" defaultValue={profile.specialization}>{specializationOptions.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}</select></label><label className="field"><span>Предполагаемый грейд</span><select name="desiredGrade" defaultValue={profile.desiredGrade}>{gradeOptions.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}</select></label></div>
         <div className="form-grid"><label className="field"><span>Отрасль</span><select name="industry" required defaultValue={profile.industry || ''}><option value="">Выберите отрасль</option>{industryOptions.map(industry => <option key={industry}>{industry}</option>)}</select></label><label className="field"><span>Роль в команде</span><input name="professionalRole" required maxLength={100} defaultValue={profile.professionalRole} placeholder="Например, разработчик интерфейсов" /></label></div>
         <div className="form-grid"><label className="field"><span>Общий стаж</span><input name="experience" required maxLength={100} defaultValue={profile.experience} /></label><label className="field"><span>Формат работы</span><select name="format" defaultValue={profile.format}><option>Удалённо</option><option>Гибрид</option><option>Офис</option></select></label></div>
         <label className="field"><span>Стек</span><input name="stack" required maxLength={resumeTextLimits.stack} defaultValue={profile.stack.join(', ')} placeholder="React, TypeScript, CSS" /></label>
@@ -95,11 +96,11 @@ export function Profile({ state, update, notify, onTest, onPreview }: {
       </form>
       <aside className="profile-sidebar">
         <section className="panel category-panel"><h2 className="sr-only">Подтверждённая категория</h2><p className="muted">{specializationLabels[profile.confirmed?.specialization || profile.specialization]}</p>
-          <div className="category-status"><BadgeCheck size={20} /><div><span className="field-caption">Подтверждённый грейд</span><strong>{profile.confirmed?.grade || 'Не подтверждён'}</strong></div></div>
+          <div className="category-status"><BadgeCheck size={20} /><div><span className="field-caption">Подтверждённый грейд</span><strong>{profile.confirmed ? gradeLabels[profile.confirmed.grade] : 'Не подтверждён'}</strong></div></div>
           {profile.confirmed && <div className="category-score" aria-label={'Результат теста: ' + profile.confirmed.score + ' из 100'}><strong>{profile.confirmed.score}<span>/100</span></strong></div>}
           <button className="button primary full-width" onClick={onTest}>{profile.confirmed ? 'Пройти тест' : 'Подтвердить грейд'}</button>
         </section>
-        <section className="panel test-history"><h2>История тестов</h2>{state.history.length ? state.history.slice(0, 5).map(result => <div className="history-item" key={result.id}><div><strong>{result.specialization} · {result.grade}</strong><span>{dateLabel(result.date)}</span></div><span className={'history-score ' + (result.passed ? 'passed' : 'failed')}>{result.score}/100</span></div>) : <p className="muted">Тестов пока нет</p>}</section>
+        <section className="panel test-history"><h2>История тестов</h2>{state.history.length ? state.history.slice(0, 5).map(result => <div className="history-item" key={result.id}><div><strong>{result.specialization} · {gradeLabels[result.grade]}</strong><span>{dateLabel(result.date)}</span></div><span className={'history-score ' + (result.passed ? 'passed' : 'failed')}>{result.score}/100</span></div>) : <p className="muted">Тестов пока нет</p>}</section>
       </aside>
     </div>
   </>;

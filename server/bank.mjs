@@ -3,8 +3,10 @@
 import { dataPrograms } from './banks/data.mjs';
 import { engineeringPrograms } from './banks/engineering.mjs';
 import { productPrograms } from './banks/product.mjs';
+import { engineeringLevelPrograms } from './banks/engineering-levels.mjs';
+import { dataProductLevelPrograms } from './banks/data-product-levels.mjs';
 
-export const bankVersion = '2026.10.2';
+export const bankVersion = '2026.10.3';
 
 // Per-task tags describe the competence actually exercised by that task.
 // They allow vacancy emphasis inside a difficulty slot without changing its
@@ -40,7 +42,7 @@ const variant = (id, text, options, correct) => ({ id, text, options, correct,
 const family = (id, topic, difficulty, skills, variants) => ({ id, topic, difficulty,
   skills: [...new Set([...skills, ...variants.flatMap(item => item.skills)])], variants });
 
-export const programs = {
+const basePrograms = {
   ...dataPrograms,
   ...engineeringPrograms,
   ...productPrograms,
@@ -213,3 +215,7 @@ export const programs = {
     },
   },
 };
+
+export const programs = Object.fromEntries(Object.entries(basePrograms).map(([specialization, grades]) => [
+  specialization, { ...grades, ...engineeringLevelPrograms[specialization], ...dataProductLevelPrograms[specialization] },
+]));

@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { createRequire } from 'node:module';
 import { chromium } from 'playwright';
 import { specializationOptions, industryOptions } from '../../shared/catalog.ts';
+import { gradeOptions } from '../../shared/grading.ts';
 // Server fixtures are used only by Node tests, never imported by application code.
 import { programs } from '../../server/bank.mjs';
 
@@ -31,7 +32,8 @@ try {
   const industry = page.getByRole('combobox', { name: 'Отрасль', exact: true });
   assert.equal(await specialization.locator('option').count(), specializationOptions.length + 1);
   assert.equal(await industry.locator('option').count(), industryOptions.length + 1);
-  for (const { value } of specializationOptions) for (const grade of ['Junior', 'Middle']) {
+  assert.deepEqual(await page.getByLabel('Предполагаемый грейд').locator('option').evaluateAll(options => options.slice(1).map(option => ({ value: option.value, label: option.textContent }))), gradeOptions);
+  for (const { value } of specializationOptions) for (const { value: grade } of gradeOptions) {
     const response = await context.request.get(`${base}/api/assessment/program?specialization=${value}&grade=${grade}`);
     assert.equal(response.status(), 200, `${value}/${grade}`);
     const program = await response.json();
@@ -109,7 +111,7 @@ try {
   assert.match(await page.locator('.candidate-row').textContent(), /Иван Соколов/);
   assert.match(await page.locator('.candidate-row').textContent(), /машинному обучению/);
   assert.deepEqual(errors, []);
-  console.log('PASS 13 directions, 25 industries, 26 API programs, resume import, ML category, persistence, matching and mobile accessibility');
+  console.log('PASS 13 directions, 25 industries, all 65 grade programs, resume import, ML category, persistence, matching and mobile accessibility');
 } finally {
   await browser.close();
 }

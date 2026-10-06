@@ -2,12 +2,16 @@ import { programs } from './bank.mjs';
 import { dataExamples, dataSkillAliases } from './banks/data.mjs';
 import { engineeringExamples, engineeringSkillAliases } from './banks/engineering.mjs';
 import { productExamples, productSkillAliases } from './banks/product.mjs';
+import { engineeringLevelVacancies } from './banks/engineering-levels.mjs';
+import { dataProductLevelVacancies } from './banks/data-product-levels.mjs';
 
 // Synthetic examples, not scraped vacancies or a labour-market dataset.
 export const vacancyExamples = [
   ...dataExamples,
   ...engineeringExamples,
   ...productExamples,
+  ...engineeringLevelVacancies,
+  ...dataProductLevelVacancies,
   {
     id: 'frontend-junior', title: 'Frontend Junior', specialization: 'Frontend', grade: 'Junior',
     description: 'Создавать доступные формы и адаптивные страницы на HTML, CSS и JavaScript. Работать с flex и grid, событиями браузера и запросами fetch. Проверять управление с клавиатуры.',

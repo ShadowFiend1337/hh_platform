@@ -3,6 +3,8 @@ import test from 'node:test';
 import { parseResumeText } from '../src/resume-parser.ts';
 import { MAX_STACK_SKILLS, resumeTextLimits } from '../../shared/resume-limits.ts';
 
+const fixedAsOf = new Date(2026, 9, 6);
+
 test('Russian resume suggests fields and separates common sections', () => {
   const fields = parseResumeText(`Иван Соколов
 Frontend разработчик Middle
@@ -71,13 +73,13 @@ test('BA, PM and ML retain their stated direction instead of inferring frontend 
   }
 });
 
-test('Fullstack has its own direction and Senior is never silently reduced to Middle', () => {
+test('Fullstack has its own direction and Senior is imported without reducing it to Middle', () => {
   const fullstack = parseResumeText('Иван Соколов\nFullstack Frontend Backend developer Senior\nSkills: React, Python');
   assert.equal(fullstack.specialization, 'Fullstack');
-  assert.equal(fullstack.desiredGrade, undefined);
+  assert.equal(fullstack.desiredGrade, 'Senior');
   const senior = parseResumeText('Иван Соколов\nBackend developer Middle\nGrade: Senior\nSpecialization: ML');
   assert.equal(senior.specialization, 'ML');
-  assert.equal(senior.desiredGrade, undefined);
+  assert.equal(senior.desiredGrade, 'Senior');
 });
 
 test('past Junior job or years alone do not confer a desired grade', () => {
@@ -116,7 +118,7 @@ test('ML internship headline is recognized and past jobs do not replace the desi
   const fields = parseResumeText('Иван Соколов\nСтажировка ML/Поиск в VK (Одноклассники, BI)\nНавыки: Python, PyTorch, SQL\nОпыт работы\nFrontend разработчик, 2022\nОтрасль: Телекоммуникации');
   assert.equal(fields.specialization, 'ML');
   assert.equal(fields.industry, 'Телекоммуникации');
-  assert.equal(fields.desiredGrade, undefined);
+  assert.equal(fields.desiredGrade, 'Intern');
   assert.deepEqual(fields.stack, ['Python', 'SQL', 'PyTorch']);
 });
 
@@ -249,17 +251,206 @@ test('the overall duration does not duplicate the employment history', () => {
   assert.equal(parseResumeText('Опыт работы: Без опыта').workHistory, undefined);
 });
 
-test('a job duration or company name alone is not presented as total experience', () => {
+test('total experience comes from periods rather than company names or job duration labels', () => {
   const fields = parseResumeText(`Иван Соколов
 Опыт работы
 Тестовая компания
 03.2021 - 09.2022
-1 год 7 месяцев
+2 месяца
 Ещё одна компания
-2020 - 2021
-8 месяцев`);
-  assert.equal(fields.experience, undefined);
+01.2020 - 06.2021
+8 месяцев`, { asOf: fixedAsOf });
+  assert.equal(fields.experience, '2 года 9 месяцев');
   assert.match(fields.workHistory, /Ещё одна компания/);
+  assert.equal(parseResumeText('Опыт работы\nТестовая компания\n8 месяцев', { asOf: fixedAsOf }).experience, undefined);
+});
+
+test('parallel and duplicated positions count each calendar month once', () => {
+  const fields = parseResumeText(`Опыт работы
+Компания Первая
+Январь 2024 – Март 2024
+Компания Вторая
+Март 2024 – Июнь 2024
+Компания Третья
+02.2024 - 05.2024
+Компания Четвёртая
+2024-01 - 2024-03`, { asOf: fixedAsOf });
+  assert.equal(fields.experience, '6 месяцев');
+});
+
+test('adjacent and separated periods preserve gaps and Russian duration inflections', () => {
+  const fields = parseResumeText(`Опыт работы
+Декабрь 2023 — Январь 2024
+Февраль 2024 — Март 2024
+Июнь 2024 — Июнь 2024`, { asOf: fixedAsOf });
+  assert.equal(fields.experience, '5 месяцев');
+  assert.equal(parseResumeText('Опыт работы\nМарт 2021 – Сентябрь 2022', { asOf: fixedAsOf }).experience, '1 год 7 месяцев');
+  assert.equal(parseResumeText('Опыт работы\nЯнварь 2024 – Декабрь 2024', { asOf: fixedAsOf }).experience, '1 год');
+});
+
+test('ongoing positions use the reference month and do not double count a parallel job', () => {
+  for (const present of ['настоящее время', 'по настоящее время', 'до настоящего времени', 'Present', 'current', 'now']) {
+    const fields = parseResumeText(`Опыт работы\nСентябрь 2026 – ${present}\nКомпания Вторая\n10.2026 - 10.2026`, { asOf: fixedAsOf });
+    assert.equal(fields.experience, '2 месяца', present);
+  }
+  assert.equal(parseResumeText('Work experience\nJan 2026 - Present', { asOf: new Date(2026, 0, 31) }).experience, '1 месяц');
+  assert.equal(parseResumeText('Work experience\nJan 2026 - Present', { asOf: new Date(2026, 2, 1) }).experience, '3 месяца');
+});
+
+test('Russian and English month abbreviations and genitive month names are understood', () => {
+  for (const [start, end] of [
+    ['янв.', 'февр.'], ['мар.', 'апр.'], ['май', 'июн.'], ['июл.', 'авг.'], ['сен.', 'окт.'], ['ноя.', 'дек.'],
+    ['Jan.', 'Feb.'], ['MAR', 'APR'], ['May', 'Jun'], ['Jul', 'Aug'], ['Sept.', 'Oct.'], ['Nov.', 'Dec.'],
+    ['сентября', 'октября'], ['September', 'October'],
+  ]) assert.equal(parseResumeText(`Опыт работы\n${start} 2024 - ${end} 2024`, { asOf: fixedAsOf }).experience, '2 месяца', `${start} / ${end}`);
+});
+
+test('numeric, ISO and complete date formats retain monthly precision', () => {
+  for (const period of ['03.2021–09.2022', '03/2021 - 09/2022', '2021-03–2022-09', '2021/03 - 2022/09', '15.03.2021 - 20.09.2022', '2021-03-15 - 2022-09-20']) {
+    assert.equal(parseResumeText(`Опыт работы\n${period}`, { asOf: fixedAsOf }).experience, '1 год 7 месяцев', period);
+  }
+});
+
+test('periods split across PDF lines still contribute to total experience and following jobs', () => {
+  const fields = parseResumeText(`Опыт работы
+Компания Первая
+Январь
+2024
+—
+Март
+2024
+Достижения
+Запустил сервис.
+Компания Вторая
+01.06.2024
+-
+31.07.2024
+Достижения
+Улучшил сервис.
+Компания Третья
+Sept. 2026 -
+Present
+Образование
+2010 - 2015`, { asOf: fixedAsOf });
+  assert.equal(fields.experience, '7 месяцев');
+  assert.match(fields.workHistory, /Компания Вторая/);
+  assert.match(fields.workHistory, /Компания Третья/);
+  assert.match(fields.careerAchievements, /Запустил сервис/);
+});
+
+test('employer and role prefixes merged with date ranges still contribute to total experience', () => {
+  const fields = parseResumeText(`Опыт работы
+Тестовая компания. Москва Январь 2024 – Март 2024
+Достижения
+Запустил сервис.
+ООО Вектор Апрель 2024 – Июнь 2024
+Frontend разработчик 2024-07 – 2024-08
+Компания Последняя Сентябрь 2026 – Present
+Образование
+Университет 2010 – 2015`, { asOf: fixedAsOf });
+  assert.equal(fields.experience, '10 месяцев');
+  assert.match(fields.careerAchievements, /Запустил сервис/);
+  assert.match(fields.workHistory, /ООО Вектор Апрель 2024/);
+});
+
+test('a company prefix and PDF line breaks consume the complete range exactly once', () => {
+  const fields = parseResumeText(`Опыт работы
+Тестовая компания Январь
+2024
+—
+Март
+2024
+Компания Вторая Апрель 2024
+-
+Июнь 2024
+Компания Третья Sept. 2026 -
+Present`, { asOf: fixedAsOf });
+  assert.equal(fields.experience, '8 месяцев');
+});
+
+test('Unicode boundaries prevent dates embedded in identifiers from becoming employment periods', () => {
+  assert.equal(parseResumeText('Опыт работы\nПроектID2021 - 2024\nЗаказabcЯнварь 2021 - Март 2021', { asOf: fixedAsOf }).experience, undefined);
+});
+
+test('year-only periods provide an explicit upper bound and merge with dated jobs', () => {
+  assert.equal(parseResumeText('Опыт работы\n2021 - 2022', { asOf: fixedAsOf }).experience, 'До 2 лет');
+  assert.equal(parseResumeText('Опыт работы\n2021\n—\n2022\nКомпания Вторая\n03.2022 - 09.2023', { asOf: fixedAsOf }).experience, 'До 2 лет 9 месяцев');
+  assert.equal(parseResumeText('Опыт работы\n2026 - Present', { asOf: fixedAsOf }).experience, 'До 10 месяцев');
+  assert.equal(parseResumeText('Опыт работы\nЯнварь 2024 - 2024', { asOf: fixedAsOf }).experience, 'До 1 года');
+});
+
+test('explicit total and no-experience statements take priority over dated employment', () => {
+  for (const [heading, expected] of [['Опыт работы: 4 года 6 месяцев', '4 года 6 месяцев'], ['Опыт работы: Без опыта', 'Без опыта'], ['Experience: no work experience', 'Без опыта']]) {
+    assert.equal(parseResumeText(`${heading}\nЯнварь 2024 - Present`, { asOf: fixedAsOf }).experience, expected);
+  }
+  assert.equal(parseResumeText('Опыт работы\nЯнварь 2024 - Present\nОбщий стаж: 8 месяцев', { asOf: fixedAsOf }).experience, '8 месяцев');
+});
+
+test('education and project dates outside an explicit employment section are excluded', () => {
+  assert.equal(parseResumeText('Образование\n2010 - 2015\nПроекты\nЯнварь 2016 - Present', { asOf: fixedAsOf }).experience, undefined);
+  const fields = parseResumeText(`Образование
+2010 - 2015
+Опыт работы
+Январь 2024 — Март 2024
+Запустил проект 2020 - 2023.
+Проекты
+2016 - 2022
+Портфолио
+Январь 2023 - Present`, { asOf: fixedAsOf });
+  assert.equal(fields.experience, '3 месяца');
+});
+
+test('invalid and future periods are ignored and future end dates stop at the reference month', () => {
+  for (const period of ['13.2024 - 15.2024', '2024-00 - 2024-03', 'Февраль 2024 - Январь 2024', '2027-01 - Present', '31.02.2024 - 31.03.2024', '31.03.2024 - 01.03.2024', '30.10.2026 - Present']) {
+    assert.equal(parseResumeText(`Опыт работы\n${period}`, { asOf: fixedAsOf }).experience, undefined, period);
+  }
+  assert.equal(parseResumeText('Опыт работы\nСентябрь 2026 - Декабрь 2027', { asOf: fixedAsOf }).experience, '2 месяца');
+});
+
+test('calculating an employment duration does not assign a desired grade', () => {
+  const fields = parseResumeText('Иван Соколов\nFrontend разработчик\nОпыт работы\nЯнварь 2020 - Present', { asOf: fixedAsOf });
+  assert.equal(fields.experience, '6 лет 10 месяцев');
+  assert.equal(fields.desiredGrade, undefined);
+});
+
+test('partially invalid dates qualify the computed duration and report one warning', () => {
+  const warnings = [];
+  const fields = parseResumeText(`Опыт работы
+Январь 2024 - Июнь 2024
+Май 2025 - Январь 2025
+2027-01 - Present`, { asOf: fixedAsOf, onWarning: warning => warnings.push(warning) });
+  assert.equal(fields.experience, '6 месяцев (по корректным датам)');
+  assert.match(fields.workHistory, /Май 2025 - Январь 2025/);
+  assert.deepEqual(warnings, ['Некоторые периоды работы не учтены. Проверьте даты в истории работы.']);
+
+  const allInvalidWarnings = [];
+  const allInvalid = parseResumeText('Опыт работы\nМай 2025 - Январь 2025\n2027-01 - Present', { asOf: fixedAsOf, onWarning: warning => allInvalidWarnings.push(warning) });
+  assert.equal(allInvalid.experience, undefined);
+  assert.equal(allInvalidWarnings.length, 1);
+
+  assert.equal(parseResumeText('Опыт работы\n2021 - 2022\nМай 2025 - Январь 2025', { asOf: fixedAsOf }).experience, 'До 2 лет (по корректным датам)');
+});
+
+test('three company-prefixed PDF periods preserve all jobs and qualify one reversed period', () => {
+  const warnings = [];
+  const fields = parseResumeText(`Опыт работы
+Компания Первая Ноябрь 2024 – Июль 2024
+Компания Вторая Январь 2024 – Февраль 2024
+Компания Третья Март 2024 – Июнь 2024`, { asOf: fixedAsOf, onWarning: warning => warnings.push(warning) });
+  assert.equal(fields.experience, '6 месяцев (по корректным датам)');
+  assert.equal(warnings.length, 1);
+  assert.match(fields.workHistory, /Компания Первая/);
+  assert.match(fields.workHistory, /Компания Вторая/);
+  assert.match(fields.workHistory, /Компания Третья/);
+});
+
+test('explicit totals avoid computing invalid dates and a future end date alone needs no warning', () => {
+  const warnings = [];
+  const options = { asOf: fixedAsOf, onWarning: warning => warnings.push(warning) };
+  assert.equal(parseResumeText('Опыт работы: 3 года\nМай 2025 - Январь 2025', options).experience, '3 года');
+  assert.equal(parseResumeText('Опыт работы: Без опыта\n2027-01 - Present', options).experience, 'Без опыта');
+  assert.equal(parseResumeText('Опыт работы\nСентябрь 2026 - Декабрь 2027', options).experience, '2 месяца');
+  assert.deepEqual(warnings, []);
 });
 
 test('long employment history preserves its final job beyond the former 4000 characters', () => {

@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve, relative } from 'node:path';
 import { once } from 'node:events';
 import { programs, bankVersion } from '../bank.mjs';
+import { gradeOptions } from '../../shared/grading.ts';
 import { analyzeVacancy, vacancyExamples } from '../vacancies.mjs';
 import { createAttempt, evaluate, publicAttempt, RequestError, validateSurvey } from '../assessment.mjs';
 import { createAssessmentServer } from '../server.mjs';
@@ -62,13 +63,13 @@ async function begin(request, input = {}) {
   return response;
 }
 
-test('every catalog direction has Junior and Middle programs with unique authored content and valid answer indices', () => {
+test('every catalog direction has all five grades with unique content and valid answer indices', () => {
   assert.deepEqual(Object.keys(programs).sort(), specializationOptions.map(item => item.value).sort());
   const ids = new Set();
   const texts = new Set();
   let questionCount = 0;
   for (const grades of Object.values(programs)) {
-    assert.deepEqual(Object.keys(grades).sort(), ['Junior', 'Middle']);
+    assert.deepEqual(Object.keys(grades).sort(), gradeOptions.map(item => item.value).sort());
     for (const program of Object.values(grades)) {
       assert.equal(program.topics.length, 3);
       assert.equal(program.families.length, 6);
@@ -89,7 +90,7 @@ test('every catalog direction has Junior and Middle programs with unique authore
       }
     }
   }
-  assert.equal(questionCount, specializationOptions.length * 48);
+  assert.equal(questionCount, specializationOptions.length * gradeOptions.length * 24);
 });
 
 test('all public industries validate and arbitrary industry values are rejected', () => {
@@ -189,7 +190,7 @@ test('forged IDs, duplicate questions, missing answers and injected scores are r
 
 test('survey validation rejects unsupported programs and malformed or incomplete questionnaires', () => {
   rejectsStatus(() => validateSurvey({ ...survey(), specialization: 'Unknown' }), 400);
-  rejectsStatus(() => validateSurvey({ ...survey(), desiredGrade: 'Senior' }), 400);
+  rejectsStatus(() => validateSurvey({ ...survey(), desiredGrade: 'Principal' }), 400);
   rejectsStatus(() => validateSurvey({ ...survey(), professionalRole: '' }), 400);
   rejectsStatus(() => validateSurvey({ ...survey(), stack: [] }), 400);
   rejectsStatus(() => validateSurvey({ ...survey(), softSkills: ['Повтор', 'Повтор'] }), 400);
@@ -200,7 +201,7 @@ test('survey validation rejects unsupported programs and malformed or incomplete
 });
 
 test('vacancy examples cover all programs and disclose uncovered requirements without changing core slots', () => {
-  assert.equal(new Set(vacancyExamples.map(item => `${item.specialization}/${item.grade}`)).size, specializationOptions.length * 2);
+  assert.equal(new Set(vacancyExamples.map(item => `${item.specialization}/${item.grade}`)).size, specializationOptions.length * gradeOptions.length);
   for (const example of vacancyExamples) {
     const attempt = createAttempt(survey(example.specialization, example.grade), example.description, [], initialTime);
     assertBlueprint(attempt, programs[example.specialization][example.grade]);
@@ -308,7 +309,7 @@ test('expired unfinished attempt returns 410 without recording a failed assessme
 test('HTTP rejects unsupported inputs, oversized bodies, cross-origin requests and server-bank paths', async t => {
   const service = await startServer(t);
   const request = client(service.base);
-  assert.equal((await request('/api/assessment/attempts', { method: 'POST', body: { survey: survey('Backend', 'Senior') } })).status, 400);
+  assert.equal((await request('/api/assessment/attempts', { method: 'POST', body: { survey: survey('Backend', 'Principal') } })).status, 400);
   assert.equal((await request('/api/assessment/program?specialization=__proto__&grade=Junior')).status, 400);
   assert.equal((await request('/api/assessment/program?specialization=Frontend&grade=constructor')).status, 400);
   assert.equal((await request('/api/assessment/attempts', { method: 'POST', body: { survey: survey(), questions: [] } })).status, 400);

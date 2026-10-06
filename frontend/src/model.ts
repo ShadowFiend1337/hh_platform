@@ -1,10 +1,12 @@
 import { detectSpecialization, industryOptions, isSpecialization, stackOptions, type Specialization } from '../../shared/catalog.ts';
 import { resumeTextLimits } from '../../shared/resume-limits.ts';
+import { detectGrade, gradeLabels, type Grade } from '../../shared/grading.ts';
+export { gradeOptions, gradeLabels, isGrade } from '../../shared/grading.ts';
+export type { Grade } from '../../shared/grading.ts';
 export { defaultStackOptions, industryOptions, isSpecialization, specializationLabels, specializationNames, specializationOptions, specializationStacks } from '../../shared/catalog.ts';
 export { stackOptions } from '../../shared/catalog.ts';
 export type { Specialization } from '../../shared/catalog.ts';
 export type Role = 'employer' | 'candidate';
-export type Grade = 'Junior' | 'Middle';
 export type InvitationStatus = 'sent' | 'viewed' | 'accepted' | 'rejected';
 export type Page = 'candidates' | 'invitations' | 'company' | 'profile' | 'assessment' | 'onboarding';
 
@@ -255,7 +257,7 @@ export function searchCandidates(candidates: Candidate[], filters: Filters, quer
     return skillPattern(skill).test(remaining);
   });
   const requestedSpecialization = detectSpecialization(query) || '';
-  const requestedGrade = /junior|джуниор/.test(normalized) ? 'Junior' : /middle|мидл/.test(normalized) ? 'Middle' : '';
+  const requestedGrade = detectGrade(normalized) || '';
   const recognized = requestedStack.length > 0 || requestedSpecialization || requestedGrade;
   const requiredStack = [...new Set([...filters.stack, ...requestedStack])];
   return candidates.filter(person => {
@@ -278,6 +280,6 @@ export function searchCandidates(candidates: Candidate[], filters: Filters, quer
     person,
     rank: person.confirmed!.score + Math.min(person.achievements.length * 3, 6),
     reason: requiredStack.length ? 'Совпадает стек: ' + requiredStack.join(', ')
-      : 'Подтверждённый ' + person.confirmed!.grade + (person.achievements.length ? ' · достижения ФСП' : ' · результат теста'),
+      : 'Подтверждённый ' + gradeLabels[person.confirmed!.grade] + (person.achievements.length ? ' · достижения ФСП' : ' · результат теста'),
   })).sort((a, b) => b.rank - a.rank || a.person.name.localeCompare(b.person.name, 'ru'));
 }
