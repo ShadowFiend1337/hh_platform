@@ -1,6 +1,7 @@
-import { detectSpecialization, industryOptions, isSpecialization, stackOptions, type Specialization } from '../../shared/catalog.ts';
+import { industryOptions, isSpecialization, type Specialization } from '../../shared/catalog.ts';
 import { resumeTextLimits } from '../../shared/resume-limits.ts';
-import { detectGrade, gradeLabels, type Grade } from '../../shared/grading.ts';
+import type { Grade } from '../../shared/grading.ts';
+import { defaultSearchFilters, type SearchFilters } from '../../shared/search.ts';
 export { gradeOptions, gradeLabels, isGrade } from '../../shared/grading.ts';
 export type { Grade } from '../../shared/grading.ts';
 export { defaultStackOptions, industryOptions, isSpecialization, specializationLabels, specializationNames, specializationOptions, specializationStacks } from '../../shared/catalog.ts';
@@ -68,6 +69,13 @@ export interface Candidate {
   achievements: { title: string; result: string; year: string }[];
   visible: boolean;
   consent: boolean;
+  salaryFrom?: number | null;
+  salaryTo?: number | null;
+  experienceMonths?: number | null;
+  employmentType?: string;
+  availableFrom?: string;
+  languageCodes?: string[];
+  synthetic?: boolean;
 }
 
 export interface Invitation {
@@ -84,13 +92,7 @@ export interface Invitation {
   date: string;
 }
 
-export interface Filters {
-  specialization: string;
-  grade: string;
-  format: string;
-  stack: string[];
-  fsp: boolean;
-}
+export type Filters = SearchFilters;
 
 export interface PlatformState {
   version: 2;
@@ -102,7 +104,7 @@ export interface PlatformState {
   savedSearches: { id: string; title: string; query: string; filters: Filters }[];
 }
 
-export const emptyFilters: Filters = { specialization: '', grade: '', format: '', stack: [], fsp: false };
+export const emptyFilters: Filters = defaultSearchFilters;
 export const statusLabels: Record<InvitationStatus, string> = {
   sent: 'Отправлено', viewed: 'Просмотрено', accepted: 'Принято', rejected: 'Отклонено',
 };
@@ -241,45 +243,4 @@ export function dateLabel(value: string) {
 export function hasContactAccess(state: PlatformState, candidateId: string) {
   return state.invitations.some(invitation => invitation.candidateId === candidateId
     && invitation.companyId === state.company.id && invitation.status === 'accepted');
-}
-
-// Filter the confirmed category before ranking; the FSP bonus cannot override it.
-export function searchCandidates(candidates: Candidate[], filters: Filters, query: string) {
-  const normalized = query.toLowerCase().trim();
-  const skillPattern = (skill: string, flags = 'iu') => {
-    const escaped = skill.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    return new RegExp(`(?<![\\p{L}\\p{N}_])${escaped}(?![\\p{L}\\p{N}_])`, flags);
-  };
-  const matchedStack = stackOptions.filter(skill => skillPattern(skill).test(normalized));
-  const requestedStack = matchedStack.filter(skill => {
-    const remaining = matchedStack.filter(other => other.length > skill.length && skillPattern(skill).test(other))
-      .reduce((text, other) => text.replace(skillPattern(other, 'giu'), ' '), normalized);
-    return skillPattern(skill).test(remaining);
-  });
-  const requestedSpecialization = detectSpecialization(query) || '';
-  const requestedGrade = detectGrade(normalized) || '';
-  const recognized = requestedStack.length > 0 || requestedSpecialization || requestedGrade;
-  const requiredStack = [...new Set([...filters.stack, ...requestedStack])];
-  return candidates.filter(person => {
-    if (!person.visible || !person.consent || !person.confirmed || !person.surveyCompletedAt) return false;
-    const category = person.confirmed;
-    if ((filters.specialization && category.specialization !== filters.specialization)
-      || (requestedSpecialization && category.specialization !== requestedSpecialization)
-      || (filters.grade && category.grade !== filters.grade)
-      || (requestedGrade && category.grade !== requestedGrade)
-      || (filters.format && person.format !== filters.format)
-      || (filters.fsp && !person.achievements.length)) return false;
-    if (!requiredStack.every(skill => person.stack.includes(skill))) return false;
-    if (normalized && !recognized) {
-      const words = normalized.split(/\s+/).filter(word => word.length > 1);
-      const text = [person.name, person.city, person.bio, person.industry, person.professionalRole, ...person.stack, ...person.softSkills, category.specialization].join(' ').toLowerCase();
-      if (!words.every(word => text.includes(word))) return false;
-    }
-    return true;
-  }).map(person => ({
-    person,
-    rank: person.confirmed!.score + Math.min(person.achievements.length * 3, 6),
-    reason: requiredStack.length ? 'Совпадает стек: ' + requiredStack.join(', ')
-      : 'Подтверждённый ' + gradeLabels[person.confirmed!.grade] + (person.achievements.length ? ' · достижения ФСП' : ' · результат теста'),
-  })).sort((a, b) => b.rank - a.rank || a.person.name.localeCompare(b.person.name, 'ru'));
 }

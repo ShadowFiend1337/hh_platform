@@ -4,11 +4,14 @@ import { MAX_STACK_SKILLS, resumeTextLimits as textLimits } from '../../../share
 import { CandidateSteps } from '../components/CandidateSteps';
 import { gradeOptions, industryOptions, isGrade, isSpecialization, specializationOptions, type CandidateSurvey, type Grade, type PlatformState, type Specialization } from '../model';
 import type { ResumeFields } from '../resume-parser';
+import { employmentTypes } from '../../../shared/search.ts';
+import { deriveExperienceMonths, deriveLanguageCodes } from '../candidate-preferences';
 
 type Draft = {
   name: string; email: string; phone: string; city: string; industry: string; professionalRole: string;
   specialization: string; desiredGrade: string; stack: string; experience: string;
   careerAchievements: string; education: string; workHistory: string; portfolio: string; languages: string; format: string;
+  salaryFrom: string; salaryTo: string; employmentType: string;
 };
 
 const workFormats = ['Удалённо', 'Гибрид', 'Офис'];
@@ -33,6 +36,9 @@ export function Onboarding({ state, update, onComplete }: {
     careerAchievements: profile.careerAchievements || '', education: profile.education || '',
     workHistory: profile.workHistory || '', portfolio: profile.portfolio || '', languages: profile.languages || '',
     format: profile.format,
+    salaryFrom: profile.salaryFrom === null || profile.salaryFrom === undefined ? '' : String(profile.salaryFrom),
+    salaryTo: profile.salaryTo === null || profile.salaryTo === undefined ? '' : String(profile.salaryTo),
+    employmentType: profile.employmentType || '',
   }));
   const [error, setError] = useState('');
   const [consent, setConsent] = useState(profile.consent);
@@ -65,7 +71,7 @@ export function Onboarding({ state, update, onComplete }: {
       if (controller.signal.aborted) return;
       const recognized: Partial<Draft> = {};
       const truncated = new Set(result.truncatedFields);
-      for (const key of Object.keys(textLimits) as (keyof Draft)[]) {
+      for (const key of Object.keys(textLimits) as (keyof typeof textLimits)[]) {
         if (key === 'stack') continue;
         const value = result.fields[key];
         if (typeof value !== 'string' || !value.trim()) continue;
@@ -117,6 +123,15 @@ export function Onboarding({ state, update, onComplete }: {
     const industry = draft.industry.trim(), professionalRole = draft.professionalRole.trim(), experience = draft.experience.trim();
     const stack = [...new Set(draft.stack.split(',').map(skill => skill.trim()).filter(Boolean))];
     const softSkills: string[] = [];
+    const salaryFrom = draft.salaryFrom === '' ? null : Number(draft.salaryFrom);
+    const salaryTo = draft.salaryTo === '' ? null : Number(draft.salaryTo);
+    if ([salaryFrom, salaryTo].some(value => value !== null && (!Number.isInteger(value) || value < 0 || value > 10_000_000))) {
+      setError('Укажите зарплату от 0 до 10 000 000 ₽ в месяц, целым числом.'); return;
+    }
+    if (salaryFrom !== null && salaryTo !== null && salaryFrom > salaryTo) {
+      setError('Нижняя граница желаемой зарплаты больше верхней. Проверьте диапазон.'); return;
+    }
+    if (draft.employmentType && !employmentTypes.includes(draft.employmentType)) { setError('Выберите занятость из списка.'); return; }
     if (!name || !email || !industryOptions.includes(industry) || !professionalRole || !experience || !stack.length
       || !isSpecialization(specialization) || !isGrade(desiredGrade)) {
       setError('Заполните обязательные поля анкеты.'); return;
@@ -136,6 +151,8 @@ export function Onboarding({ state, update, onComplete }: {
       profile: {
         ...previous.profile, name, email, industry, professionalRole, specialization, desiredGrade, stack, experience, softSkills, ...details,
         city: draft.city.trim(), phone: draft.phone.trim(), consent, visible: visible && consent, surveyCompletedAt: survey.date,
+        salaryFrom, salaryTo, employmentType: draft.employmentType,
+        experienceMonths: deriveExperienceMonths(experience), languageCodes: deriveLanguageCodes(details.languages),
       },
     }));
     onComplete();
@@ -175,9 +192,17 @@ export function Onboarding({ state, update, onComplete }: {
       </div>
       <label className="field"><span>Стек</span><input name="stack" required maxLength={textLimits.stack} value={draft.stack} onChange={event => change('stack', event.target.value)} placeholder="React, TypeScript, CSS" /></label>
       <div className="form-grid">
-        <label className="field"><span>Общий стаж</span><input name="experience" required maxLength={100} value={draft.experience} onChange={event => change('experience', event.target.value)} placeholder="3 года 4 месяца или без опыта" /></label>
+        <label className="field"><span>Общий стаж</span><input name="experience" required maxLength={100} value={draft.experience} onChange={event => change('experience', event.target.value)} placeholder="3 года 4 месяца или без опыта" aria-describedby={draft.experience.trim() && deriveExperienceMonths(draft.experience) === null ? 'onboarding-experience-help' : undefined} /></label>
         <label className="field"><span>Город</span><input name="city" maxLength={100} autoComplete="address-level2" value={draft.city} onChange={event => change('city', event.target.value)} placeholder="Необязательно" /></label>
       </div>
+      {draft.experience.trim() && deriveExperienceMonths(draft.experience) === null && <p className="field-help" id="onboarding-experience-help">Для подбора по стажу укажите точную продолжительность, например «3 года 4 месяца». Приблизительный стаж останется в профиле.</p>}
+      <fieldset className="salary-fields"><legend>Условия работы <span className="field-caption">Необязательно</span></legend>
+        <div className="form-grid">
+          <label className="field"><span>Желаемая зарплата от, ₽/мес.</span><input name="salaryFrom" type="number" min="0" max="10000000" step="1" value={draft.salaryFrom} onChange={event => change('salaryFrom', event.target.value)} placeholder="Не указана" /></label>
+          <label className="field"><span>Желаемая зарплата до, ₽/мес.</span><input name="salaryTo" type="number" min="0" max="10000000" step="1" value={draft.salaryTo} onChange={event => change('salaryTo', event.target.value)} placeholder="Необязательно" /></label>
+        </div>
+        <label className="field"><span>Занятость</span><select name="employmentType" value={draft.employmentType} onChange={event => change('employmentType', event.target.value)}><option value="">Не указана</option>{employmentTypes.map(value => <option key={value}>{value}</option>)}</select></label>
+      </fieldset>
       <label className="field"><span>Места работы и проекты</span><textarea name="workHistory" rows={6} maxLength={textLimits.workHistory} value={draft.workHistory} onChange={event => change('workHistory', event.target.value)} placeholder="Компания, период работы, роль и задачи" /></label>
       <label className="field"><span>Достижения</span><textarea name="careerAchievements" rows={3} maxLength={textLimits.careerAchievements} value={draft.careerAchievements} onChange={event => change('careerAchievements', event.target.value)} placeholder="Результаты работы, проектов или соревнований" /></label>
       <details className="onboarding-details">

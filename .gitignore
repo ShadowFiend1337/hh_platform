@@ -8,5 +8,7 @@ test-results/
 playwright-report/
 __pycache__/
 *.pyc
+.venv/
+.pytest_cache/
 server/data/
 frontend/public/resume-assets/

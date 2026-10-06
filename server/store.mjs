@@ -23,6 +23,12 @@ export function openStore(path) {
       const row = db.prepare('SELECT * FROM attempts WHERE id = ?').get(id);
       return row ? { ...row, attempt: JSON.parse(row.payload), result: row.result ? JSON.parse(row.result) : null } : null;
     },
+    completed(owner) {
+      return db.prepare(`SELECT id,owner,specialization,grade,created_at,result,json_extract(payload,'$.surveyId') AS survey_id
+        FROM attempts WHERE owner = ? AND result IS NOT NULL ORDER BY created_at DESC, rowid DESC LIMIT 500`)
+        .all(owner).map(row => ({ ...row, attempt: { id: row.id, specialization: row.specialization, grade: row.grade, surveyId: row.survey_id }, result: JSON.parse(row.result) }));
+    },
+    deleteOwner(owner) { return db.prepare('DELETE FROM attempts WHERE owner = ?').run(owner).changes; },
     recent(owner, specialization, grade) {
       return db.prepare('SELECT payload FROM attempts WHERE owner = ? AND specialization = ? AND grade = ? ORDER BY created_at DESC, rowid DESC LIMIT 2')
         .all(owner, specialization, grade).map(row => JSON.parse(row.payload));

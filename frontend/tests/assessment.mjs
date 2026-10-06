@@ -26,11 +26,15 @@ async function mobileAudit() {
 }
 try {
   await page.goto(base + '/app?role=employer');
-  await page.evaluate(storageKey => {
+  await page.locator('.data-status').getByText('Изменения сохранены', { exact: true }).waitFor();
+  await page.evaluate(async storageKey => {
     const state = JSON.parse(localStorage.getItem(storageKey));
     const survey = { id: crypto.randomUUID(), date: new Date().toISOString(), industry: 'ИТ', professionalRole: 'Разработчик', specialization: 'Frontend', desiredGrade: 'Middle', stack: ['React'], experience: '3 года', softSkills: ['Коммуникация'] };
     state.profile = { ...state.profile, ...survey, id: state.profile.id, name: 'Проверка теста', email: 'test@example.com', consent: true, surveyCompletedAt: survey.date };
     state.surveys = [survey];
+    const stored = await (await fetch('/api/platform/state')).json();
+    const saved = await fetch('/api/platform/state', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ state, baseRevision: stored.revision }) });
+    if (!saved.ok) throw new Error('Unable to prepare consented test profile');
     localStorage.setItem(storageKey, JSON.stringify(state));
   }, key);
   await page.goto(base + '/app?role=candidate&tab=assessment');
@@ -93,4 +97,4 @@ try {
   await mobileAudit();
   assert.deepEqual(errors, []);
   console.log('PASS Vacancy source, private bank isolation, opaque IDs, resume, server grading and retry without false failure');
-} finally { await context.close(); await browser.close(); }
+} finally { await context.request.delete(base + '/api/platform/state'); await context.close(); await browser.close(); }

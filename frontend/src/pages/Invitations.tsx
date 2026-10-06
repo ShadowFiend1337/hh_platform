@@ -38,7 +38,7 @@ export function Invitations({ state, role, candidates, update, notify, onProfile
           {role === 'candidate' ? <><div className="invitation-contact"><a href={'mailto:' + invitation.contact}>{invitation.contact}</a></div>
             {pending && <div className="invitation-bottom"><span className="privacy-note"><LockKeyhole size={15} />При принятии компания получит ваши контакты</span><div className="button-group"><button className="button secondary" onClick={() => respond(invitation.id, 'rejected')}><X size={16} />Отклонить</button><button className="button primary" onClick={() => respond(invitation.id, 'accepted')}><Check size={16} />Принять</button></div></div>}
           </> : <div className="invitation-bottom">
-            {person && hasContactAccess(state, person.id) ? <a className="contact-link" href={'mailto:' + person.email}>{person.email}</a> : <span className="privacy-note"><LockKeyhole size={15} />Контакты скрыты</span>}
+            {person?.email && hasContactAccess(state, person.id) ? <a className="contact-link" href={'mailto:' + person.email}>{person.email}</a> : <span className="privacy-note"><LockKeyhole size={15} />Контакты скрыты</span>}
             {person && <button className="button secondary compact" onClick={() => onProfile(person)}>Профиль</button>}
           </div>}
         </article>;

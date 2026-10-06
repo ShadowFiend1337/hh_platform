@@ -165,6 +165,7 @@ async function resetForm() {
   await page.evaluate(key => { localStorage.removeItem(key); sessionStorage.clear(); }, storageKey);
   await page.reload();
   await page.getByRole('heading', { name: 'Анкета', exact: true }).waitFor();
+  await page.locator('.data-status').getByText('Изменения сохранены', { exact: true }).waitFor();
 }
 async function attach(file, duringRead) {
   importing = true;
@@ -372,6 +373,7 @@ try {
   assert.equal(saved.profile.visible, false);
   assert.equal(saved.profile.confirmed, null);
   assert.ok(!JSON.stringify(saved).includes('scan.png'), 'Raw resume file must not be persisted');
+  await page.locator('.data-status').getByText('Изменения сохранены', { exact: true }).waitFor();
   await page.reload();
   await page.getByRole('button', { name: 'Начать тест', exact: true }).waitFor();
   saved = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), storageKey);
@@ -408,14 +410,14 @@ try {
   await page.locator('[name="workHistory"]').fill(editedHistory);
   await page.getByRole('button', { name: 'Сохранить изменения', exact: true }).click();
   await page.getByText('Профиль сохранён', { exact: true }).waitFor();
+  await page.locator('.data-status').getByText('Изменения сохранены', { exact: true }).waitFor();
   await page.reload();
   await page.getByRole('heading', { name: 'Мой профиль', exact: true }).waitFor();
   saved = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), storageKey);
   assert.equal(saved.profile.workHistory, editedHistory, 'Profile save must preserve long work history');
   assert.deepEqual(saved.profile.softSkills, [], 'Profile must save without self-reported soft skills');
 
-  // Local deletion is explicit, reversible until confirmed, and synchronized to
-  // other tabs. It intentionally leaves separately stored server attempts intact.
+  // Deletion is confirmed, synchronized across tabs, and removes server records.
   const beforeErase = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), storageKey);
   const erasePolicy = await context.newPage();
   await erasePolicy.goto(base + '/privacy');
@@ -432,7 +434,7 @@ try {
   assert.deepEqual(await page.evaluate(key => JSON.parse(localStorage.getItem(key)), storageKey), beforeErase, 'Cancelling must preserve saved questionnaire');
   await erasePolicy.getByRole('button', { name: 'Удалить данные браузера', exact: true }).click();
   await erasePolicy.getByRole('button', { name: 'Удалить', exact: true }).click();
-  await erasePolicy.getByText('Данные этого браузера удалены.', { exact: true }).waitFor();
+  await erasePolicy.getByText('Данные текущей сессии удалены из браузера и с сервера.', { exact: true }).waitFor();
   await page.getByRole('heading', { name: 'Анкета', exact: true }).waitFor();
   assert.equal(await page.locator('[name="name"]').inputValue(), '', 'Other tab must reset the deleted profile');
   const erased = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), storageKey);
@@ -446,9 +448,8 @@ try {
   assert.equal(await erasePolicy.evaluate(() => localStorage.getItem('predel:test:unrelated')), 'keep');
   assert.equal(await erasePolicy.evaluate(() => sessionStorage.getItem('predel:assessment:v1')), null);
   assert.equal(await erasePolicy.evaluate(() => sessionStorage.getItem('predel:search')), null);
-  const retainedAttempt = await context.request.get(base + '/api/assessment/attempts/' + serverAttempt.id, { headers: { 'X-Attempt-Token': serverAttempt.token } });
-  assert.equal(retainedAttempt.status(), 200, 'Local deletion must not claim to delete server records');
-  assert.equal((await retainedAttempt.json()).id, serverAttempt.id);
+  const deletedAttempt = await context.request.get(base + '/api/assessment/attempts/' + serverAttempt.id, { headers: { 'X-Attempt-Token': serverAttempt.token } });
+  assert.equal(deletedAttempt.status(), 404, 'Confirmed deletion must also remove owned server attempts');
   await erasePolicy.close();
 
   if (process.env.PREDEL_RESUMES) {
@@ -484,4 +485,4 @@ try {
   assert.deepEqual(externalRequests, [], 'All parser and OCR assets must be loaded from this site');
   assert.deepEqual(errors, []);
   console.log('PASS PDF/DOCX text, actual Russian/English OCR, complete multi-job history across scan/mixed/partial/Form PDFs, automatic total from OCR dates and invalid-period warning, small-image native text, visible truncation, errors and cancellation, edit preservation, long-history persistence, assessment and profile without soft skills, private API payload, consent and deletion across tabs, mobile accessibility');
-} finally { await context.close(); await browser.close(); }
+} finally { await context.request.delete(base + '/api/platform/state'); await context.close(); await browser.close(); }

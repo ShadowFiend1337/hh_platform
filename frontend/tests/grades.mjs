@@ -56,6 +56,7 @@ try {
       await page.getByRole('heading', { name: 'Грейд подтверждён', exact: true }).waitFor();
       await page.getByRole('button', { name: 'К профилю', exact: true }).click();
       await page.getByRole('heading', { name: 'Мой профиль', exact: true }).waitFor();
+      await page.locator('.data-status').getByText('Изменения сохранены', { exact: true }).waitFor();
       await page.reload();
       assert.equal(await page.getByLabel('Предполагаемый грейд').inputValue(), grade);
       assert.equal(await page.getByLabel('Общий стаж').inputValue(), '3 года 10 месяцев');
@@ -77,7 +78,7 @@ try {
         assert.deepEqual(issues, []);
         await page.screenshot({ path: resolve('test-results', 'grades-mobile.png'), fullPage: true });
       }
-    } finally { await context.close(); }
+    } finally { await context.request.delete(base + '/api/platform/state'); await context.close(); }
   }
   assert.deepEqual(errors, []);
   console.log('PASS all five grades: resume dates and overlap, self-assessment, server test, confirmed category, reload, employer search and mobile filters');

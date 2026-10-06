@@ -30,6 +30,7 @@ try {
   await page.goto(base + '/app?role=candidate');
   const specialization = page.getByRole('combobox', { name: 'Специализация', exact: true });
   const industry = page.getByRole('combobox', { name: 'Отрасль', exact: true });
+  await specialization.waitFor();
   assert.equal(await specialization.locator('option').count(), specializationOptions.length + 1);
   assert.equal(await industry.locator('option').count(), industryOptions.length + 1);
   assert.deepEqual(await page.getByLabel('Предполагаемый грейд').locator('option').evaluateAll(options => options.slice(1).map(option => ({ value: option.value, label: option.textContent }))), gradeOptions);
@@ -102,16 +103,18 @@ try {
   await page.getByRole('button', { name: 'К профилю', exact: true }).click();
   await page.getByRole('heading', { name: 'Мой профиль', exact: true }).waitFor();
   assert.equal(await page.getByRole('combobox', { name: 'Специализация', exact: true }).inputValue(), 'ML');
+  await page.locator('.data-status').getByText('Изменения сохранены', { exact: true }).waitFor();
   await page.reload();
   assert.equal(await page.getByRole('combobox', { name: 'Отрасль', exact: true }).inputValue(), 'Наука');
   await page.goto(base + '/app?role=employer');
   await page.getByRole('textbox', { name: 'Потребность работодателя' }).fill('ML Middle Python PyTorch');
   await page.getByRole('button', { name: 'Подобрать', exact: true }).click();
-  await page.waitForFunction(() => document.querySelectorAll('.candidate-row').length === 1);
-  assert.match(await page.locator('.candidate-row').textContent(), /Иван Соколов/);
-  assert.match(await page.locator('.candidate-row').textContent(), /машинному обучению/);
+  const ownRow = page.locator('.candidate-row').filter({ hasText: 'Иван Соколов' });
+  await ownRow.waitFor();
+  assert.match(await ownRow.textContent(), /машинному обучению/);
   assert.deepEqual(errors, []);
-  console.log('PASS 13 directions, 25 industries, all 65 grade programs, resume import, ML category, persistence, matching and mobile accessibility');
+  console.log('PASS 14 directions, 25 industries, all 70 grade programs, resume import, ML category, SQLite persistence, matching and mobile accessibility');
 } finally {
+  await context.request.delete(base + '/api/platform/state');
   await browser.close();
 }

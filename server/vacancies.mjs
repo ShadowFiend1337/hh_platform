@@ -4,6 +4,7 @@ import { engineeringExamples, engineeringSkillAliases } from './banks/engineerin
 import { productExamples, productSkillAliases } from './banks/product.mjs';
 import { engineeringLevelVacancies } from './banks/engineering-levels.mjs';
 import { dataProductLevelVacancies } from './banks/data-product-levels.mjs';
+import { embeddedExamples, embeddedSkillAliases } from './banks/embedded.mjs';
 
 // Synthetic examples, not scraped vacancies or a labour-market dataset.
 export const vacancyExamples = [
@@ -12,6 +13,7 @@ export const vacancyExamples = [
   ...productExamples,
   ...engineeringLevelVacancies,
   ...dataProductLevelVacancies,
+  ...embeddedExamples,
   {
     id: 'frontend-junior', title: 'Frontend Junior', specialization: 'Frontend', grade: 'Junior',
     description: 'Создавать доступные формы и адаптивные страницы на HTML, CSS и JavaScript. Работать с flex и grid, событиями браузера и запросами fetch. Проверять управление с клавиатуры.',
@@ -116,7 +118,7 @@ const skillLexicon = [
   ['Redis', bounded('redis')],
   ['MongoDB', bounded('mongodb|mongo')],
   ['GraphQL', bounded('graphql')],
-  ...[...dataSkillAliases, ...engineeringSkillAliases, ...productSkillAliases].map(([skill, expression]) => [skill, bounded(expression)]),
+  ...[...dataSkillAliases, ...engineeringSkillAliases, ...productSkillAliases, ...embeddedSkillAliases].map(([skill, expression]) => [skill, bounded(expression)]),
 ];
 
 export function analyzeVacancy(description, specialization, grade) {

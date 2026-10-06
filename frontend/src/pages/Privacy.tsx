@@ -2,17 +2,18 @@ import { useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { Brand } from '../components/Brand';
 
-export function Privacy({ onHome, onClearLocal }: { onHome: () => void; onClearLocal?: () => void }) {
+export function Privacy({ onHome, onClearLocal }: { onHome: () => void; onClearLocal?: () => Promise<void> }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleted, setDeleted] = useState(false);
   const [error, setError] = useState('');
-  function clearLocal() {
+  const [deleting, setDeleting] = useState(false);
+  async function clearLocal() {
+    setDeleting(true);
     try {
-      onClearLocal?.();
+      await onClearLocal?.();
       setConfirmDelete(false); setDeleted(true); setError('');
-    } catch {
-      setError('Хранилище недоступно. Очистите данные сайта в настройках браузера.');
-    }
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Не удалось удалить данные. Повторите попытку.'); }
+    finally { setDeleting(false); }
   }
   return <div className="app-shell privacy-page">
     <a className="skip-link" href="#privacy">К содержимому</a>
@@ -35,26 +36,27 @@ export function Privacy({ onHome, onClearLocal }: { onHome: () => void; onClearL
           </section>
           <section className="privacy-section" aria-labelledby="privacy-storage">
             <h2 id="privacy-storage">Что хранится</h2>
-            <p>В этом браузере сохраняются имя, контакты, город, профессиональные сведения, образование, достижения, ссылки на портфолио, предпочтения по работе, согласия, история опросов и тестов.</p>
-            <p>При запуске теста сервер получает отрасль, роль, специализацию, предполагаемый грейд, стаж, стек и софт-скиллы. Он сохраняет эти сведения, идентификаторы и время попытки, контрольную сумму ответов и результат. Имя, email, телефон и дополнительные разделы резюме в запрос тестирования не входят.</p>
-            <p>Техническая cookie связывает попытки теста с браузером и действует 30 дней. Анкета хранится до очистки данных сайта. Тестовые записи хранятся отдельно на локальном сервере; автоматический срок их удаления пока не установлен.</p>
+            <p>После сохранения анкеты с согласием сервер хранит в SQLite имя, контакты, город, профессиональные сведения, образование, достижения, портфолио и предпочтения по работе. Там же хранятся компания, приглашения, сохранённые поиски и история анкет и тестов. Браузер хранит копию данных и несохранённые изменения.</p>
+            <p>Запрос тестирования содержит отрасль, роль, специализацию, предполагаемый грейд, стаж и стек. Имя, email, телефон и дополнительные разделы резюме в этот запрос не входят. Сервер сохраняет время попытки, контрольную сумму ответов и результат.</p>
+            <p>Техническая cookie связывает данные с браузером и действует 30 дней. Регистрация и восстановление доступа пока не реализованы: удаление cookie или другой браузер не дают доступа к прежнему профилю. Автоматический срок удаления серверных записей пока не установлен.</p>
           </section>
           <section className="privacy-section" aria-labelledby="privacy-visibility">
             <h2 id="privacy-visibility">Видимость профиля</h2>
-            <p>Показ профиля работодателям включается отдельно от согласия на обработку. В интерфейсе контакты открываются после принятия приглашения. Подбор и приглашения сейчас работают в демонстрации внутри одного браузера, а серверное разграничение доступа к профилям ещё не реализовано.</p>
+            <p>Показ профиля работодателям включается отдельно от согласия на обработку. Для настоящего профиля в подборе также нужен пройденный тест, проверенный сервером. Поиск не возвращает email и телефон. Сервер выдаёт контакты владельцу профиля или отправителю принятого приглашения при действующем согласии кандидата.</p>
+            <p>Демонстрационные кандидаты вымышлены, их оценки не являются результатами тестирования реальных людей. Модель поиска обучена только на синтетических профессиональных описаниях. Векторный индекс публичного опыта рассчитывается локально на сервере; персональные контакты в него не входят. Поисковый текст не сохраняется в журнале запросов; сохранённый поиск записывается по вашей команде.</p>
           </section>
           <section className="privacy-section" aria-labelledby="privacy-control">
             <h2 id="privacy-control">Управление данными</h2>
-            <p>Измените сведения в профиле или снимите согласие и сохраните изменения — профиль будет скрыт из подбора. Для удаления локальной анкеты очистите данные этого сайта в настройках браузера. Это не удаляет записи тестирования на сервере; удаление таких записей через интерфейс пока недоступно.</p>
+            <p>Снимите согласие или видимость и сохраните изменения — профиль будет скрыт из подбора. Кнопка ниже удаляет данные текущей сессии из браузера и с сервера: профиль, индекс, компанию, приглашения, сохранённые поиски, анкеты и попытки тестирования. Очистка только браузера в его настройках не удаляет серверные записи.</p>
             {onClearLocal && <div className="privacy-reset">
               {confirmDelete ? <>
-                <p role="status">Удалить анкету и историю из этого браузера? Записи тестов на сервере сохранятся.</p>
+                <p role="status">Удалить данные текущей сессии из браузера и с сервера, включая тесты и приглашения?</p>
                 <div className="privacy-reset-actions">
-                  <button className="button secondary compact" onClick={clearLocal}>Удалить</button>
-                  <button className="button secondary compact" onClick={() => setConfirmDelete(false)}>Отмена</button>
+                  <button className="button secondary compact" disabled={deleting} onClick={() => { void clearLocal(); }}>{deleting ? 'Удаляем…' : 'Удалить'}</button>
+                  <button className="button secondary compact" disabled={deleting} onClick={() => setConfirmDelete(false)}>Отмена</button>
                 </div>
               </> : <button className="button secondary compact" onClick={() => setConfirmDelete(true)}>Удалить данные браузера</button>}
-              {deleted && <p role="status">Данные этого браузера удалены.</p>}
+              {deleted && <p role="status">Данные текущей сессии удалены из браузера и с сервера.</p>}
               {error && <p className="form-error" role="alert">{error}</p>}
             </div>}
           </section>

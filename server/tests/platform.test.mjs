@@ -1,0 +1,317 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { DirectoryStore } from '../directory-store.mjs';
+import { PlatformService } from '../platform.mjs';
+import { openStore } from '../store.mjs';
+import { createAttempt, evaluate } from '../assessment.mjs';
+import { defaultSearchFilters } from '../../shared/search.ts';
+
+const time = Date.parse('2026-10-06T09:00:00.000Z');
+const date = new Date(time).toISOString();
+const ownerA = '11111111111111111111111111111111';
+const ownerB = '22222222222222222222222222222222';
+const ownerC = '33333333333333333333333333333333';
+const idA = `user-${ownerA.slice(0, 20)}`;
+const idB = `user-${ownerB.slice(0, 20)}`;
+function initial() {
+  return { version: 2,
+    profile: { id: 'candidate-anna', name: '', email: '', phone: '', specialization: 'Frontend', desiredGrade: 'Junior',
+      confirmed: null, stack: [], industry: '', professionalRole: '', softSkills: [], surveyCompletedAt: null,
+      experience: '', city: '', format: 'Удалённо', bio: '', careerAchievements: '', education: '', workHistory: '',
+      portfolio: '', languages: '', fspId: '', achievements: [], visible: false, consent: false },
+    company: { id: 'company-line', name: 'Учебная компания', industry: 'ИТ', website: 'https://example.com',
+      contact: 'employer@example.com', description: 'Вымышленная компания для теста.' },
+    invitations: [], history: [], surveys: [], savedSearches: [] };
+}
+function fixture(t, seeds = []) {
+  const store = new DirectoryStore(':memory:', seeds);
+  const assessments = openStore(':memory:');
+  let clock = time;
+  const platform = new PlatformService(store, assessments, { now: () => clock });
+  t.after(() => { assessments.close(); store.close(); });
+  return { store, assessments, platform, setTime: value => { clock = value; } };
+}
+function completed(assessments, owner, { grade = 'Junior', passed = true, at = time, id = `survey-${owner.slice(0, 2)}-${at}`, score = 100 } = {}) {
+  const survey = { id, date: new Date(at).toISOString(), industry: 'ИТ', professionalRole: 'Frontend разработчик',
+    specialization: 'Frontend', desiredGrade: grade, experience: '3 года 4 месяца', stack: ['React', 'TypeScript'], softSkills: [] };
+  const attempt = createAttempt(survey, '', [], at);
+  assessments.insert(attempt, owner, 'not-a-public-token');
+  let correctCount = passed ? score === 83 ? 5 : 6 : 0;
+  const answers = attempt.questions.map(question => ({ questionId: question.id,
+    optionId: correctCount-- > 0 ? question.correctOptionId : question.options.find(option => option.id !== question.correctOptionId).id }));
+  const evaluated = evaluate(attempt, answers, at + 1000);
+  assessments.complete(attempt.id, evaluated.answerDigest, evaluated.result);
+  return { survey, result: evaluated.result };
+}
+function candidateState(proof, { email = 'candidate@example.com', name = 'Тестовый Кандидат' } = {}) {
+  const state = initial();
+  state.surveys = [proof.survey]; state.history = [proof.result];
+  state.profile = { ...state.profile, ...proof.survey, id: 'candidate-anna', name, email, phone: '+7 000 000-00-00',
+    bio: 'Делаю доступные интерфейсы.', workHistory: `Вымышленный проект. Для личной связи ${email}.`,
+    surveyCompletedAt: proof.survey.date, visible: true, consent: true,
+    confirmed: { specialization: proof.result.specialization, grade: proof.result.grade, score: proof.result.score,
+      date: proof.result.date, surveyId: proof.survey.id } };
+  delete state.profile.date;
+  return state;
+}
+function invitation(candidateId, id = 'invitation-test') {
+  return { id, candidateId, companyId: 'stolen-company', company: 'Чужая компания', title: 'Frontend разработчик',
+    description: 'Вымышленное предложение: разрабатывать формы и кабинет.', contact: 'employer@example.com',
+    salaryFrom: 120000, salaryTo: 180000, status: 'sent', date: '1900-01-01' };
+}
+function errorStatus(status) { return error => error.status === status; }
+
+test('SQLite owns state, account identities and saved search order; raw files never enter snapshots', t => {
+  const { platform, store, assessments } = fixture(t);
+  assert.deepEqual(platform.read(ownerA), { state: null, revision: 0, directoryPeople: [] });
+  const state = initial();
+  state.profile.id = 'demo-embedded-1'; state.company.id = 'company-somebody';
+  state.savedSearches = [
+    { id: 'search-b', title: 'Электроника', query: 'Объяснить устройство платы', filters: { ...defaultSearchFilters, specialization: 'Embedded', salaryMax: 200000 } },
+    { id: 'search-a', title: 'Удалённо', query: '', filters: { ...defaultSearchFilters, format: 'Удалённо' } },
+  ];
+  const saved = platform.save(ownerA, state, 0);
+  assert.equal(saved.revision, 1);
+  assert.equal(saved.state.profile.id, 'candidate-anna'); assert.equal(saved.state.company.id, 'company-line');
+  assert.equal(store.forOwner(ownerA).id, idA);
+  const recovered = new PlatformService(store, assessments).read(ownerA);
+  assert.deepEqual(recovered.state.savedSearches.map(item => item.id), ['search-b', 'search-a']);
+  assert.equal(recovered.state.savedSearches[0].filters.specialization, 'Embedded');
+  assert.throws(() => platform.save(ownerA, { ...state, resumeFile: 'raw PDF bytes' }, 1), errorStatus(400));
+  assert.equal(platform.read(ownerA).revision, 1);
+});
+
+test('compare-and-swap rejects stale tabs and failed transactions leave their prior snapshot intact', t => {
+  const { platform, store } = fixture(t);
+  const saved = platform.save(ownerA, initial(), 0);
+  const changed = structuredClone(saved.state); changed.company.name = 'Новое имя';
+  platform.save(ownerA, changed, 1);
+  assert.throws(() => platform.save(ownerA, saved.state, 1), errorStatus(409));
+  const invalid = platform.read(ownerA).state;
+  invalid.invitations.push(invitation('does-not-exist'));
+  assert.throws(() => platform.save(ownerA, invalid, 2), errorStatus(404));
+  assert.equal(platform.read(ownerA).revision, 2);
+  assert.equal(platform.read(ownerA).state.company.name, 'Новое имя');
+  assert.equal(store.db.prepare('SELECT COUNT(*) AS n FROM platform_invitations').get().n, 0);
+});
+
+test('private profile creation needs consent even when an empty company account already exists', t => {
+  const { platform, assessments } = fixture(t);
+  const personal = initial(); personal.profile.name = 'Тестовый Кандидат'; personal.profile.email = 'test@example.com';
+  assert.throws(() => platform.save(ownerA, personal, 0), errorStatus(400));
+  assert.equal(platform.read(ownerA).state, null);
+  platform.save(ownerA, initial(), 0);
+  assert.throws(() => platform.save(ownerA, personal, 1), errorStatus(400));
+  const hiddenSurvey = initial(); hiddenSurvey.surveys = [completed(assessments, ownerA).survey];
+  assert.throws(() => platform.save(ownerA, hiddenSurvey, 1), errorStatus(400), 'A blank profile cannot bypass consent through its survey collection');
+  personal.profile.consent = true;
+  const saved = platform.save(ownerA, personal, 1);
+  saved.state.profile.consent = false;
+  const revoked = platform.save(ownerA, saved.state, saved.revision);
+  assert.equal(revoked.state.profile.email, 'test@example.com');
+});
+
+test('forged history, another session proof, FSP badges and synthetic flags cannot publish a user', t => {
+  const { platform, store, assessments } = fixture(t);
+  const stolen = completed(assessments, ownerB);
+  const state = candidateState(stolen);
+  state.profile.fspId = 'REAL-FSP'; state.profile.achievements = [{ title: 'Чемпион', result: 'Победитель', year: '2026' }];
+  state.profile.synthetic = true;
+  const saved = platform.save(ownerA, state, 0);
+  assert.equal(saved.state.profile.confirmed.grade, 'Junior', 'Unverifiable legacy data may remain private');
+  assert.deepEqual(saved.state.history, []);
+  assert.equal(saved.state.profile.fspId, ''); assert.deepEqual(saved.state.profile.achievements, []);
+  assert.equal(saved.state.profile.synthetic, false);
+  assert.equal(store.forOwner(ownerA).eligible, 0);
+  assert.equal(store.matching(defaultSearchFilters).length, 0);
+});
+
+test('published grade and score come from a passed owned result; contacts stay out of directory payload', t => {
+  const { platform, store, assessments } = fixture(t);
+  const proof = completed(assessments, ownerA, { score: 83 });
+  const state = candidateState(proof); state.profile.confirmed.score = 100;
+  state.history[0] = { ...proof.result, score: 100, passed: true };
+  const saved = platform.save(ownerA, state, 0);
+  assert.equal(saved.state.profile.confirmed.score, 83);
+  assert.equal(saved.state.history[0].score, 83);
+  assert.equal(saved.state.profile.experienceMonths, 40);
+  assert.equal(store.forOwner(ownerA).eligible, 1);
+  const publicPayload = JSON.parse(store.forOwner(ownerA).public_payload);
+  assert.equal(publicPayload.email, ''); assert.equal(publicPayload.phone, '');
+  assert(!JSON.stringify(publicPayload).includes(state.profile.email));
+  assert.deepEqual(platform.contacts(ownerA, 'candidate-anna'), { email: state.profile.email, phone: state.profile.phone });
+  assert.throws(() => platform.contacts(ownerB, idA), errorStatus(403));
+});
+
+test('a failed later attempt preserves the passed category; history is reconstructed from server completions', t => {
+  const { platform, store, assessments, setTime } = fixture(t);
+  const passed = completed(assessments, ownerA);
+  platform.save(ownerA, candidateState(passed), 0);
+  setTime(time + 10000);
+  const failed = completed(assessments, ownerA, { grade: 'Middle', passed: false, at: time + 10000 });
+  const input = platform.read(ownerA).state;
+  input.profile.confirmed = null; input.profile.desiredGrade = 'Middle';
+  input.surveys.push(failed.survey); input.history = [];
+  const saved = platform.save(ownerA, input, 1);
+  assert.equal(saved.state.profile.confirmed.grade, 'Junior');
+  assert.equal(saved.state.profile.confirmed.date, passed.result.date);
+  assert.equal(saved.state.history.length, 2); assert(saved.state.history.some(item => !item.passed));
+  assert.equal(store.forOwner(ownerA).eligible, 1);
+});
+
+test('a passed category outlives the limited recent history without exposing its private proof reference', t => {
+  const { platform, store, assessments } = fixture(t);
+  const passed = completed(assessments, ownerA);
+  platform.save(ownerA, candidateState(passed), 0);
+  completed(assessments, ownerA, { passed: false, at: time + 10000 });
+  const limited = new PlatformService(store, { ...assessments,
+    completed: owner => assessments.completed(owner).filter(row => row.id !== passed.result.id) }, { now: () => time + 10000 });
+  const current = limited.read(ownerA);
+  assert.equal(current.state.history.length, 1);
+  assert.equal(current.state.profile._proofId, undefined);
+  const saved = limited.save(ownerA, current.state, current.revision);
+  assert.equal(saved.state.profile.confirmed.grade, 'Junior');
+  assert.equal(store.forOwner(ownerA).eligible, 1);
+  assert(!Object.hasOwn(saved.state.profile, '_proofId'));
+  assert(!store.forOwner(ownerA).public_payload.includes('_proofId'));
+});
+
+test('a category switch cannot bypass the server 90 day boundary by forging gradeChangedAt', t => {
+  const { platform, assessments, setTime } = fixture(t);
+  const first = completed(assessments, ownerA);
+  platform.save(ownerA, candidateState(first), 0);
+  const second = completed(assessments, ownerA, { grade: 'Middle', at: time + 5000 });
+  const input = candidateState(second); input.profile.gradeChangedAt = '1900-01-01';
+  assert.throws(() => platform.save(ownerA, input, 1), errorStatus(409));
+  assert.equal(platform.read(ownerA).state.profile.confirmed.grade, 'Junior');
+  setTime(time + 90 * 86400000);
+  const saved = platform.save(ownerA, input, 1);
+  assert.equal(saved.state.profile.confirmed.grade, 'Middle');
+  assert.equal(saved.state.profile.confirmed.date, second.result.date);
+  assert.equal(saved.state.profile.gradeChangedAt, new Date(time + 90 * 86400000).toISOString());
+  const anotherOldProof = completed(assessments, ownerA, { grade: 'Senior', at: time + 15000 });
+  setTime(time + 90 * 86400000 + 100000);
+  assert.throws(() => platform.save(ownerA, candidateState(anotherOldProof), saved.revision), errorStatus(409),
+    'Replaying a second old proof cannot cause another immediate category change');
+});
+
+test('first assignment uses server time even for an old proof; repeating the same category does not restart the interval', t => {
+  const { platform, assessments, setTime } = fixture(t);
+  const old = completed(assessments, ownerA, { at: time - 100 * 86400000 });
+  const saved = platform.save(ownerA, candidateState(old), 0);
+  assert.equal(saved.state.profile.confirmed.date, old.result.date);
+  assert.equal(saved.state.profile.gradeChangedAt, date);
+  const otherOld = completed(assessments, ownerA, { grade: 'Middle', at: time - 99 * 86400000 });
+  assert.throws(() => platform.save(ownerA, candidateState(otherOld), saved.revision), errorStatus(409));
+  setTime(time + 11000);
+  const repeated = completed(assessments, ownerA, { at: time + 10000 });
+  const next = platform.save(ownerA, candidateState(repeated), saved.revision);
+  assert.equal(next.state.profile.confirmed.date, repeated.result.date);
+  assert.equal(next.state.profile.gradeChangedAt, date);
+});
+
+test('new invitations use the sender account and server time and require an available recipient', t => {
+  const { platform, assessments } = fixture(t);
+  const proof = completed(assessments, ownerB);
+  platform.save(ownerB, candidateState(proof, { email: 'recipient@example.com' }), 0);
+  const employer = initial(); employer.company.name = 'Моя компания'; employer.invitations = [invitation(idB)];
+  const saved = platform.save(ownerA, employer, 0);
+  const invite = saved.state.invitations[0];
+  assert.equal(invite.company, 'Моя компания'); assert.equal(invite.companyId, 'company-line'); assert.equal(invite.date, date);
+  assert.equal(invite.candidateId, idB); assert.equal(invite.status, 'sent');
+  assert.equal(saved.directoryPeople.length, 1); assert.equal(saved.directoryPeople[0].email, '');
+  assert.equal(platform.read(ownerB).revision, 2, 'Recipient tabs are invalidated by a new invitation');
+  const accepted = initial(); accepted.invitations = [invitation(idB, 'forged-acceptance')]; accepted.invitations[0].status = 'accepted';
+  assert.throws(() => platform.save(ownerC, accepted, 0), errorStatus(403));
+  assert.equal(platform.read(ownerC).state, null, 'An invalid creation rolls back its account insertion');
+});
+
+test('only the recipient can view or answer an invitation; contacts require its accepted answer', t => {
+  const { platform, assessments } = fixture(t);
+  const proof = completed(assessments, ownerB);
+  platform.save(ownerB, candidateState(proof, { email: 'recipient@example.com' }), 0);
+  const employer = initial(); employer.invitations = [invitation(idB)];
+  platform.save(ownerA, employer, 0);
+  const forged = platform.read(ownerA).state; forged.invitations[0].status = 'accepted';
+  assert.throws(() => platform.save(ownerA, forged, 1), errorStatus(403));
+  assert.throws(() => platform.contacts(ownerA, idB), errorStatus(403));
+  let recipient = platform.read(ownerB);
+  assert.equal(recipient.state.invitations[0].candidateId, 'candidate-anna');
+  recipient.state.invitations[0].status = 'viewed';
+  recipient = platform.save(ownerB, recipient.state, recipient.revision);
+  assert.equal(platform.read(ownerA).state.invitations[0].status, 'viewed');
+  recipient.state.invitations[0].status = 'accepted';
+  recipient = platform.save(ownerB, recipient.state, recipient.revision);
+  assert.equal(platform.read(ownerA).state.invitations[0].status, 'accepted');
+  assert.deepEqual(platform.contacts(ownerA, idB), { email: 'recipient@example.com', phone: '+7 000 000-00-00' });
+  assert.throws(() => platform.contacts(ownerC, idB), errorStatus(403));
+  const tampered = platform.read(ownerA); tampered.state.invitations[0].salaryFrom = 1;
+  assert.throws(() => platform.save(ownerA, tampered.state, tampered.revision), errorStatus(403));
+  recipient.state.invitations[0].status = 'rejected';
+  assert.throws(() => platform.save(ownerB, recipient.state, recipient.revision), errorStatus(403));
+});
+
+test('consent revocation removes publication and contact access while retaining the private account until deletion', t => {
+  const { platform, store, assessments } = fixture(t);
+  const proof = completed(assessments, ownerB);
+  platform.save(ownerB, candidateState(proof, { email: 'recipient@example.com' }), 0);
+  const employer = initial(); employer.invitations = [invitation(idB)]; platform.save(ownerA, employer, 0);
+  let recipient = platform.read(ownerB); recipient.state.invitations[0].status = 'accepted';
+  recipient = platform.save(ownerB, recipient.state, recipient.revision);
+  recipient.state.profile.consent = false;
+  platform.save(ownerB, recipient.state, recipient.revision);
+  assert.throws(() => platform.contacts(ownerA, idB), errorStatus(403));
+  assert.equal(store.matching(defaultSearchFilters).length, 0);
+  assert.equal(platform.read(ownerA).directoryPeople.length, 0);
+  assert.equal(platform.read(ownerB).state.profile.email, 'recipient@example.com');
+});
+
+test('account deletion removes related invitations, private collections, indexes and assessment data, preserving other accounts', t => {
+  const { platform, store, assessments } = fixture(t);
+  const proof = completed(assessments, ownerB);
+  const candidate = candidateState(proof); candidate.savedSearches = [{ id: 's', title: 'Поиск', query: '', filters: defaultSearchFilters }];
+  platform.save(ownerB, candidate, 0);
+  const employer = initial(); employer.invitations = [invitation(idB)]; platform.save(ownerA, employer, 0);
+  const activeB = createAttempt(proof.survey, '', [], time + 10000);
+  const activeA = createAttempt({ ...proof.survey, id: 'other-active-survey' }, '', [], time + 10000);
+  assessments.insert(activeB, ownerB, 'private-token-b');
+  assessments.insert(activeA, ownerA, 'private-token-a');
+  store.putVector(store.forOwner(ownerB), 'test', [1, 0, 0]);
+  const senderRevision = platform.read(ownerA).revision;
+  assert.deepEqual(platform.delete(ownerB), { state: null, revision: 0, directoryPeople: [] });
+  assert.equal(store.get(idB), undefined);
+  for (const table of ['platform_surveys', 'platform_searches', 'platform_invitations', 'directory_vectors', 'directory_skills', 'directory_languages']) {
+    assert.equal(store.db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n, 0, table);
+  }
+  assert.equal(assessments.get(proof.result.id), null);
+  assert.equal(assessments.get(activeB.id), null);
+  assert(assessments.get(activeA.id));
+  assert.equal(assessments.get(activeA.id).owner, ownerA);
+  assert.equal(platform.read(ownerB).state, null);
+  assert(platform.read(ownerA).state); assert.equal(platform.read(ownerA).revision, senderRevision + 1);
+  assert.deepEqual(platform.read(ownerA).state.invitations, []);
+  assert.throws(() => platform.contacts(ownerA, idB), errorStatus(404));
+});
+
+test('bounded validation rejects malformed values without losing a long permitted work history', t => {
+  const { platform, assessments } = fixture(t);
+  const proof = completed(assessments, ownerA);
+  const state = candidateState(proof); state.profile.workHistory = 'Учебный опыт. '.repeat(1000);
+  const saved = platform.save(ownerA, state, 0);
+  assert.equal(saved.state.profile.workHistory, state.profile.workHistory.trim());
+  for (const mutate of [
+    value => { value.profile.salaryFrom = -1; },
+    value => { value.profile.salaryFrom = 200000; value.profile.salaryTo = 100000; },
+    value => { value.profile.experienceMonths = 0.5; },
+    value => { value.profile.languageCodes = ['xx']; },
+    value => { value.profile.availableFrom = '2026-02-31'; },
+    value => { value.profile.portfolio = 'javascript:alert(1)'; },
+    value => { value.profile.workHistory = 'x'.repeat(20001); },
+    value => { value.surveys = [value.surveys[0], value.surveys[0]]; },
+    value => { value.savedSearches = [{ id: 'bad', title: 'Bad', query: '', filters: { ...defaultSearchFilters, minScore: 101 } }]; },
+  ]) {
+    const invalid = structuredClone(saved.state); mutate(invalid);
+    assert.throws(() => platform.save(ownerA, invalid, saved.revision), errorStatus(400));
+  }
+  assert.equal(platform.read(ownerA).revision, saved.revision);
+});

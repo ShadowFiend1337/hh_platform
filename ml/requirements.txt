@@ -1,0 +1,7 @@
+# Tested on Python 3.11.9. Install the CPU build of torch (see semantic_model.md).
+torch==2.12.0
+transformers==4.57.6
+numpy==2.3.3
+safetensors==0.7.0
+huggingface-hub==0.36.2
+tokenizers==0.22.2

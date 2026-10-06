@@ -5,6 +5,8 @@ import { resolve, relative, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openStore } from './store.mjs';
 import { createAttempt, digest, evaluate, programInfo, publicAttempt, RequestError, validateSurvey } from './assessment.mjs';
+import { DirectoryService } from './directory.mjs';
+import { PlatformService } from './platform.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const cookieName = 'predel_session';
@@ -18,6 +20,8 @@ const mime = {
 
 export function createAssessmentServer({ dbPath = resolve(root, 'server/data/assessment.sqlite'), now = Date.now, webOrigin = process.env.WEB_ORIGIN, secureCookie = process.env.COOKIE_SECURE === '1', distPath = resolve(root, 'frontend/dist') } = {}) {
   const store = openStore(dbPath);
+  const directory = new DirectoryService(dbPath);
+  const platform = new PlatformService(directory.store, store, { now });
   const limits = new Map();
   function send(response, status, value) {
     response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
@@ -31,11 +35,11 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
     value.count++; limits.set(key, value);
     if (value.count > maximum) throw new RequestError(429, 'Слишком много запросов. Попробуйте позже.');
   }
-  async function body(request) {
+  async function body(request, maximum = 20000) {
     if (!String(request.headers['content-type'] || '').startsWith('application/json')) throw new RequestError(415, 'Ожидается JSON.');
-    if (Number(request.headers['content-length']) > 20000) throw new RequestError(413, 'Запрос слишком большой.');
+    if (Number(request.headers['content-length']) > maximum) throw new RequestError(413, 'Запрос слишком большой.');
     let length = 0; const chunks = [];
-    for await (const chunk of request) { length += chunk.length; if (length > 20000) throw new RequestError(413, 'Запрос слишком большой.'); chunks.push(chunk); }
+    for await (const chunk of request) { length += chunk.length; if (length > maximum) throw new RequestError(413, 'Запрос слишком большой.'); chunks.push(chunk); }
     try {
       const value = JSON.parse(Buffer.concat(chunks).toString('utf8'));
       if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error();
@@ -67,6 +71,26 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
         if (request.method === 'GET' && url.pathname === '/api/health') return send(response, 200, { status: 'ok' });
         if (request.method === 'GET' && url.pathname === '/api/assessment/program') return send(response, 200, programInfo(url.searchParams.get('specialization'), url.searchParams.get('grade')));
         const session = owner(request, response);
+        if (url.pathname === '/api/platform/state') {
+          if (request.method === 'GET') return send(response, 200, platform.read(session));
+          if (request.method === 'DELETE') return send(response, 200, platform.delete(session));
+          if (request.method === 'PUT') {
+            const input = await body(request, 1000000);
+            if (Object.keys(input).some(key => !['state', 'baseRevision'].includes(key))) throw new RequestError(400, 'Недопустимые поля запроса.');
+            return send(response, 200, platform.save(session, input.state, input.baseRevision));
+          }
+          throw new RequestError(405, 'Метод не поддерживается.');
+        }
+        const contacts = /^\/api\/directory\/([^/]+)\/contacts$/.exec(url.pathname);
+        if (request.method === 'GET' && contacts) return send(response, 200, platform.contacts(session, decodeURIComponent(contacts[1])));
+        if (request.method === 'GET' && url.pathname === '/api/directory/options') return send(response, 200, directory.options());
+        if (request.method === 'GET' && url.pathname === '/api/directory/search') {
+          let filters;
+          try { filters = JSON.parse(url.searchParams.get('filters') || '{}'); }
+          catch { throw new RequestError(400, 'Некорректные фильтры.'); }
+          return send(response, 200, await directory.search(url.searchParams.get('q') || '', filters,
+            { owner: session, limit: Number(url.searchParams.get('limit') || 30), offset: Number(url.searchParams.get('offset') || 0) }));
+        }
         if (request.method === 'POST' && url.pathname === '/api/assessment/attempts') {
           const input = await body(request);
           if (Object.keys(input).some(key => !['survey', 'vacancyDescription'].includes(key))) throw new RequestError(400, 'Недопустимые поля запроса.');
@@ -119,8 +143,8 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
   });
   server.requestTimeout = 15000;
   server.headersTimeout = 10000;
-  server.on('close', () => store.close());
-  return { server, store };
+  server.on('close', () => { directory.close(); store.close(); });
+  return { server, store, directory, platform };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

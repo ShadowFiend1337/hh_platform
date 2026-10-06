@@ -3,6 +3,8 @@ import { BadgeCheck, Eye, FileText, Medal, UserRound } from 'lucide-react';
 import { dateLabel, gradeLabels, gradeOptions, industryOptions, isGrade, isSpecialization, specializationOptions, specializationLabels, type Grade, type PlatformState, type Specialization } from '../model';
 import { FormHeader } from './Company';
 import { MAX_STACK_SKILLS, resumeTextLimits } from '../../../shared/resume-limits';
+import { employmentTypes } from '../../../shared/search.ts';
+import { deriveExperienceMonths, deriveLanguageCodes } from '../candidate-preferences';
 
 function sameValues(left: string[], right: string[]) {
   const leftValues = new Set(left);
@@ -18,6 +20,7 @@ export function Profile({ state, update, notify, onTest, onPreview }: {
   const [consent, setConsent] = useState(state.profile.consent);
   const [visible, setVisible] = useState(state.profile.visible);
   const [error, setError] = useState('');
+  const [experienceText, setExperienceText] = useState(state.profile.experience);
   const profile = state.profile;
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -30,6 +33,17 @@ export function Profile({ state, update, notify, onTest, onPreview }: {
     const specialization = String(fields.get('specialization')) as Specialization;
     const desiredGrade = String(fields.get('desiredGrade')) as Grade;
     const experience = String(fields.get('experience')).trim();
+    const salaryFromText = String(fields.get('salaryFrom') || '').trim(), salaryToText = String(fields.get('salaryTo') || '').trim();
+    const salaryFrom = salaryFromText === '' ? null : Number(salaryFromText), salaryTo = salaryToText === '' ? null : Number(salaryToText);
+    const employmentType = String(fields.get('employmentType') || '');
+    const languages = String(fields.get('languages') || '').trim();
+    if ([salaryFrom, salaryTo].some(value => value !== null && (!Number.isInteger(value) || value < 0 || value > 10_000_000))) {
+      setError('Укажите зарплату от 0 до 10 000 000 ₽ в месяц, целым числом.'); return;
+    }
+    if (salaryFrom !== null && salaryTo !== null && salaryFrom > salaryTo) {
+      setError('Нижняя граница желаемой зарплаты больше верхней. Проверьте диапазон.'); return;
+    }
+    if (employmentType && !employmentTypes.includes(employmentType)) { setError('Выберите занятость из списка.'); return; }
     if (!name || !stack.length) { setError('Заполните имя и стек.'); return; }
     if (!industryOptions.includes(industry)) { setError('Выберите отрасль.'); return; }
     if (!isSpecialization(specialization)) { setError('Выберите специализацию.'); return; }
@@ -56,7 +70,8 @@ export function Profile({ state, update, notify, onTest, onPreview }: {
         education: String(fields.get('education') || '').trim(),
         workHistory: String(fields.get('workHistory') || '').trim(),
         portfolio: String(fields.get('portfolio') || '').trim(),
-        languages: String(fields.get('languages') || '').trim(),
+        languages, languageCodes: deriveLanguageCodes(languages), experienceMonths: deriveExperienceMonths(experience),
+        salaryFrom, salaryTo, employmentType,
         fspId: fspId.trim(), achievements: fspId.trim() === previous.profile.fspId ? previous.profile.achievements : [],
         consent, visible: visible && consent,
       } };
@@ -74,7 +89,8 @@ export function Profile({ state, update, notify, onTest, onPreview }: {
         <FormHeader title="Навыки" Icon={FileText} />
         <div className="form-grid"><label className="field"><span>Специализация</span><select name="specialization" defaultValue={profile.specialization}>{specializationOptions.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}</select></label><label className="field"><span>Предполагаемый грейд</span><select name="desiredGrade" defaultValue={profile.desiredGrade}>{gradeOptions.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}</select></label></div>
         <div className="form-grid"><label className="field"><span>Отрасль</span><select name="industry" required defaultValue={profile.industry || ''}><option value="">Выберите отрасль</option>{industryOptions.map(industry => <option key={industry}>{industry}</option>)}</select></label><label className="field"><span>Роль в команде</span><input name="professionalRole" required maxLength={100} defaultValue={profile.professionalRole} placeholder="Например, разработчик интерфейсов" /></label></div>
-        <div className="form-grid"><label className="field"><span>Общий стаж</span><input name="experience" required maxLength={100} defaultValue={profile.experience} /></label><label className="field"><span>Формат работы</span><select name="format" defaultValue={profile.format}><option>Удалённо</option><option>Гибрид</option><option>Офис</option></select></label></div>
+        <div className="form-grid"><label className="field"><span>Общий стаж</span><input name="experience" required maxLength={100} value={experienceText} onChange={event => setExperienceText(event.target.value)} aria-describedby={experienceText.trim() && deriveExperienceMonths(experienceText) === null ? 'profile-experience-help' : undefined} /></label><label className="field"><span>Формат работы</span><select name="format" defaultValue={profile.format}><option>Удалённо</option><option>Гибрид</option><option>Офис</option></select></label></div>
+        {experienceText.trim() && deriveExperienceMonths(experienceText) === null && <p className="field-help" id="profile-experience-help">Для подбора по стажу укажите точную продолжительность, например «3 года 4 месяца». Приблизительный стаж останется в профиле.</p>}
         <label className="field"><span>Стек</span><input name="stack" required maxLength={resumeTextLimits.stack} defaultValue={profile.stack.join(', ')} placeholder="React, TypeScript, CSS" /></label>
         <label className="field"><span>Места работы и проекты</span><textarea name="workHistory" rows={6} maxLength={resumeTextLimits.workHistory} defaultValue={profile.workHistory || ''} /></label>
         <label className="field"><span>О себе</span><textarea name="bio" rows={4} maxLength={3000} defaultValue={profile.bio} /></label>
@@ -83,6 +99,13 @@ export function Profile({ state, update, notify, onTest, onPreview }: {
           <label className="field"><span>Образование</span><textarea name="education" rows={2} maxLength={resumeTextLimits.education} defaultValue={profile.education || ''} /></label>
           <div className="form-grid"><label className="field"><span>Языки</span><input name="languages" maxLength={500} defaultValue={profile.languages || ''} /></label><label className="field"><span>Портфолио</span><input name="portfolio" maxLength={1000} defaultValue={profile.portfolio || ''} placeholder="GitHub или ссылка на проекты" /></label></div>
         </details>
+        <fieldset className="salary-fields"><legend>Условия работы <span className="field-caption">Необязательно</span></legend>
+          <div className="form-grid">
+            <label className="field"><span>Желаемая зарплата от, ₽/мес.</span><input name="salaryFrom" type="number" min="0" max="10000000" step="1" defaultValue={profile.salaryFrom ?? ''} placeholder="Не указана" /></label>
+            <label className="field"><span>Желаемая зарплата до, ₽/мес.</span><input name="salaryTo" type="number" min="0" max="10000000" step="1" defaultValue={profile.salaryTo ?? ''} placeholder="Необязательно" /></label>
+          </div>
+          <label className="field"><span>Занятость</span><select name="employmentType" defaultValue={profile.employmentType || ''}><option value="">Не указана</option>{employmentTypes.map(value => <option key={value}>{value}</option>)}</select></label>
+        </fieldset>
         <div className="section-divider" />
         <FormHeader title="ФСП" Icon={Medal} />
         <label className="field"><span>ID участника</span><input value={fspId} maxLength={100} onChange={event => setFspId(event.target.value)} placeholder="Необязательно" /></label>

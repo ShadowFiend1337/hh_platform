@@ -12,8 +12,9 @@ import { CandidateDetails } from './components/CandidateDetails';
 import { InviteForm } from './components/InviteForm';
 import { Brand } from './components/Brand';
 import { Landing } from './pages/Landing';
+import { readCandidateContacts, usePlatformPersistence } from './platform-api';
 import {
-  createInitialState, currentSurvey, emptyFilters, hasContactAccess, otherCandidates, ownCandidateId, readState, saveState, storageKey,
+  currentSurvey, emptyFilters, hasContactAccess, otherCandidates, ownCandidateId, readState, saveState, storageKey,
   type Candidate, type Page, type Role,
 } from './model';
 
@@ -38,7 +39,9 @@ export function App() {
   const [roleMenu, setRoleMenu] = useState(false);
   const [toast, setToast] = useState('');
   const [dialog, setDialog] = useState<{ type: 'profile' | 'invite'; person: Candidate } | null>(null);
-  const candidates = [state.profile, ...otherCandidates];
+  const [knownPeople, setKnownPeople] = useState<Candidate[]>([]);
+  const persistence = usePlatformPersistence(state, setState);
+  const candidates = [...new Map([...otherCandidates, ...persistence.people, ...knownPeople, state.profile].map(person => [person.id, person])).values()];
   const surveyComplete = Boolean(currentSurvey(state));
   const candidatePage = !surveyComplete ? 'onboarding' : !state.profile.confirmed && route.page !== 'onboarding' ? 'assessment' : route.page;
   const page = route.role === 'candidate' ? candidatePage : route.page;
@@ -48,10 +51,10 @@ export function App() {
 
   useEffect(() => { if (!saveState(state)) setToast('Хранилище браузера недоступно. Изменения сохранятся до закрытия страницы.'); }, [state]);
   useEffect(() => {
-    if (route.home || route.privacy || route.role !== 'candidate' || route.page === candidatePage) return;
+    if (!persistence.ready || route.home || route.privacy || route.role !== 'candidate' || route.page === candidatePage) return;
     history.replaceState(null, '', '/app?role=candidate&tab=' + candidatePage);
     setRoute(previous => ({ ...previous, page: candidatePage }));
-  }, [route, candidatePage]);
+  }, [route, candidatePage, persistence.ready]);
   useEffect(() => {
     const pop = () => { setRoute(routeFromLocation()); setDialog(null); setRoleMenu(false); };
     const sync = (event: StorageEvent) => { if (event.key === storageKey || event.key === null) setState(readState()); };
@@ -72,14 +75,39 @@ export function App() {
     document.addEventListener('keydown', close);
     return () => document.removeEventListener('keydown', close);
   }, [roleMenu]);
+  useEffect(() => {
+    if (route.role !== 'employer') return;
+    let active = true;
+    const ids = [...new Set(state.invitations.filter(item => item.status === 'accepted' && item.companyId === state.company.id
+      && item.candidateId !== ownCandidateId).map(item => item.candidateId))];
+    for (const id of ids) {
+      const person = candidates.find(item => item.id === id);
+      if (!person) continue;
+      void readCandidateContacts(id).then(contacts => {
+        if (active) setKnownPeople(previous => [...previous.filter(item => item.id !== id), { ...person, ...contacts }]);
+      }).catch(() => {
+        if (active) setKnownPeople(previous => previous.map(item => item.id === id ? { ...item, email: '', phone: '' } : item));
+      });
+    }
+    return () => { active = false; };
+  }, [route.role, state.invitations, state.company.id, persistence.revision]);
 
   function navigate(role: Role, page: Page) {
     history.pushState(null, '', '/app?role=' + role + '&tab=' + page);
     setRoute({ role, page, home: false, privacy: false }); setRoleMenu(false); setDialog(null);
     window.scrollTo({ top: 0, behavior: 'instant' });
   }
-  const onProfile = (person: Candidate) => setDialog({ type: 'profile', person });
-  const onInvite = (person: Candidate) => setDialog({ type: 'invite', person });
+  const remember = (person: Candidate) => setKnownPeople(previous => [...previous.filter(item => item.id !== person.id), person]);
+  const onProfile = (person: Candidate) => {
+    remember(person); setDialog({ type: 'profile', person });
+    if (route.role === 'employer' && hasContactAccess(state, person.id) && person.id !== ownCandidateId) {
+      void readCandidateContacts(person.id).then(contacts => {
+        const updated = { ...person, ...contacts }; remember(updated);
+        setDialog(previous => previous?.person.id === person.id ? { ...previous, person: updated } : previous);
+      }).catch(cause => setToast(cause.message));
+    }
+  };
+  const onInvite = (person: Candidate) => { remember(person); setDialog({ type: 'invite', person }); };
   function goHome() {
     history.pushState(null, '', '/');
     setRoute({ role: 'employer', page: 'candidates', home: true, privacy: false }); setRoleMenu(false); setDialog(null);
@@ -93,12 +121,13 @@ export function App() {
     navigate(role, navigation[role][0].page);
   }
 
-  if (route.privacy) return <Privacy onHome={goHome} onClearLocal={() => {
+  if (route.privacy) return <Privacy onHome={goHome} onClearLocal={async () => {
+    await persistence.clear();
     localStorage.removeItem(storageKey);
     localStorage.removeItem('predel:platform:v1');
     sessionStorage.removeItem('predel:assessment:v1');
     sessionStorage.removeItem('predel:search');
-    setState(createInitialState());
+    setKnownPeople([]);
     setDialog(null);
   }} />;
   if (route.home) return <Landing onStart={start} />;
@@ -118,12 +147,15 @@ export function App() {
       </div></div>
     </div></header>
     <main id="main-content" className="main-content" key={route.role + ':' + page}>
-      {page === 'candidates' && <Employer state={state} candidates={candidates} update={setState} onProfile={onProfile} onInvite={onInvite} notify={setToast} />}
+      {!persistence.ready ? <div className="panel empty-state"><p role="status">Загружаем ваши данные…</p>{persistence.error && <><p role="alert">{persistence.error}</p><button className="button secondary" onClick={persistence.retry}>Повторить загрузку</button></>}</div> : <>
+      <div className="data-status" role="status">{persistence.status === 'saving' ? 'Сохраняем изменения…' : persistence.status === 'error' ? persistence.error : 'Изменения сохранены'}{persistence.status === 'error' && <button className="text-button" onClick={persistence.retry}>Повторить сохранение</button>}</div>
+      {page === 'candidates' && <Employer directoryRevision={persistence.revision} state={state} candidates={candidates} update={setState} onProfile={onProfile} onInvite={onInvite} notify={setToast} />}
       {page === 'invitations' && <Invitations state={state} candidates={candidates} role={route.role} update={setState} notify={setToast} onProfile={onProfile} />}
       {page === 'company' && <Company state={state} update={setState} notify={setToast} />}
       {page === 'profile' && <Profile state={state} update={setState} notify={setToast} onTest={() => navigate('candidate', 'assessment')} onPreview={() => onProfile(state.profile)} />}
       {page === 'onboarding' && <Onboarding state={state} update={setState} onComplete={() => navigate('candidate', 'assessment')} />}
       {page === 'assessment' && <Assessment state={state} update={setState} notify={setToast} onProfile={() => navigate('candidate', 'profile')} onSurvey={() => navigate('candidate', 'onboarding')} />}
+      </>}
     </main>
     <footer className="site-footer"><div className="footer-inner"><span className="footer-brand">predel</span><div className="partner-logos">
       <img className="fsp-logo" src="/brand/fsp.png" alt="Федерация спортивного программирования России" />

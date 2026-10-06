@@ -13,6 +13,11 @@
     "test:resume": "npm --prefix frontend run test:resume",
     "test:directions": "npm --prefix frontend run test:directions",
     "test:grades": "npm --prefix frontend run test:grades",
+    "test:search": "npm --prefix frontend run test:search",
+    "setup:search": "node scripts/ml.mjs setup",
+    "train:search": "node scripts/ml.mjs train",
+    "evaluate:search": "node scripts/ml.mjs evaluate",
+    "check:search-model": "node scripts/ml.mjs check",
     "validate:assessment": "node server/validate.mjs"
   }
 }

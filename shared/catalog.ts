@@ -13,6 +13,7 @@ export const specializationOptions = [
   { value: 'UXUI', label: 'UX/UI дизайн', role: 'UX/UI-дизайнер' },
   { value: 'BusinessAnalysis', label: 'Бизнес и системный анализ', role: 'Бизнес и системный аналитик' },
   { value: 'ProductManagement', label: 'Управление продуктом', role: 'Менеджер продукта' },
+  { value: 'Embedded', label: 'Embedded и электроника', role: 'Инженер встраиваемых систем и электроники' },
 ] as const;
 
 export type Specialization = typeof specializationOptions[number]['value'];
@@ -43,6 +44,7 @@ export const specializationStacks: Record<Specialization, string[]> = {
   UXUI: ['Figma', 'FigJam', 'Miro'],
   BusinessAnalysis: ['BPMN', 'UML', 'SQL', 'Jira', 'Confluence', 'Miro'],
   ProductManagement: ['SQL', 'Excel', 'Jira', 'Miro', 'Power BI'],
+  Embedded: ['C', 'C++', 'STM32', 'FreeRTOS', 'UART', 'SPI', 'I2C', 'KiCad', 'PCB', 'Осциллограф'],
 };
 export const stackOptions = [...new Set([
   'React', 'TypeScript', 'JavaScript', 'CSS', 'Python', 'FastAPI', 'Node.js', 'PostgreSQL', 'Docker',
@@ -52,6 +54,7 @@ export const defaultStackOptions = stackOptions.slice(0, 9);
 
 const bounded = (expression: string) => new RegExp(`(?<![\\p{L}\\p{N}_])(?:${expression})(?![\\p{L}\\p{N}_])`, 'iu');
 const specializationPatterns: Array<[Specialization, RegExp]> = [
+  ['Embedded', bounded('embedded|firmware|встраиваем[а-я]*\\s+(?:систем[а-я]*|разработ[а-я]*)|инженер[а-я]*\\s+(?:по\\s+)?электроник[а-я]*|электронщик[а-я]*|схемотехник[а-я]*|разработ[а-я]*\\s+прошив[а-я]*|embedded и электроника')],
   ['ProductManagement', bounded('product\\s*(?:manager|management|owner)|продакт[а-я]*|менеджер\\s+продукта|управление\\s+продуктом|владелец\\s+продукта')],
   ['Fullstack', bounded('full[- ]?stack|фулл?ст[эе]к[а-я]*')],
   ['BusinessAnalysis', bounded('business\\s*analys[а-яa-z]*|system[s]?\\s*analys[а-яa-z]*|бизнес[- ]аналит[а-я]*|системн[а-я]*\\s+аналит[а-я]*|бизнес и системный анализ')],
