@@ -6,13 +6,14 @@ import { Invitations } from './pages/Invitations';
 import { Profile } from './pages/Profile';
 import { Assessment } from './pages/Assessment';
 import { Onboarding } from './pages/Onboarding';
+import { Privacy } from './pages/Privacy';
 import { Dialog } from './components/Dialog';
 import { CandidateDetails } from './components/CandidateDetails';
 import { InviteForm } from './components/InviteForm';
 import { Brand } from './components/Brand';
 import { Landing } from './pages/Landing';
 import {
-  currentSurvey, emptyFilters, hasContactAccess, otherCandidates, ownCandidateId, readState, saveState, storageKey,
+  createInitialState, currentSurvey, emptyFilters, hasContactAccess, otherCandidates, ownCandidateId, readState, saveState, storageKey,
   type Candidate, type Page, type Role,
 } from './model';
 
@@ -21,14 +22,14 @@ const navigation: Record<Role, { page: Page; label: string }[]> = {
   candidate: [{ page: 'profile', label: 'Профиль' }, { page: 'assessment', label: 'Тестирование' }, { page: 'invitations', label: 'Приглашения' }],
 };
 
-function routeFromLocation(): { role: Role; page: Page; home: boolean } {
+function routeFromLocation(): { role: Role; page: Page; home: boolean; privacy: boolean } {
   const params = new URLSearchParams(location.search);
   const role = params.get('role') === 'candidate' ? 'candidate' : 'employer';
   const requested = params.get('tab');
   const page = role === 'candidate' && requested === 'onboarding' ? 'onboarding'
     : navigation[role].find(item => item.page === requested)?.page || navigation[role][0].page;
   const home = location.pathname === '/' && !params.has('role') && !params.has('tab');
-  return { role, page, home };
+  return { role, page, home, privacy: location.pathname === '/privacy' };
 }
 
 export function App() {
@@ -47,7 +48,7 @@ export function App() {
 
   useEffect(() => { if (!saveState(state)) setToast('Хранилище браузера недоступно. Изменения сохранятся до закрытия страницы.'); }, [state]);
   useEffect(() => {
-    if (route.home || route.role !== 'candidate' || route.page === candidatePage) return;
+    if (route.home || route.privacy || route.role !== 'candidate' || route.page === candidatePage) return;
     history.replaceState(null, '', '/app?role=candidate&tab=' + candidatePage);
     setRoute(previous => ({ ...previous, page: candidatePage }));
   }, [route, candidatePage]);
@@ -58,7 +59,7 @@ export function App() {
     return () => { window.removeEventListener('popstate', pop); window.removeEventListener('storage', sync); };
   }, []);
   useEffect(() => {
-    document.title = route.home ? 'predel · Ваша следующая команда' : (page === 'onboarding' ? 'Анкета' : navigation[route.role].find(item => item.page === page)?.label || 'predel') + ' · predel';
+    document.title = route.privacy ? 'Политика конфиденциальности · predel' : route.home ? 'predel · Ваша следующая команда' : (page === 'onboarding' ? 'Анкета' : navigation[route.role].find(item => item.page === page)?.label || 'predel') + ' · predel';
   }, [route, page]);
   useEffect(() => {
     if (!toast) return;
@@ -74,14 +75,14 @@ export function App() {
 
   function navigate(role: Role, page: Page) {
     history.pushState(null, '', '/app?role=' + role + '&tab=' + page);
-    setRoute({ role, page, home: false }); setRoleMenu(false); setDialog(null);
+    setRoute({ role, page, home: false, privacy: false }); setRoleMenu(false); setDialog(null);
     window.scrollTo({ top: 0, behavior: 'instant' });
   }
   const onProfile = (person: Candidate) => setDialog({ type: 'profile', person });
   const onInvite = (person: Candidate) => setDialog({ type: 'invite', person });
   function goHome() {
     history.pushState(null, '', '/');
-    setRoute({ role: 'employer', page: 'candidates', home: true }); setRoleMenu(false); setDialog(null);
+    setRoute({ role: 'employer', page: 'candidates', home: true, privacy: false }); setRoleMenu(false); setDialog(null);
     window.scrollTo({ top: 0, behavior: 'instant' });
   }
   function start(role: Role = 'employer', query?: string) {
@@ -92,6 +93,14 @@ export function App() {
     navigate(role, navigation[role][0].page);
   }
 
+  if (route.privacy) return <Privacy onHome={goHome} onClearLocal={() => {
+    localStorage.removeItem(storageKey);
+    localStorage.removeItem('predel:platform:v1');
+    sessionStorage.removeItem('predel:assessment:v1');
+    sessionStorage.removeItem('predel:search');
+    setState(createInitialState());
+    setDialog(null);
+  }} />;
   if (route.home) return <Landing onStart={start} />;
   return <div className="app-shell">
     <a className="skip-link" href="#main-content">К содержимому</a>
@@ -119,7 +128,7 @@ export function App() {
     <footer className="site-footer"><div className="footer-inner"><span className="footer-brand">predel</span><div className="partner-logos">
       <img className="fsp-logo" src="/brand/fsp.png" alt="Федерация спортивного программирования России" />
       <img className="partners-logo" src="/brand/partners.png" alt="Проект мэра Москвы, Бизнес Москвы, Развитие человеческого капитала, Лидеры цифровой трансформации" />
-    </div><span className="footer-year">2026</span></div></footer>
+    </div><a className="footer-year" href="/privacy" target="_blank" rel="noopener noreferrer">Конфиденциальность</a><span className="footer-year">2026</span></div></footer>
     {toast && <div className="toast" role="status"><Check size={17} /><span>{toast}</span><button className="icon-button" onClick={() => setToast('')} aria-label="Закрыть уведомление"><X size={15} /></button></div>}
     {dialog && <Dialog title={dialog.type === 'profile' ? 'Профиль кандидата' : 'Приглашение'} wide={dialog.type === 'profile'} onClose={() => setDialog(null)}>
       {dialog.type === 'profile' ? <CandidateDetails person={candidates.find(person => person.id === dialog.person.id) || dialog.person}

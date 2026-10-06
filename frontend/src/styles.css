@@ -226,6 +226,21 @@ fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
 .contact-link { font-size: 14px; }
 .assessment-layout { max-width: 750px; }
 .onboarding-layout { max-width: 750px; margin: 0 auto; }
+.resume-import { margin-bottom: 20px; padding: 24px 30px; }
+.resume-import-row { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.resume-import-row > div { min-width: 0; }
+.resume-import h2 { font-size: 16px; font-weight: 600; margin: 0 0 6px; }
+.resume-import p { font-size: 13px; line-height: 1.6; color: #626875; }
+.resume-import .button { flex-shrink: 0; }
+.resume-import-status { display: flex; justify-content: space-between; align-items: start; gap: 14px; margin-top: 17px; font-size: 12px; color: #626875; }
+.resume-file-name { min-width: 0; overflow-wrap: anywhere; }
+.resume-import-status .text-button { flex-shrink: 0; padding: 0; }
+.resume-import .resume-feedback:not(:empty) { margin-top: 8px; overflow-wrap: anywhere; }
+.resume-import .form-error { color: #bf2441; }
+.onboarding-details { border-top: 1px solid var(--border); padding-top: 20px; font-size: 13px; }
+.onboarding-details summary { cursor: pointer; font-weight: 600; }
+.onboarding-details[open] summary { margin-bottom: 22px; }
+.privacy-policy-link { display: inline-block; margin: -6px 0 18px 25px; color: #626875; text-decoration: underline; text-underline-offset: 3px; font-size: 12px; }
 .candidate-steps { display: flex; gap: 24px; list-style: none; padding: 0; margin: 0 0 28px; color: #626875; font-size: 13px; }
 .candidate-steps li { display: flex; align-items: center; gap: 8px; }
 .candidate-steps li > span { display: grid; place-items: center; width: 23px; height: 23px; border: 1px solid #d9dce4; border-radius: 50%; font-size: 11px; }
@@ -240,6 +255,17 @@ fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
 .skill-choice:has(input:checked) { background: #eff6ff; border-color: #94c2f6; color: #075dbc; }
 .skill-choice:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
 .onboarding-privacy { margin-top: 28px; }
+.resume-copy { white-space: pre-line; overflow-wrap: anywhere; }
+.privacy-content { padding: 30px; }
+.privacy-page .page-heading h1 { font-size: clamp(24px, 4vw, 32px); }
+.privacy-intro { color: var(--muted); font-size: 13px; }
+.privacy-section { margin-top: 28px; }
+.privacy-section h2 { font-size: 17px; margin-bottom: 10px; }
+.privacy-section p { font-size: 14px; }
+.privacy-section p + p { margin-top: 10px; }
+.privacy-reset { margin-top: 20px; }
+.privacy-reset-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+.privacy-reset > p { margin-top: 12px; }
 .onboarding-privacy .checkbox-field:has(input:disabled) { color: #626875; cursor: default; }
 .assessment-category { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 24px; }
 .vacancy-builder { margin-top: 24px; border-top: 1px solid var(--border); padding-top: 17px; font-size: 13px; }
@@ -396,6 +422,9 @@ fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
   .tag { font-size: 10px; }
   .match-details p { right: auto; left: -70px; width: 210px; top: auto; bottom: calc(100% + 8px); }
   .panel, .assessment-setup, .profile-form { padding: 23px 19px; }
+  .resume-import-row { align-items: stretch; flex-direction: column; gap: 16px; }
+  .resume-import .button { align-self: start; }
+  .onboarding-privacy .checkbox-field span { display: block; }
   .form-grid { grid-template-columns: minmax(0,1fr); gap: 0; }
   .form-header { gap: 10px; margin-bottom: 23px; }
   .form-header h2 { font-size: 16px; }

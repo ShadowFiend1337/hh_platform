@@ -19,6 +19,10 @@ export function CandidateDetails({ person, contacts, onInvite }: {
     <section><h4>О себе</h4><p className="body-copy">{person.bio || 'Пока не заполнено'}</p></section>
     <section><h4>Стек</h4><div className="tags">{person.stack.map(skill => <span className="tag" key={skill}>{skill}</span>)}</div></section>
     <section><h4>Софт-скиллы · самооценка</h4>{person.softSkills?.length ? <div className="tags">{person.softSkills.map(skill => <span className="tag" key={skill}>{skill}</span>)}</div> : <p className="muted">Пока не заполнено</p>}</section>
+    {person.workHistory && <section><h4>Места работы и проекты</h4><p className="body-copy resume-copy">{person.workHistory}</p></section>}
+    {person.careerAchievements && <section><h4>Достижения</h4><p className="body-copy resume-copy">{person.careerAchievements}</p></section>}
+    {person.education && <section><h4>Образование</h4><p className="body-copy resume-copy">{person.education}</p></section>}
+    {person.languages && <section><h4>Языки</h4><p className="body-copy resume-copy">{person.languages}</p></section>}
     <section><h4 className="inline-icon"><Medal size={17} />Достижения ФСП</h4>
       {person.achievements.length ? person.achievements.map((achievement, index) => <div key={index} className="achievement"><strong>{achievement.title}</strong><span>{achievement.result} · {achievement.year}</span></div>)
         : <p className="muted">Истории ФСП пока нет</p>}
@@ -26,6 +30,7 @@ export function CandidateDetails({ person, contacts, onInvite }: {
     <section className="contact-section"><h4>Контакты</h4>
       {contacts ? <div className="contact-data"><a href={'mailto:' + person.email}>{person.email}</a>{person.phone && <a href={'tel:' + person.phone}>{person.phone}</a>}</div>
         : <div className="privacy-note"><LockKeyhole size={17} />Откроются после принятия приглашения</div>}
+      {contacts && person.portfolio && <p className="body-copy resume-copy">{person.portfolio}</p>}
     </section>
     <div className="dialog-actions no-print">
       <button className="button secondary" onClick={() => window.print()}><Printer size={16} />PDF-профиль</button>

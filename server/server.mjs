@@ -8,7 +8,13 @@ import { createAttempt, digest, evaluate, programInfo, publicAttempt, RequestErr
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const cookieName = 'predel_session';
-const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.webp': 'image/webp', '.ico': 'image/x-icon' };
+const mime = {
+  '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml', '.woff2': 'font/woff2',
+  '.webp': 'image/webp', '.ico': 'image/x-icon', '.wasm': 'application/wasm', '.gz': 'application/gzip',
+  '.bcmap': 'application/octet-stream', '.ttf': 'font/ttf', '.pfb': 'application/octet-stream',
+  '.json': 'application/json; charset=utf-8', '.txt': 'text/plain; charset=utf-8',
+};
 
 export function createAssessmentServer({ dbPath = resolve(root, 'server/data/assessment.sqlite'), now = Date.now, webOrigin = process.env.WEB_ORIGIN, secureCookie = process.env.COOKIE_SECURE === '1', distPath = resolve(root, 'frontend/dist') } = {}) {
   const store = openStore(dbPath);
@@ -98,12 +104,12 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
       }
       if (!['GET', 'HEAD'].includes(request.method)) throw new RequestError(405, 'Метод не поддерживается.');
       const path = decodeURIComponent(url.pathname);
-      const file = path === '/' || path === '/app' ? resolve(distPath, 'index.html') : resolve(distPath, '.' + path);
+      const file = ['/', '/app', '/privacy'].includes(path) ? resolve(distPath, 'index.html') : resolve(distPath, '.' + path);
       const within = relative(distPath, file);
       if (within.startsWith('..') || within.includes(':') || !mime[extname(file)]) throw new RequestError(404, 'Страница не найдена.');
       let content;
       try { content = await readFile(file); } catch { throw new RequestError(404, 'Страница не найдена.'); }
-      response.writeHead(200, { 'Content-Type': mime[extname(file)], 'Cache-Control': extname(file) === '.html' ? 'no-cache' : 'public, max-age=3600', 'X-Content-Type-Options': 'nosniff' });
+      response.writeHead(200, { 'Content-Type': mime[extname(file)], 'Cache-Control': extname(file) === '.html' || path.startsWith('/resume-assets/') ? 'no-cache' : 'public, max-age=3600', 'X-Content-Type-Options': 'nosniff' });
       response.end(request.method === 'HEAD' ? undefined : content);
     } catch (error) {
       if (!response.headersSent) send(response, error instanceof RequestError ? error.status : 500, { error: error instanceof RequestError ? error.message : 'Сервис временно недоступен. Попробуйте снова.' });

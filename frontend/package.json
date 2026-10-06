@@ -4,18 +4,27 @@
   "version": "2.0.0",
   "type": "module",
   "scripts": {
+    "prepare:resume": "node scripts/prepare-resume-assets.mjs",
+    "postinstall": "npm run prepare:resume",
+    "predev": "npm run prepare:resume",
     "dev": "vite --host 127.0.0.1",
+    "prebuild": "npm run prepare:resume",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview --host 127.0.0.1",
     "test:browser": "node tests/smoke.mjs",
-    "test:assessment": "node tests/assessment.mjs"
+    "test:assessment": "node tests/assessment.mjs",
+    "test:resume": "node tests/resume.mjs",
+    "test:resume-parser": "node --test tests/resume-parser.test.mjs"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",
+    "mammoth": "^1.13.0",
     "motion": "13.4.0",
+    "pdfjs-dist": "^6.4.299",
     "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "react-dom": "19.3.0",
+    "tesseract.js": "6.0.1"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

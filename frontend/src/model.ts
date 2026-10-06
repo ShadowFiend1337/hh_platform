@@ -27,6 +27,12 @@ export interface CandidateSurvey {
   stack: string[];
   experience: string;
   softSkills: string[];
+  careerAchievements?: string;
+  education?: string;
+  workHistory?: string;
+  portfolio?: string;
+  languages?: string;
+  format?: string;
 }
 
 export interface Candidate {
@@ -45,6 +51,11 @@ export interface Candidate {
   city: string;
   format: string;
   bio: string;
+  careerAchievements?: string;
+  education?: string;
+  workHistory?: string;
+  portfolio?: string;
+  languages?: string;
   email: string;
   phone: string;
   fspId: string;
@@ -135,6 +146,7 @@ export const otherCandidates: Candidate[] = [
 export function createInitialState(): PlatformState {
   const profile: Candidate = {
     id: ownCandidateId, name: '', email: '', phone: '', bio: '', city: '', format: 'Удалённо',
+    careerAchievements: '', education: '', workHistory: '', portfolio: '', languages: '',
     industry: '', professionalRole: '', softSkills: [], surveyCompletedAt: null,
     specialization: 'Frontend', desiredGrade: 'Junior', confirmed: null,
     stack: [], experience: '', fspId: '', achievements: [], visible: false, consent: false,
@@ -161,6 +173,11 @@ export function readState(): PlatformState {
         && stored.history.some((item: TestResult) => item.id === 'test-initial' && item.date === stored.profile.confirmed.date);
       const profile: Candidate = {
         ...stored.profile,
+        careerAchievements: typeof stored.profile.careerAchievements === 'string' ? stored.profile.careerAchievements.slice(0, 2000) : '',
+        education: typeof stored.profile.education === 'string' ? stored.profile.education.slice(0, 2000) : '',
+        workHistory: typeof stored.profile.workHistory === 'string' ? stored.profile.workHistory.slice(0, 4000) : '',
+        portfolio: typeof stored.profile.portfolio === 'string' ? stored.profile.portfolio.slice(0, 1000) : '',
+        languages: typeof stored.profile.languages === 'string' ? stored.profile.languages.slice(0, 500) : '',
         industry: typeof stored.profile.industry === 'string' ? stored.profile.industry : '',
         professionalRole: typeof stored.profile.professionalRole === 'string' ? stored.profile.professionalRole : '',
         softSkills: Array.isArray(stored.profile.softSkills) ? stored.profile.softSkills.filter((skill: string) => softSkillOptions.includes(skill)) : [],

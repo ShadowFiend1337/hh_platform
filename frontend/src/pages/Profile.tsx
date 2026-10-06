@@ -49,6 +49,11 @@ export function Profile({ state, update, notify, onTest, onPreview }: {
         email: String(fields.get('email')).trim(),
         phone: String(fields.get('phone')).trim(),
         bio: String(fields.get('bio')).trim(),
+        careerAchievements: String(fields.get('careerAchievements') || '').trim(),
+        education: String(fields.get('education') || '').trim(),
+        workHistory: String(fields.get('workHistory') || '').trim(),
+        portfolio: String(fields.get('portfolio') || '').trim(),
+        languages: String(fields.get('languages') || '').trim(),
         fspId: fspId.trim(), achievements: fspId.trim() === previous.profile.fspId ? previous.profile.achievements : [],
         consent, visible: visible && consent,
       } };
@@ -70,13 +75,20 @@ export function Profile({ state, update, notify, onTest, onPreview }: {
         <label className="field"><span>Стек</span><input name="stack" required maxLength={500} defaultValue={profile.stack.join(', ')} placeholder="React, TypeScript, CSS" /></label>
         <fieldset className="soft-skills-field"><legend>Софт-скиллы · самооценка</legend><div className="skill-choices">{softSkillOptions.map(skill => <label className="skill-choice" key={skill}><input name="softSkills" type="checkbox" value={skill} defaultChecked={profile.softSkills?.includes(skill)} /><span>{skill}</span></label>)}</div></fieldset>
         <label className="field"><span>О себе</span><textarea name="bio" rows={4} maxLength={3000} defaultValue={profile.bio} /></label>
+        <label className="field"><span>Достижения</span><textarea name="careerAchievements" rows={3} maxLength={2000} defaultValue={profile.careerAchievements || ''} placeholder="Результаты проектов, награды, соревнования" /></label>
+        <details className="onboarding-details"><summary>Подробнее о себе</summary>
+          <label className="field"><span>Места работы и проекты</span><textarea name="workHistory" rows={3} maxLength={4000} defaultValue={profile.workHistory || ''} /></label>
+          <label className="field"><span>Образование</span><textarea name="education" rows={2} maxLength={2000} defaultValue={profile.education || ''} /></label>
+          <div className="form-grid"><label className="field"><span>Языки</span><input name="languages" maxLength={500} defaultValue={profile.languages || ''} /></label><label className="field"><span>Портфолио</span><input name="portfolio" maxLength={1000} defaultValue={profile.portfolio || ''} placeholder="GitHub или ссылка на проекты" /></label></div>
+        </details>
         <div className="section-divider" />
         <FormHeader title="ФСП" Icon={Medal} />
         <label className="field"><span>ID участника</span><input value={fspId} maxLength={100} onChange={event => setFspId(event.target.value)} placeholder="Необязательно" /></label>
         {fspId && <p className="field-help">Привязка ожидает проверки</p>}
         <div className="section-divider" />
-        <label className="checkbox-field"><input type="checkbox" checked={visible} onChange={event => setVisible(event.target.checked)} /><span>Показывать профиль работодателям</span></label>
-        <label className="checkbox-field"><input type="checkbox" checked={consent} onChange={event => setConsent(event.target.checked)} /><span>Согласен на обработку и публикацию данных профиля</span></label>
+        <label className="checkbox-field"><input type="checkbox" disabled={!consent} checked={visible && consent} onChange={event => setVisible(event.target.checked)} /><span>Показывать профиль работодателям</span></label>
+        <label className="checkbox-field"><input type="checkbox" checked={consent} onChange={event => { setConsent(event.target.checked); if (!event.target.checked) setVisible(false); }} /><span>Согласен на обработку персональных данных</span></label>
+        <a className="privacy-policy-link" href="/privacy" target="_blank" rel="noopener noreferrer">Политика конфиденциальности</a>
         {error && <p className="form-error" role="alert">{error}</p>}
         <div className="form-actions"><button type="submit" className="button primary">Сохранить изменения</button></div>
       </form>

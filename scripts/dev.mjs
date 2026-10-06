@@ -1,6 +1,8 @@
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
+await import('../frontend/scripts/prepare-resume-assets.mjs');
+
 const root = fileURLToPath(new URL('../', import.meta.url));
 const children = [
   spawn(process.execPath, ['--watch', 'server/server.mjs'], { cwd: root, stdio: 'inherit' }),

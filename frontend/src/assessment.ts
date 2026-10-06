@@ -107,9 +107,11 @@ export function getAssessmentProgram(specialization: Specialization, grade: Grad
 }
 
 export function createAssessment(survey: CandidateSurvey, vacancyDescription: string, signal?: AbortSignal) {
+  // The test service needs competencies, never resume contacts or additional biography.
+  const { id, date, industry, professionalRole, specialization, desiredGrade, experience, stack, softSkills } = survey;
   return request<AssessmentAttempt>('/attempts', {
     method: 'POST', signal,
-    body: JSON.stringify({ survey, ...(vacancyDescription.trim() ? { vacancyDescription: vacancyDescription.trim() } : {}) }),
+    body: JSON.stringify({ survey: { id, date, industry, professionalRole, specialization, desiredGrade, experience, stack, softSkills }, ...(vacancyDescription.trim() ? { vacancyDescription: vacancyDescription.trim() } : {}) }),
   });
 }
 

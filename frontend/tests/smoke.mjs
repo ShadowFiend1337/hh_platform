@@ -46,6 +46,7 @@ const juniorAnswers = answerKey('Junior');
 const middleAnswers = answerKey('Middle');
 async function completeExam(answerSet, correct) {
   for (let index = 0; index < 6; index++) {
+    await page.locator('.exam-progress[aria-valuenow="' + (index + 1) + '"]').waitFor();
     const choices = page.locator('.answer-option');
     const texts = await choices.locator('span').allTextContents();
     const expected = answerSet.get(await page.locator('.question-text').textContent());
@@ -72,7 +73,7 @@ async function fillSurvey(target = page) {
   await target.getByLabel('Стек', { exact: true }).fill('React, TypeScript, CSS');
   await target.getByLabel('Опыт работы', { exact: true }).fill('3 года');
   await target.getByLabel('Город', { exact: true }).fill('Москва');
-  await target.getByLabel('Согласен на обработку данных', { exact: true }).check();
+  await target.getByLabel('Согласен на обработку персональных данных', { exact: true }).check();
 }
 
 try {

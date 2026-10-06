@@ -14,6 +14,8 @@
 | [user_stories.md](user_stories.md) | 20 историй с критериями приёмки и связями с use cases и требованиями MVP |
 | [business_rules.md](business_rules.md) | Категоризация, тестирование, ранжирование, статусы, видимость данных и роль ML |
 | [metrics_and_validation.md](metrics_and_validation.md) | Процедуры оценки, определения метрик и форма отчёта без вымышленных результатов |
+| [resume_requirements.md](resume_requirements.md) | Требования ТЗ к импорту резюме, дополнительные поля анкеты и фактическая обработка данных |
+| [resume_validation.md](resume_validation.md) | Результаты проверки импорта четырёх резюме, OCR и сценариев приватности |
 | [interface.md](interface.md) | Реализованные сценарии интерфейсного прототипа, запуск и границы демонстрации |
 
 ## Как читать

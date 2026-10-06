@@ -10,6 +10,7 @@
     "test:server": "node --test server/tests/*.test.mjs",
     "test:browser": "npm --prefix frontend run test:browser",
     "test:assessment": "npm --prefix frontend run test:assessment",
+    "test:resume": "npm --prefix frontend run test:resume",
     "validate:assessment": "node server/validate.mjs"
   }
 }

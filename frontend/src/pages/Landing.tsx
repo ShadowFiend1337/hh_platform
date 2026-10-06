@@ -97,7 +97,7 @@ export function Landing({ onStart }: { onStart: (role?: Role, query?: string) =>
     <footer className="footer section-pad">
       <a className="footer-wordmark" href="/" aria-label="predel — главная">predel<span>↗</span></a>
       <div className="landing-partners"><img src="/brand/fsp.png" alt="Федерация спортивного программирования России" /><img src="/brand/partners.png" alt="Проект мэра Москвы, Бизнес Москвы, Развитие человеческого капитала, Лидеры цифровой трансформации" /></div>
-      <div className="footer-bottom"><span>© 2026 predel</span><a href="#main">Наверх<ArrowRight size={14} /></a></div>
+      <div className="footer-bottom"><span>© 2026 predel</span><a href="/privacy" target="_blank" rel="noopener noreferrer">Конфиденциальность</a><a href="#main">Наверх<ArrowRight size={14} /></a></div>
     </footer>
   </div>;
 }
