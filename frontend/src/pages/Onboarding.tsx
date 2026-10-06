@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { Paperclip } from 'lucide-react';
+import { Paperclip, Trash2 } from 'lucide-react';
 import { CandidateSteps } from '../components/CandidateSteps';
 import { industryOptions, softSkillOptions, type CandidateSurvey, type Grade, type PlatformState, type Specialization } from '../model';
 
@@ -141,14 +141,17 @@ export function Onboarding({ state, update, onComplete }: {
     <section className="panel resume-import" aria-labelledby="resume-heading" aria-busy={reading}>
       <div className="resume-import-row">
         <div><h2 id="resume-heading">Прикрепить резюме</h2><p>Анкета заполнится автоматически.</p></div>
-        <button className="button secondary" type="button" onClick={() => fileInput.current?.click()}><Paperclip size={16} aria-hidden="true" />{fileName ? 'Заменить резюме' : 'Добавить резюме'}</button>
+        <div className="resume-import-actions">
+          <button className="button secondary" type="button" onClick={() => fileInput.current?.click()}><Paperclip size={16} aria-hidden="true" />{fileName ? 'Заменить резюме' : 'Добавить резюме'}</button>
+          {fileName && !reading && <button className="button secondary" type="button" onClick={removeResume}><Trash2 size={16} aria-hidden="true" />Удалить резюме</button>}
+        </div>
       </div>
       <input ref={fileInput} className="sr-only" type="file" aria-label="Файл резюме" accept=".pdf,.docx,.txt,.png,.jpg,.jpeg,.webp" tabIndex={-1} onChange={event => {
         const file = event.currentTarget.files?.[0];
         event.currentTarget.value = '';
         if (file) void attachResume(file);
       }} />
-      {fileName && <div className="resume-import-status"><span className="resume-file-name">{fileName}</span><button className="text-button" type="button" onClick={removeResume}>{reading ? 'Отменить' : 'Удалить резюме'}</button></div>}
+      {fileName && <div className="resume-import-status"><span className="resume-file-name">{fileName}</span>{reading && <button className="text-button" type="button" onClick={removeResume}>Отменить</button>}</div>}
       <p className="resume-feedback" role="status" aria-live="polite">{resumeStatus}</p>
       {resumeError && <p className="form-error resume-feedback" role="alert">{resumeError}</p>}
     </section>
