@@ -98,9 +98,10 @@ export function Onboarding({ state, update, onComplete }: {
       if (pending.current === controller) { pending.current = null; setReading(false); }
     }
   }
-  function cancelReading() {
+  function removeResume() {
     pending.current?.abort(); pending.current = null;
-    setReading(false); setResumeStatus(''); setFileName('');
+    setReading(false); setResumeStatus(''); setResumeError(''); setFileName('');
+    if (fileInput.current) fileInput.current.value = '';
   }
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -147,7 +148,7 @@ export function Onboarding({ state, update, onComplete }: {
         event.currentTarget.value = '';
         if (file) void attachResume(file);
       }} />
-      {fileName && <div className="resume-import-status"><span className="resume-file-name">{fileName}</span>{reading && <button className="text-button" type="button" onClick={cancelReading}>Отменить</button>}</div>}
+      {fileName && <div className="resume-import-status"><span className="resume-file-name">{fileName}</span><button className="text-button" type="button" onClick={removeResume}>{reading ? 'Отменить' : 'Удалить резюме'}</button></div>}
       <p className="resume-feedback" role="status" aria-live="polite">{resumeStatus}</p>
       {resumeError && <p className="form-error resume-feedback" role="alert">{resumeError}</p>}
     </section>
@@ -170,7 +171,7 @@ export function Onboarding({ state, update, onComplete }: {
         <label className="field"><span>Город</span><input name="city" maxLength={100} autoComplete="address-level2" value={draft.city} onChange={event => change('city', event.target.value)} placeholder="Необязательно" /></label>
       </div>
       <label className="field"><span>Достижения</span><textarea name="careerAchievements" rows={3} maxLength={2000} value={draft.careerAchievements} onChange={event => change('careerAchievements', event.target.value)} placeholder="Результаты работы, проекты или награды" /></label>
-      <fieldset className="soft-skills-field"><legend>Софт-скиллы · самооценка</legend><div className="skill-choices">{softSkillOptions.map(skill => <label className="skill-choice" key={skill}><input name="softSkills" type="checkbox" value={skill} checked={draft.softSkills.includes(skill)} onChange={event => change('softSkills', event.target.checked ? [...draft.softSkills, skill] : draft.softSkills.filter(value => value !== skill))} /><span>{skill}</span></label>)}</div></fieldset>
+      <fieldset className="soft-skills-field"><legend>Софт-скиллы</legend><div className="skill-choices">{softSkillOptions.map(skill => <label className="skill-choice" key={skill}><input name="softSkills" type="checkbox" value={skill} checked={draft.softSkills.includes(skill)} onChange={event => change('softSkills', event.target.checked ? [...draft.softSkills, skill] : draft.softSkills.filter(value => value !== skill))} /><span>{skill}</span></label>)}</div></fieldset>
       <details className="onboarding-details">
         <summary>Подробнее о себе</summary>
         <label className="field"><span>Образование</span><textarea name="education" rows={3} maxLength={2000} value={draft.education} onChange={event => change('education', event.target.value)} /></label>

@@ -145,6 +145,12 @@ try {
   await page.setViewportSize({ width: 1440, height: 1100 });
 
   await page.locator('[name="name"]').fill('Ручная правка');
+  const filledDraft = await page.locator('.onboarding-form').evaluate(form => [...new FormData(form).entries()]);
+  await page.getByRole('button', { name: 'Удалить резюме', exact: true }).click();
+  assert.equal(await page.locator('.resume-file-name').count(), 0);
+  assert.equal(await page.locator('.resume-import [role="status"]').textContent(), '');
+  assert.equal(await page.getByRole('button', { name: 'Добавить резюме', exact: true }).isVisible(), true);
+  assert.deepEqual(await page.locator('.onboarding-form').evaluate(form => [...new FormData(form).entries()]), filledDraft, 'Removing the attachment must preserve imported fields and manual edits');
   const popupPromise = context.waitForEvent('page');
   await page.getByRole('link', { name: 'Политика конфиденциальности', exact: true }).click();
   const privacy = await popupPromise;
