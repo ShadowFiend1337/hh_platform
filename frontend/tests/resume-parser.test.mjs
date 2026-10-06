@@ -59,23 +59,23 @@ Example college`);
   assert.deepEqual(fields.stack, ['Python', 'FastAPI', 'SQL']);
 });
 
-test('BA and PM roles do not become a programming specialization from their stack', () => {
-  for (const role of ['Бизнес-аналитик / Аналитик данных', 'AI Product Manager / Product Manager', 'ML Engineer']) {
+test('BA, PM and ML retain their stated direction instead of inferring frontend from React', () => {
+  for (const [role, specialization] of [['Бизнес-аналитик / Аналитик данных', undefined], ['AI Product Manager / Product Manager', 'ProductManagement'], ['ML Engineer', 'ML']]) {
     const fields = parseResumeText(`Иван Соколов\n${role}\nСтек: Python, React, SQL\nОпыт работы: 5 лет`);
     assert.equal(fields.professionalRole, role);
-    assert.equal(fields.specialization, undefined);
+    assert.equal(fields.specialization, specialization);
     assert.equal(fields.desiredGrade, undefined);
     assert.equal(fields.industry, undefined);
     assert.equal(fields.softSkills, undefined);
   }
 });
 
-test('fullstack and Senior are never silently reduced to a supported test category', () => {
+test('Fullstack has its own direction and Senior is never silently reduced to Middle', () => {
   const fullstack = parseResumeText('Иван Соколов\nFullstack Frontend Backend developer Senior\nSkills: React, Python');
-  assert.equal(fullstack.specialization, undefined);
+  assert.equal(fullstack.specialization, 'Fullstack');
   assert.equal(fullstack.desiredGrade, undefined);
   const senior = parseResumeText('Иван Соколов\nBackend developer Middle\nGrade: Senior\nSpecialization: ML');
-  assert.equal(senior.specialization, undefined);
+  assert.equal(senior.specialization, 'ML');
   assert.equal(senior.desiredGrade, undefined);
 });
 
@@ -109,4 +109,36 @@ test('inline sections, punctuation around email and unlabeled header city work',
 test('absent fields and arbitrary text remain absent', () => {
   assert.deepEqual(parseResumeText('Резюме\nПример документа без данных анкеты'), {});
   assert.equal(parseResumeText('Москва Санкт-Петербург').name, undefined);
+});
+
+test('ML internship headline is recognized and past jobs do not replace the desired role', () => {
+  const fields = parseResumeText('Иван Соколов\nСтажировка ML/Поиск в VK (Одноклассники, BI)\nНавыки: Python, PyTorch, SQL\nОпыт работы\nFrontend разработчик, 2022\nОтрасль: Телекоммуникации');
+  assert.equal(fields.specialization, 'ML');
+  assert.equal(fields.industry, 'Телекоммуникации');
+  assert.equal(fields.desiredGrade, undefined);
+  assert.deepEqual(fields.stack, ['Python', 'SQL', 'PyTorch']);
+});
+
+test('new role names and their explicit specialization labels use the shared catalog', () => {
+  for (const [role, specialization] of [
+    ['Mobile developer', 'Mobile'], ['Data Engineer', 'DataEngineering'], ['Data Analyst', 'DataAnalysis'],
+    ['DevOps engineer', 'DevOps'], ['QA engineer', 'QA'], ['Information Security engineer', 'Security'],
+    ['UX/UI designer', 'UXUI'], ['System analyst', 'BusinessAnalysis'], ['Data Scientist', 'ML'],
+    ['Machine-Learning Engineer', 'ML'], ['Product Owner Junior', 'ProductManagement'],
+    ['Специалист по машинному обучению', 'ML'], ['Специалист по информационной безопасности', 'Security'],
+  ]) {
+    assert.equal(parseResumeText(`Иван Соколов\n${role}\nGrade: Junior`).specialization, specialization, role);
+    assert.equal(parseResumeText(`Иван Соколов\nSpecialization: ${role}`).specialization, specialization, role);
+  }
+  assert.equal(parseResumeText('Иван Соколов\nSoftware developer\nSkills: Python, React, PyTorch').specialization, undefined);
+  assert.equal(parseResumeText('Иван Соколов\nHTML developer').specialization, undefined);
+});
+
+test('expanded industries normalize explicit labels without guessing from employment history', () => {
+  for (const [industry, expected] of [['Oil and gas', 'Нефть и газ'], ['E-commerce', 'Электронная коммерция'],
+    ['Pharmaceuticals', 'Фармацевтика'], ['Research', 'Наука'], ['Telecommunications', 'Телекоммуникации'],
+    ['Logistics', 'Транспорт и логистика'], ['Информационные технологии', 'ИТ'], ['Неизвестная сфера', 'Другое']]) {
+    assert.equal(parseResumeText(`Иван Соколов\nIndustry: ${industry}`).industry, expected);
+  }
+  assert.equal(parseResumeText('Иван Соколов\nBackend developer\nОпыт работы\nНефтяная компания').industry, undefined);
 });

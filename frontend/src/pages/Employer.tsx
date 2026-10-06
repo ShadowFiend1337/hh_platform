@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { ArrowUpRight, BadgeCheck, Bookmark, Check, ChevronDown, Info, MapPin, Medal, Search, SlidersHorizontal, X } from 'lucide-react';
 import {
-  emptyFilters, initials, searchCandidates, specializationLabels, stackOptions,
+  defaultStackOptions, emptyFilters, initials, isSpecialization, searchCandidates, specializationLabels, specializationNames, specializationOptions, specializationStacks,
   type Candidate, type Filters, type PlatformState,
 } from '../model';
 
@@ -33,6 +33,7 @@ export function Employer({ state, candidates, update, onProfile, onInvite, notif
   const [showFilters, setShowFilters] = useState(false);
   const [showSaved, setShowSaved] = useState(false);
   const results = searchCandidates(candidates, filters, query);
+  const filterStackOptions = [...new Set([...(isSpecialization(filters.specialization) ? specializationStacks[filters.specialization] : defaultStackOptions), ...filters.stack])];
   const filterCount = Number(Boolean(filters.specialization)) + Number(Boolean(filters.grade))
     + Number(Boolean(filters.format)) + filters.stack.length + Number(filters.fsp);
   useEffect(() => {
@@ -42,7 +43,7 @@ export function Employer({ state, candidates, update, onProfile, onInvite, notif
   const change = (key: keyof Filters, value: string | string[] | boolean) => setFilters(previous => ({ ...previous, [key]: value }));
   function submit(event: FormEvent) { event.preventDefault(); setQuery(draft.trim()); }
   function saveSearch() {
-    const title = query || [filters.specialization, filters.grade, ...filters.stack].filter(Boolean).join(' · ') || 'Все кандидаты';
+    const title = query || [isSpecialization(filters.specialization) ? specializationNames[filters.specialization] : '', filters.grade, ...filters.stack].filter(Boolean).join(' · ') || 'Все кандидаты';
     update(previous => ({
       ...previous, savedSearches: [
         { id: crypto.randomUUID(), title, query, filters: { ...filters, stack: [...filters.stack] } },
@@ -78,10 +79,10 @@ export function Employer({ state, candidates, update, onProfile, onInvite, notif
     <div className="search-layout">
       <aside className={'filters' + (showFilters ? ' filters-open' : '')} aria-label="Фильтры кандидатов">
         <div className="filter-heading"><h2>Фильтры</h2>{filterCount > 0 && <button className="text-button" onClick={() => setFilters({ ...emptyFilters, stack: [] })}>Сбросить</button>}</div>
-        <label className="field"><span>Специализация</span><select value={filters.specialization} onChange={event => change('specialization', event.target.value)}><option value="">Все направления</option><option value="Frontend">Frontend</option><option value="Backend">Backend</option></select></label>
+        <label className="field"><span>Специализация</span><select value={filters.specialization} onChange={event => change('specialization', event.target.value)}><option value="">Все направления</option>{specializationOptions.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}</select></label>
         <fieldset className="filter-group"><legend>Грейд</legend><div className="segmented">{['', 'Junior', 'Middle'].map(grade => <button key={grade} type="button" aria-pressed={filters.grade === grade} className={filters.grade === grade ? 'selected' : ''} onClick={() => change('grade', grade)}>{grade || 'Все'}</button>)}</div></fieldset>
         <label className="field"><span>Формат работы</span><select value={filters.format} onChange={event => change('format', event.target.value)}><option value="">Любой</option><option>Удалённо</option><option>Гибрид</option><option>Офис</option></select></label>
-        <fieldset className="filter-group"><legend>Стек</legend><div className="stack-filters">{stackOptions.map(skill => <button type="button" key={skill} className={'filter-chip' + (filters.stack.includes(skill) ? ' selected' : '')} aria-pressed={filters.stack.includes(skill)} onClick={() => change('stack', filters.stack.includes(skill) ? filters.stack.filter(value => value !== skill) : [...filters.stack, skill])}>{filters.stack.includes(skill) && <Check size={12} />}{skill}</button>)}</div></fieldset>
+        <fieldset className="filter-group"><legend>Стек</legend><div className="stack-filters">{filterStackOptions.map(skill => <button type="button" key={skill} className={'filter-chip' + (filters.stack.includes(skill) ? ' selected' : '')} aria-pressed={filters.stack.includes(skill)} onClick={() => change('stack', filters.stack.includes(skill) ? filters.stack.filter(value => value !== skill) : [...filters.stack, skill])}>{filters.stack.includes(skill) && <Check size={12} />}{skill}</button>)}</div></fieldset>
         <label className="checkbox-field fsp-filter"><input type="checkbox" checked={filters.fsp} onChange={event => change('fsp', event.target.checked)} /><span><Medal size={16} />Есть достижения ФСП</span></label>
       </aside>
       <section className="candidate-list" aria-label="Результаты подбора">

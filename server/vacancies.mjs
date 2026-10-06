@@ -1,7 +1,13 @@
 import { programs } from './bank.mjs';
+import { dataExamples, dataSkillAliases } from './banks/data.mjs';
+import { engineeringExamples, engineeringSkillAliases } from './banks/engineering.mjs';
+import { productExamples, productSkillAliases } from './banks/product.mjs';
 
 // Synthetic examples, not scraped vacancies or a labour-market dataset.
 export const vacancyExamples = [
+  ...dataExamples,
+  ...engineeringExamples,
+  ...productExamples,
   {
     id: 'frontend-junior', title: 'Frontend Junior', specialization: 'Frontend', grade: 'Junior',
     description: 'Создавать доступные формы и адаптивные страницы на HTML, CSS и JavaScript. Работать с flex и grid, событиями браузера и запросами fetch. Проверять управление с клавиатуры.',
@@ -106,13 +112,14 @@ const skillLexicon = [
   ['Redis', bounded('redis')],
   ['MongoDB', bounded('mongodb|mongo')],
   ['GraphQL', bounded('graphql')],
+  ...[...dataSkillAliases, ...engineeringSkillAliases, ...productSkillAliases].map(([skill, expression]) => [skill, bounded(expression)]),
 ];
 
 export function analyzeVacancy(description, specialization, grade) {
   const program = programs[specialization]?.[grade];
   if (!program) throw new Error('Неизвестная программа тестирования');
   const text = String(description ?? '').normalize('NFKC').replaceAll('ё', 'е');
-  const identified = skillLexicon.filter(([, pattern]) => pattern.test(text)).map(([skill]) => skill);
+  const identified = [...new Set(skillLexicon.filter(([, pattern]) => pattern.test(text)).map(([skill]) => skill))];
   const supported = new Set(program.families.flatMap(item => [...item.skills, ...item.variants.flatMap(variant => variant.skills || [])]));
   const matchedSkills = identified.filter(skill => supported.has(skill));
   const unmatchedSkills = identified.filter(skill => !supported.has(skill));

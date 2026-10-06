@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { BadgeCheck, Eye, FileText, Medal, UserRound } from 'lucide-react';
-import { dateLabel, industryOptions, softSkillOptions, specializationLabels, type Grade, type PlatformState, type Specialization } from '../model';
+import { dateLabel, industryOptions, isSpecialization, specializationOptions, softSkillOptions, specializationLabels, type Grade, type PlatformState, type Specialization } from '../model';
 import { FormHeader } from './Company';
 
 function sameValues(left: string[], right: string[]) {
@@ -31,6 +31,7 @@ export function Profile({ state, update, notify, onTest, onPreview }: {
     const experience = String(fields.get('experience')).trim();
     if (!name || !stack.length) { setError('Заполните имя и стек.'); return; }
     if (!industryOptions.includes(industry)) { setError('Выберите отрасль.'); return; }
+    if (!isSpecialization(specialization)) { setError('Выберите специализацию.'); return; }
     if (!professionalRole || professionalRole.length > 100) { setError('Укажите роль в команде: не более 100 символов.'); return; }
     if (!softSkills.length) { setError('Выберите хотя бы один софт-скилл.'); return; }
     update(previous => {
@@ -69,7 +70,7 @@ export function Profile({ state, update, notify, onTest, onPreview }: {
         <div className="form-grid"><label className="field"><span>Email</span><input name="email" type="email" required defaultValue={profile.email} /></label><label className="field"><span>Телефон</span><input name="phone" type="tel" maxLength={30} defaultValue={profile.phone} placeholder="+7" /></label></div>
         <div className="section-divider" />
         <FormHeader title="Навыки" Icon={FileText} />
-        <div className="form-grid"><label className="field"><span>Специализация</span><select name="specialization" defaultValue={profile.specialization}><option>Frontend</option><option>Backend</option></select></label><label className="field"><span>Предполагаемый грейд</span><select name="desiredGrade" defaultValue={profile.desiredGrade}><option>Junior</option><option>Middle</option></select></label></div>
+        <div className="form-grid"><label className="field"><span>Специализация</span><select name="specialization" defaultValue={profile.specialization}>{specializationOptions.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}</select></label><label className="field"><span>Предполагаемый грейд</span><select name="desiredGrade" defaultValue={profile.desiredGrade}><option>Junior</option><option>Middle</option></select></label></div>
         <div className="form-grid"><label className="field"><span>Отрасль</span><select name="industry" required defaultValue={profile.industry || ''}><option value="">Выберите отрасль</option>{industryOptions.map(industry => <option key={industry}>{industry}</option>)}</select></label><label className="field"><span>Роль в команде</span><input name="professionalRole" required maxLength={100} defaultValue={profile.professionalRole} placeholder="Например, разработчик интерфейсов" /></label></div>
         <div className="form-grid"><label className="field"><span>Опыт работы</span><input name="experience" required maxLength={100} defaultValue={profile.experience} /></label><label className="field"><span>Формат работы</span><select name="format" defaultValue={profile.format}><option>Удалённо</option><option>Гибрид</option><option>Офис</option></select></label></div>
         <label className="field"><span>Стек</span><input name="stack" required maxLength={500} defaultValue={profile.stack.join(', ')} placeholder="React, TypeScript, CSS" /></label>

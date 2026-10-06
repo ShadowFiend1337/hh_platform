@@ -3,7 +3,7 @@ import { motion, useReducedMotion, useScroll, useTransform } from 'motion/react'
 import { ArrowDown, ArrowRight, ArrowUpRight, BadgeCheck, Check, CheckCheck, FileSliders, Layers3, Menu, Plus, Search, UsersRound, X } from 'lucide-react';
 import { Brand } from '../components/Brand';
 import { PlatformPreview } from '../components/PlatformPreview';
-import type { Role } from '../model';
+import { specializationOptions, type Role } from '../model';
 
 const examples = [
   { title: 'Frontend', brief: 'Frontend Middle React TypeScript' },
@@ -82,7 +82,7 @@ export function Landing({ onStart }: { onStart: (role?: Role, query?: string) =>
         <div className="create-title"><h2>Кто нужен<br /><span>вашей команде?</span></h2></div>
         <div className="brief-area"><form onSubmit={submit}><label className="sr-only" htmlFor="brief">Кого вы ищете?</label>
           <textarea ref={briefInput} id="brief" rows={4} maxLength={2000} value={brief} onChange={event => setBrief(event.target.value)} placeholder="Frontend · Middle · React…" required />
-          <div className="brief-toolbar"><label className="count-select" htmlFor="direction"><UsersRound size={17} /><select id="direction" value={direction} onChange={event => setDirection(event.target.value)} aria-label="Направление поиска"><option value="">Направление</option><option>Frontend</option><option>Backend</option></select></label><button className="button ink" type="submit">Попробовать<ArrowUpRight size={18} /></button></div>
+          <div className="brief-toolbar"><label className="count-select" htmlFor="direction"><UsersRound size={17} /><select id="direction" value={direction} onChange={event => setDirection(event.target.value)} aria-label="Направление поиска"><option value="">Направление</option>{specializationOptions.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}</select></label><button className="button ink" type="submit">Попробовать<ArrowUpRight size={18} /></button></div>
         </form><div className="prompt-examples">{examples.map(example => <button type="button" key={example.title} onClick={() => { setBrief(example.brief); setDirection(''); briefInput.current?.focus(); }}><Plus size={13} />{example.title}</button>)}</div></div>
       </motion.div></section>
       <section className="faq section-pad" aria-labelledby="faqTitle"><h2 id="faqTitle">Пара деталей.</h2><div>

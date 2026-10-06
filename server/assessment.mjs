@@ -1,6 +1,7 @@
 import { createHash, randomInt, randomUUID } from 'node:crypto';
 import { bankVersion, programs } from './bank.mjs';
 import { analyzeVacancy, vacancyExamples } from './vacancies.mjs';
+import { industryOptions } from '../shared/catalog.ts';
 
 export const threshold = 70;
 export const expiresInMinutes = 30;
@@ -34,7 +35,7 @@ export function validateSurvey(survey) {
   const text = (value, max) => typeof value === 'string' && value.trim().length > 0 && value.length <= max;
   const list = (value, max) => Array.isArray(value) && value.length > 0 && value.length <= max && value.every(item => text(item, 80)) && new Set(value).size === value.length;
   if (!survey || !text(survey.id, 100) || !text(survey.date, 40) || !Number.isFinite(Date.parse(survey.date))
-    || !text(survey.industry, 100) || !text(survey.professionalRole, 100) || !text(survey.experience, 100)
+    || !text(survey.industry, 100) || !industryOptions.includes(survey.industry) || !text(survey.professionalRole, 100) || !text(survey.experience, 100)
     || !list(survey.stack, 20) || !list(survey.softSkills, 10)) throw new RequestError(400, 'Сначала заполните анкету.');
   getProgram(survey.specialization, survey.desiredGrade);
   return { id: survey.id, date: survey.date, industry: survey.industry, professionalRole: survey.professionalRole,

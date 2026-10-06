@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { bankVersion, programs } from './bank.mjs';
 import { createAttempt, publicAttempt } from './assessment.mjs';
 import { vacancyExamples } from './vacancies.mjs';
+import { specializationNames } from '../shared/catalog.ts';
 
 const survey = (specialization, desiredGrade) => ({ id: 'validation-survey', date: new Date().toISOString(), industry: 'ИТ', professionalRole: 'Разработчик', specialization, desiredGrade, stack: ['JavaScript'], experience: '3 года', softSkills: ['Коммуникация'] });
 const rows = [];
@@ -28,7 +29,7 @@ for (const [specialization, grades] of Object.entries(programs)) for (const [gra
     previous = [attempt, ...previous].slice(0, 2);
   }
   assert.ok(samples.size >= 20, 'Variant selection has become a predictable short cycle');
-  rows.push(`| ${specialization} ${grade} | ${variants.length} | ${combinations} | 200 | ${samples.size} | 9 |`);
+  rows.push(`| ${specializationNames[specialization]} ${grade} | ${variants.length} | ${combinations} | 200 | ${samples.size} | 9 |`);
 }
 const assets = new URL('../frontend/dist/assets/', import.meta.url);
 const names = await readdir(assets);
@@ -62,7 +63,7 @@ ${rows.join('\n')}
 
 ## Формирование из вакансий
 
-Все шесть описаний синтетические. Ниже — один фактически собранный вариант на каждое описание. Распознанные требования влияют на выбор содержательной задачи внутри фиксированного слота; ядро, веса и грейд сохраняются. Показаны навыки выбранных задач, а не всего банка. Неизвестные словарю требования не считаются автоматически покрытыми.
+Все ${vacancyExamples.length} описаний синтетические. Ниже — один фактически собранный вариант на каждое описание. Распознанные требования влияют на выбор содержательной задачи внутри фиксированного слота; ядро, веса и грейд сохраняются. Показаны навыки выбранных задач, а не всего банка. Неизвестные словарю требования не считаются автоматически покрытыми.
 
 | Описание | Проверяемые совпадения | Распознано, но не проверяется этим вариантом |
 | --- | --- | --- |
@@ -79,4 +80,4 @@ ${examples.join('\n')}
 Нет данных реальных парных прохождений, независимых оценщиков и внешней помощи. Не измерены V-TEST-01–V-TEST-03 и устойчивость к запоминанию всего банка. Небольшой банк каждой программы можно выучить; непрозрачные ID, варианты и лимиты снижают повторное использование готового ответа, но не исключают передачу содержания. Для следующего исследования подготовлен \`server/calibrate.mjs\`; процедура описана в [плане валидации](metrics_and_validation.md).
 `;
 await writeFile(new URL('../docs/assessment_validation.md', import.meta.url), report, 'utf8');
-console.log('PASS 800 generated attempts, vacancy mapping and browser bundle isolation; report: ' + fileURLToPath(new URL('../docs/assessment_validation.md', import.meta.url)));
+console.log(`PASS ${rows.length * 200} generated attempts, vacancy mapping and browser bundle isolation; report: ` + fileURLToPath(new URL('../docs/assessment_validation.md', import.meta.url)));

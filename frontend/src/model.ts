@@ -1,5 +1,8 @@
+import { detectSpecialization, industryOptions, isSpecialization, stackOptions, type Specialization } from '../../shared/catalog.ts';
+export { defaultStackOptions, industryOptions, isSpecialization, specializationLabels, specializationNames, specializationOptions, specializationStacks } from '../../shared/catalog.ts';
+export { stackOptions } from '../../shared/catalog.ts';
+export type { Specialization } from '../../shared/catalog.ts';
 export type Role = 'employer' | 'candidate';
-export type Specialization = 'Frontend' | 'Backend';
 export type Grade = 'Junior' | 'Middle';
 export type InvitationStatus = 'sent' | 'viewed' | 'accepted' | 'rejected';
 export type Page = 'candidates' | 'invitations' | 'company' | 'profile' | 'assessment' | 'onboarding';
@@ -100,11 +103,6 @@ export const emptyFilters: Filters = { specialization: '', grade: '', format: ''
 export const statusLabels: Record<InvitationStatus, string> = {
   sent: 'Отправлено', viewed: 'Просмотрено', accepted: 'Принято', rejected: 'Отклонено',
 };
-export const specializationLabels: Record<Specialization, string> = {
-  Frontend: 'Frontend-разработчик', Backend: 'Backend-разработчик',
-};
-export const stackOptions = ['React', 'TypeScript', 'JavaScript', 'CSS', 'Python', 'FastAPI', 'Node.js', 'PostgreSQL', 'Docker'];
-export const industryOptions = ['ИТ', 'Финансы', 'Образование', 'Здравоохранение', 'Промышленность', 'Ритейл', 'Другое'];
 export const softSkillOptions = ['Коммуникация', 'Работа в команде', 'Самоорганизация', 'Решение задач', 'Лидерство'];
 export const ownCandidateId = 'candidate-anna';
 export const storageKey = 'predel:platform:v2';
@@ -203,7 +201,7 @@ export function readState(): PlatformState {
 export function currentSurvey(state: PlatformState): CandidateSurvey | undefined {
   const profile = state.profile;
   if (!profile.surveyCompletedAt || !profile.name.trim() || !profile.email.trim()
-    || !industryOptions.includes(profile.industry) || !profile.professionalRole.trim()
+    || !industryOptions.includes(profile.industry) || !isSpecialization(profile.specialization) || !profile.professionalRole.trim()
     || !profile.stack.length || !profile.experience.trim() || !profile.softSkills.length) return undefined;
   const same = (a: string[], b: string[]) => a.length === b.length && a.every(value => b.includes(value));
   return state.surveys.find(survey => survey.date === profile.surveyCompletedAt
@@ -245,9 +243,17 @@ export function hasContactAccess(state: PlatformState, candidateId: string) {
 // Filter the confirmed category before ranking; the FSP bonus cannot override it.
 export function searchCandidates(candidates: Candidate[], filters: Filters, query: string) {
   const normalized = query.toLowerCase().trim();
-  const requestedStack = stackOptions.filter(skill => normalized.includes(skill.toLowerCase()));
-  const requestedSpecialization = /frontend|фронтенд|фронтэнд|интерфейс/.test(normalized) ? 'Frontend'
-    : /backend|бэкенд|бекенд|api/.test(normalized) ? 'Backend' : '';
+  const skillPattern = (skill: string, flags = 'iu') => {
+    const escaped = skill.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`(?<![\\p{L}\\p{N}_])${escaped}(?![\\p{L}\\p{N}_])`, flags);
+  };
+  const matchedStack = stackOptions.filter(skill => skillPattern(skill).test(normalized));
+  const requestedStack = matchedStack.filter(skill => {
+    const remaining = matchedStack.filter(other => other.length > skill.length && skillPattern(skill).test(other))
+      .reduce((text, other) => text.replace(skillPattern(other, 'giu'), ' '), normalized);
+    return skillPattern(skill).test(remaining);
+  });
+  const requestedSpecialization = detectSpecialization(query) || '';
   const requestedGrade = /junior|джуниор/.test(normalized) ? 'Junior' : /middle|мидл/.test(normalized) ? 'Middle' : '';
   const recognized = requestedStack.length > 0 || requestedSpecialization || requestedGrade;
   const requiredStack = [...new Set([...filters.stack, ...requestedStack])];

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Paperclip, Trash2 } from 'lucide-react';
 import { CandidateSteps } from '../components/CandidateSteps';
-import { industryOptions, softSkillOptions, type CandidateSurvey, type Grade, type PlatformState, type Specialization } from '../model';
+import { industryOptions, isSpecialization, specializationOptions, softSkillOptions, type CandidateSurvey, type Grade, type PlatformState, type Specialization } from '../model';
 
 type Draft = {
   name: string; email: string; phone: string; city: string; industry: string; professionalRole: string;
@@ -65,7 +65,7 @@ export function Onboarding({ state, update, onComplete }: {
         const value = result.fields[key];
         if (typeof value !== 'string' || !value.trim()) continue;
         if (key === 'industry' && !industryOptions.includes(value)) continue;
-        if (key === 'specialization' && !['Frontend', 'Backend'].includes(value)) continue;
+        if (key === 'specialization' && !isSpecialization(value)) continue;
         if (key === 'desiredGrade' && !['Junior', 'Middle'].includes(value)) continue;
         if (key === 'format' && !workFormats.includes(value)) continue;
         recognized[key] = value.trim().slice(0, textLimits[key]);
@@ -112,7 +112,7 @@ export function Onboarding({ state, update, onComplete }: {
     const stack = [...new Set(draft.stack.split(',').map(skill => skill.trim()).filter(Boolean))];
     const softSkills = softSkillOptions.filter(skill => draft.softSkills.includes(skill));
     if (!name || !email || !industryOptions.includes(industry) || !professionalRole || !experience || !stack.length
-      || !['Frontend', 'Backend'].includes(specialization) || !['Junior', 'Middle'].includes(desiredGrade)) {
+      || !isSpecialization(specialization) || !['Junior', 'Middle'].includes(desiredGrade)) {
       setError('Заполните обязательные поля анкеты.'); return;
     }
     if (stack.length > 20 || stack.some(skill => skill.length > 80)) { setError('Укажите до 20 навыков, не более 80 символов каждый.'); return; }
@@ -165,7 +165,7 @@ export function Onboarding({ state, update, onComplete }: {
         <label className="field"><span>Роль в команде</span><input name="professionalRole" required maxLength={100} value={draft.professionalRole} onChange={event => change('professionalRole', event.target.value)} placeholder="Разработчик" /></label>
       </div>
       <div className="form-grid">
-        <label className="field"><span>Специализация</span><select name="specialization" required value={draft.specialization} onChange={event => change('specialization', event.target.value)}><option value="">Выберите</option><option>Frontend</option><option>Backend</option></select></label>
+        <label className="field"><span>Специализация</span><select name="specialization" required value={draft.specialization} onChange={event => change('specialization', event.target.value)}><option value="">Выберите</option>{specializationOptions.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}</select></label>
         <label className="field"><span>Предполагаемый грейд</span><select name="desiredGrade" required value={draft.desiredGrade} onChange={event => change('desiredGrade', event.target.value)}><option value="">Выберите</option><option>Junior</option><option>Middle</option></select></label>
       </div>
       <label className="field"><span>Стек</span><input name="stack" required maxLength={500} value={draft.stack} onChange={event => change('stack', event.target.value)} placeholder="React, TypeScript, CSS" /></label>

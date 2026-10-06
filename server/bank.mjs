@@ -1,6 +1,10 @@
 // This file is loaded only by the assessment server. Do not import it into Vite.
 // Difficulty is an author-assigned blueprint, not an empirical calibration.
-export const bankVersion = '2026.10.1';
+import { dataPrograms } from './banks/data.mjs';
+import { engineeringPrograms } from './banks/engineering.mjs';
+import { productPrograms } from './banks/product.mjs';
+
+export const bankVersion = '2026.10.2';
 
 // Per-task tags describe the competence actually exercised by that task.
 // They allow vacancy emphasis inside a difficulty slot without changing its
@@ -33,9 +37,13 @@ const taskSkills = {
 };
 const variant = (id, text, options, correct) => ({ id, text, options, correct,
   skills: taskSkills[id.slice(0, -2)][id.charCodeAt(id.length - 1) - 97] });
-const family = (id, topic, difficulty, skills, variants) => ({ id, topic, difficulty, skills, variants });
+const family = (id, topic, difficulty, skills, variants) => ({ id, topic, difficulty,
+  skills: [...new Set([...skills, ...variants.flatMap(item => item.skills)])], variants });
 
 export const programs = {
+  ...dataPrograms,
+  ...engineeringPrograms,
+  ...productPrograms,
   Frontend: {
     Junior: {
       topics: ['HTML', 'CSS', 'JavaScript'],

@@ -8,6 +8,7 @@ import { programs, bankVersion } from '../bank.mjs';
 import { analyzeVacancy, vacancyExamples } from '../vacancies.mjs';
 import { createAttempt, evaluate, publicAttempt, RequestError, validateSurvey } from '../assessment.mjs';
 import { createAssessmentServer } from '../server.mjs';
+import { specializationOptions, industryOptions } from '../../shared/catalog.ts';
 
 const initialTime = Date.parse('2026-10-05T12:00:00.000Z');
 function survey(specialization = 'Frontend', desiredGrade = 'Junior') {
@@ -61,29 +62,39 @@ async function begin(request, input = {}) {
   return response;
 }
 
-test('bank has unique authored content and valid answer indices in all four programs', () => {
+test('every catalog direction has Junior and Middle programs with unique authored content and valid answer indices', () => {
+  assert.deepEqual(Object.keys(programs).sort(), specializationOptions.map(item => item.value).sort());
   const ids = new Set();
   const texts = new Set();
   let questionCount = 0;
-  for (const grades of Object.values(programs)) for (const program of Object.values(grades)) {
-    assert.equal(program.topics.length, 3);
-    assert.equal(program.families.length, 6);
-    for (const family of program.families) {
-      assert(!ids.has(family.id)); ids.add(family.id);
-      assert(family.variants.length >= 4);
-      assert(family.skills.length > 0);
-      for (const variant of family.variants) {
-        assert(!ids.has(variant.id)); ids.add(variant.id);
-        assert(!texts.has(variant.text)); texts.add(variant.text);
-        assert.equal(variant.options.length, 4);
-        assert.equal(new Set(variant.options).size, 4);
-        assert(Number.isInteger(variant.correct) && variant.correct >= 0 && variant.correct < 4);
-        assert(Array.isArray(variant.skills) && variant.skills.length > 0);
-        questionCount++;
+  for (const grades of Object.values(programs)) {
+    assert.deepEqual(Object.keys(grades).sort(), ['Junior', 'Middle']);
+    for (const program of Object.values(grades)) {
+      assert.equal(program.topics.length, 3);
+      assert.equal(program.families.length, 6);
+      for (const family of program.families) {
+        assert(!ids.has(family.id)); ids.add(family.id);
+        assert(family.variants.length >= 4);
+        assert(family.skills.length > 0);
+        for (const variant of family.variants) {
+          assert(!ids.has(variant.id)); ids.add(variant.id);
+          assert(!texts.has(variant.text)); texts.add(variant.text);
+          assert.equal(variant.options.length, 4);
+          assert.equal(new Set(variant.options).size, 4);
+          assert(Number.isInteger(variant.correct) && variant.correct >= 0 && variant.correct < 4);
+          assert(Array.isArray(variant.skills) && variant.skills.length > 0);
+          assert(variant.skills.every(skill => family.skills.includes(skill)));
+          questionCount++;
+        }
       }
     }
   }
-  assert(questionCount >= 96);
+  assert.equal(questionCount, specializationOptions.length * 48);
+});
+
+test('all public industries validate and arbitrary industry values are rejected', () => {
+  for (const industry of industryOptions) assert.equal(validateSurvey({ ...survey(), industry }).industry, industry);
+  rejectsStatus(() => validateSurvey({ ...survey(), industry: 'unknown-industry' }), 400);
 });
 
 for (const [specialization, grades] of Object.entries(programs)) for (const [grade, program] of Object.entries(grades)) {
@@ -152,7 +163,7 @@ test('survey validation rejects unsupported programs and malformed or incomplete
 });
 
 test('vacancy examples cover all programs and disclose uncovered requirements without changing core slots', () => {
-  assert.equal(new Set(vacancyExamples.map(item => `${item.specialization}/${item.grade}`)).size, 4);
+  assert.equal(new Set(vacancyExamples.map(item => `${item.specialization}/${item.grade}`)).size, specializationOptions.length * 2);
   for (const example of vacancyExamples) {
     const attempt = createAttempt(survey(example.specialization, example.grade), example.description, [], initialTime);
     assertBlueprint(attempt, programs[example.specialization][example.grade]);

@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isSpecialization } from '../shared/catalog.ts';
 
 const mean = values => values.reduce((sum, value) => sum + value, 0) / values.length;
 function percentile(values, fraction) {
@@ -14,8 +15,9 @@ export function calibrate(input) {
   if (!input || typeof input.bankVersion !== 'string' || !Array.isArray(input.participants) || !input.participants.length) throw new Error('Нужны версия банка и непустой массив participants.');
   const people = new Set(), attempts = new Set(), groups = new Map();
   for (const row of input.participants) {
+    const [specialization, grade, extra] = typeof row?.program === 'string' ? row.program.split('/') : [];
     if (!row || typeof row.id !== 'string' || !row.id.trim() || people.has(row.id)
-      || !/^(Frontend|Backend)\/(Junior|Middle)$/.test(row.program)) throw new Error('Участник должен иметь уникальный ID и одну поддерживаемую программу.');
+      || !isSpecialization(specialization || '') || !['Junior', 'Middle'].includes(grade) || extra !== undefined) throw new Error('Участник должен иметь уникальный ID и одну поддерживаемую программу.');
     people.add(row.id);
     for (const attempt of [row.first, row.second]) {
       if (!attempt || typeof attempt.id !== 'string' || !attempt.id || attempts.has(attempt.id)

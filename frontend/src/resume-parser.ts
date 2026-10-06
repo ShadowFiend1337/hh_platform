@@ -1,3 +1,5 @@
+import { detectIndustry, detectSpecialization, type Specialization } from '../../shared/catalog.ts';
+
 /** Fields are suggestions from explicit resume text; category and consent are never inferred. */
 export interface ResumeFields {
   name?: string;
@@ -6,7 +8,7 @@ export interface ResumeFields {
   city?: string;
   industry?: string;
   professionalRole?: string;
-  specialization?: 'Frontend' | 'Backend';
+  specialization?: Specialization;
   desiredGrade?: 'Junior' | 'Middle';
   stack?: string[];
   experience?: string;
@@ -57,6 +59,13 @@ const stackPatterns: Array<[string, RegExp]> = [
   ['PyTorch', /\bpytorch\b/i], ['TensorFlow', /\btensorflow\b/i], ['scikit-learn', /\bscikit[- ]?learn\b/i],
   ['Matplotlib', /\bmatplotlib\b/i], ['Excel', /\bexcel\b/i], ['Power BI', /\bpower\s*bi\b/i],
   ['Jira', /\bjira\b/i], ['Figma', /\bfigma\b/i], ['BPMN', /\bbpmn\b/i], ['UML', /\buml\b/i],
+  ['Kotlin', /\bkotlin\b/i], ['Swift', /\bswift\b/i], ['Dart', /\bdart\b/i], ['Flutter', /\bflutter\b/i],
+  ['React Native', /\breact\s+native\b/i], ['Android', /\bandroid\b/i], ['iOS', /\bios\b/i],
+  ['Spark', /\b(?:apache\s+)?spark\b/i], ['Airflow', /\bairflow\b/i], ['Kafka', /\bkafka\b/i],
+  ['Terraform', /\bterraform\b/i], ['Ansible', /\bansible\b/i], ['Prometheus', /\bprometheus\b/i],
+  ['Playwright', /\bplaywright\b/i], ['Selenium', /\bselenium\b/i], ['Postman', /\bpostman\b/i],
+  ['Tableau', /\btableau\b/i], ['Confluence', /\bconfluence\b/i], ['Miro', /\bmiro\b/i], ['FigJam', /\bfigjam\b/i],
+  ['OWASP', /\bowasp\b/i], ['Burp Suite', /\bburp\s+suite\b/i], ['Wireshark', /\bwireshark\b/i],
 ];
 const softSkillPatterns: Array<[string, RegExp]> = [
   ['Коммуникация', /коммуникация|коммуникабельность|communication skills/iu],
@@ -65,8 +74,8 @@ const softSkillPatterns: Array<[string, RegExp]> = [
   ['Решение задач', /решение (?:задач|проблем)|problem[- ]solving/iu],
   ['Лидерство', /лидерство|leadership/iu],
 ];
-const roleWords = /(?:front[- ]?end|back[- ]?end|full[- ]?stack|developer|engineer|analyst|manager|разработчик|программист|аналитик|менеджер|дизайнер|тестировщик|инженер)/iu;
-const nameReject = /резюме|curriculum|resume|product|project|manager|developer|engineer|analyst|frontend|backend|опыт|образование|навыки|контакты|университет|достижения|бизнес|работа|менеджер|разработчик|аналитик|инженер|junior|middle|senior|москва|петербург|казань|новосибирск|екатеринбург|moscow|london|berlin/iu;
+const roleWords = /(?:front[- ]?end|back[- ]?end|full[- ]?stack|developer|engineer|analyst|manager|designer|scientist|разработчик|программист|аналитик|менеджер|дизайнер|тестировщик|инженер|devops|\b(?:ml|qa|sre)\b|машинное обучение)/iu;
+const nameReject = /резюме|curriculum|resume|product|project|manager|developer|engineer|analyst|designer|scientist|frontend|backend|опыт|образование|навыки|контакты|университет|достижения|бизнес|работа|менеджер|разработчик|аналитик|инженер|дизайнер|тестировщик|junior|middle|senior|москва|петербург|казань|новосибирск|екатеринбург|moscow|london|berlin/iu;
 
 function nameFrom(lines: string[]): string | undefined {
   for (const raw of lines.slice(0, 12)) {
@@ -116,37 +125,30 @@ export function parseResumeText(raw: string): ResumeFields {
   if (labeledCity || cityMatch) fields.city = (labeledCity || cityMatch)?.split(/[,|]/)[0].trim().slice(0, 80);
 
   const roleLines = parts.role?.slice(0, 3).filter(line => !/^(?:специализации|занятость|график|salary|зарплата)/iu.test(line));
-  const headline = lines.slice(0, 14).find(line => line.length <= 120 && roleWords.test(line)
-    && !/^(?:я |о себе|опыт|образование|навыки|работал|работала|участвовал|участвовала|начинающий.+с опытом)/iu.test(line));
+  const headline = lines.slice(0, 14).find(line => line.length <= 120 && (roleWords.test(line) || detectSpecialization(line))
+    && !/^(?:я |о себе|опыт|образование|навыки|стек|skills|stack|technologies|specialization|специализация|grade|грейд|отрасль|industry|работал|работала|участвовал|участвовала|начинающий.+с опытом)/iu.test(line));
   const role = roleLines?.[0] || headline;
   if (role) {
     const next = roleLines?.[1] || (headline ? lines[lines.indexOf(headline) + 1] : '');
     fields.professionalRole = (role.endsWith('/') && next && roleWords.test(next) ? `${role} ${next}` : role).slice(0, 100);
     const desired = fields.professionalRole;
-    const frontend = /front[- ]?end|фронт[- ]?енд/iu.test(desired);
-    const backend = /back[- ]?end|б[эе]к[- ]?енд/iu.test(desired);
-    // Fullstack, PM, BA, ML and other roles retain their text and no test category is invented.
-    if (frontend !== backend && !/full[- ]?stack|фулл?ст[эе]к/iu.test(desired)) fields.specialization = frontend ? 'Frontend' : 'Backend';
+    const specialization = detectSpecialization(desired);
+    if (specialization) fields.specialization = specialization;
     if (/\bjunior\b|джуниор/iu.test(desired) && !/\b(?:middle|senior)\b|мидл|сеньор/iu.test(desired)) fields.desiredGrade = 'Junior';
     if (/\bmiddle\b|мидл/iu.test(desired) && !/\b(?:junior|senior)\b|джуниор|сеньор/iu.test(desired)) fields.desiredGrade = 'Middle';
   }
   const explicitSpecialization = directLabel(lines.slice(0, 25), /^(?:специализация|specialization)\s*[:—-]\s*(.+)$/iu);
-  if (explicitSpecialization) delete fields.specialization;
-  if (explicitSpecialization && /^(?:front[- ]?end|фронт[- ]?енд)(?:\s+разработчик|\s+developer)?$/iu.test(explicitSpecialization)) fields.specialization = 'Frontend';
-  if (explicitSpecialization && /^(?:back[- ]?end|б[эе]к[- ]?енд)(?:\s+разработчик|\s+developer)?$/iu.test(explicitSpecialization)) fields.specialization = 'Backend';
+  if (explicitSpecialization) {
+    delete fields.specialization;
+    const specialization = detectSpecialization(explicitSpecialization);
+    if (specialization) fields.specialization = specialization;
+  }
   const explicitGrade = directLabel(lines.slice(0, 25), /^(?:предполагаемый грейд|грейд|grade|seniority)\s*[:—-]\s*(.+)$/iu);
   if (explicitGrade) delete fields.desiredGrade;
   if (explicitGrade && /^(?:junior|джуниор)$/iu.test(explicitGrade)) fields.desiredGrade = 'Junior';
   if (explicitGrade && /^(?:middle|мидл)$/iu.test(explicitGrade)) fields.desiredGrade = 'Middle';
   const industry = directLabel(lines, /^(?:отрасль|сфера(?: деятельности)?|industry)\s*[:—-]\s*(.+)$/iu);
-  if (industry) {
-    const categories: Array<[string, RegExp]> = [
-      ['ИТ', /^(?:ит|it|информационные технологии|software)/iu], ['Финансы', /финанс|банки|financ|bank/iu],
-      ['Образование', /образован|education/iu], ['Здравоохранение', /здравоохран|медицин|healthcare/iu],
-      ['Промышленность', /промышлен|industrial|manufacturing/iu], ['Ритейл', /ритейл|торгов|retail/iu],
-    ];
-    fields.industry = categories.find(([, expression]) => expression.test(industry))?.[0] || 'Другое';
-  }
+  if (industry) fields.industry = detectIndustry(industry);
 
   const stack = stackPatterns.filter(([, expression]) => notNegated(text, expression)).map(([skill]) => skill).slice(0, 20);
   if (stack.length) fields.stack = stack;
