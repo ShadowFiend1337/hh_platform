@@ -23,12 +23,13 @@ const fieldLabels: Record<keyof ResumeFields, string> = {
   education: 'Образование', stack: 'Стек', portfolio: 'Портфолио', languages: 'Языки', format: 'Формат работы',
 };
 
-export function Onboarding({ state, update, onComplete }: {
+export function Onboarding({ state, update, onComplete, accountPrefill }: {
   state: PlatformState; update: (fn: (state: PlatformState) => PlatformState) => void; onComplete: () => void;
+  accountPrefill?: { name?: string; email?: string };
 }) {
   const profile = state.profile;
   const [draft, setDraft] = useState<Draft>(() => ({
-    name: profile.name, email: profile.email, phone: profile.phone, city: profile.city,
+    name: profile.name || accountPrefill?.name || '', email: profile.email || accountPrefill?.email || '', phone: profile.phone, city: profile.city,
     industry: profile.industry, professionalRole: profile.professionalRole,
     specialization: state.surveys.length || profile.confirmed ? profile.specialization : '',
     desiredGrade: state.surveys.length || profile.confirmed ? profile.desiredGrade : '',
@@ -50,6 +51,14 @@ export function Onboarding({ state, update, onComplete }: {
   const fileInput = useRef<HTMLInputElement>(null);
   const pending = useRef<AbortController | null>(null);
   useEffect(() => () => pending.current?.abort(), []);
+  useEffect(() => {
+    if (!accountPrefill?.name && !accountPrefill?.email) return;
+    setDraft(previous => ({
+      ...previous,
+      name: previous.name || accountPrefill.name || '',
+      email: previous.email || accountPrefill.email || '',
+    }));
+  }, [accountPrefill?.name, accountPrefill?.email]);
 
   function change<K extends keyof Draft>(field: K, value: Draft[K]) {
     setDraft(previous => ({ ...previous, [field]: value }));

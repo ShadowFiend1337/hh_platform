@@ -1,16 +1,17 @@
 ﻿import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
-import { createInitialState, type Candidate, type PlatformState } from './model';
+import { createInitialState, storageKey, type Candidate, type PlatformState } from './model';
 
-interface PlatformResponse { state: PlatformState | null; revision: number; directoryPeople: Candidate[]; contactCandidateIds?: string[] }
+interface PlatformResponse { state: PlatformState | null; revision: number; directoryPeople: Candidate[]; contactCandidateIds?: string[]; identity?: string }
 class ApiError extends Error { constructor(message: string, readonly status: number) { super(message); } }
 const hash = (value: unknown) => JSON.stringify(value);
 export const syncCacheKey = 'predel:sync:v1';
-interface SyncCache { baseline: PlatformState | null; draftHash: string; dirty: boolean }
+interface SyncCache { baseline: PlatformState | null; draftHash: string; dirty: boolean; identity?: string }
 function readSyncCache(): SyncCache | null {
   try {
     const value = JSON.parse(localStorage.getItem(syncCacheKey) || 'null');
     return value && typeof value.draftHash === 'string' && typeof value.dirty === 'boolean'
-      && (value.baseline === null || value.baseline?.version === 2) ? value : null;
+      && (value.baseline === null || value.baseline?.version === 2)
+      && (value.identity === undefined || typeof value.identity === 'string') ? value : null;
   } catch { return null; }
 }
 
@@ -21,23 +22,36 @@ function directoryFingerprint(result: PlatformResponse) {
   return hash([result.state?.profile || null, people]);
 }
 
-async function request(method = 'GET', value?: unknown): Promise<PlatformResponse> {
+async function request(method = 'GET', value?: unknown, expectedIdentity?: string): Promise<PlatformResponse> {
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), 15000);
   try {
     const response = await fetch('/api/platform/state', { method, credentials: 'same-origin', signal: controller.signal,
-      headers: value === undefined ? undefined : { 'Content-Type': 'application/json' }, body: value === undefined ? undefined : hash(value) });
+      headers: { ...(value === undefined ? {} : { 'Content-Type': 'application/json' }),
+        ...(expectedIdentity ? { 'X-Platform-Identity': expectedIdentity } : {}) }, body: value === undefined ? undefined : hash(value) });
+    const identity = response.headers.get('X-Platform-Identity') || undefined;
+    if (expectedIdentity && identity && expectedIdentity !== identity) {
+      // A login/logout in another tab changed the shared cookie. This is not
+      // a revision conflict: an old draft must never be rebased to that user.
+      try {
+        localStorage.removeItem(storageKey); localStorage.removeItem('predel:platform:v1'); localStorage.removeItem(syncCacheKey);
+        sessionStorage.removeItem('predel:assessment:v1'); sessionStorage.removeItem('predel:search');
+      } catch { /* Reload still discards the in-memory draft. */ }
+      window.location.reload();
+      throw new ApiError('Аккаунт изменился. Обновите страницу.', 403);
+    }
     const data = await response.json();
     if (!response.ok) throw new ApiError(data.error || 'Не удалось сохранить данные.', response.status);
-    return data;
+    return { ...data, identity };
   } finally { window.clearTimeout(timeout); }
 }
 
 /** Apply local changes to a fresh server revision, keeping unrelated remote changes. */
 export function rebaseState(local: PlatformState, base: PlatformState | null, remote: PlatformState): PlatformState {
   const result = { ...remote };
+  const fieldBaseline = base || createInitialState();
   for (const key of ['profile', 'company'] as const) {
-    const previous = base?.[key];
+    const previous = fieldBaseline[key];
     const changes = Object.fromEntries(Object.entries(local[key]).filter(([field, value]) => hash(value) !== hash(previous?.[field as keyof typeof previous])));
     Object.assign(result, { [key]: { ...remote[key], ...changes } });
   }
@@ -59,7 +73,7 @@ export function rebaseState(local: PlatformState, base: PlatformState | null, re
 }
 
 /** SQLite is authoritative; the browser cache also buffers unsaved changes. */
-export function usePlatformPersistence(state: PlatformState, update: Dispatch<SetStateAction<PlatformState>>) {
+export function usePlatformPersistence(state: PlatformState, update: Dispatch<SetStateAction<PlatformState>>, initialIdentity?: string) {
   const [ready, setReady] = useState(false);
   const [revision, setRevision] = useState(0);
   const [directoryRevision, setDirectoryRevision] = useState(0);
@@ -73,6 +87,7 @@ export function usePlatformPersistence(state: PlatformState, update: Dispatch<Se
   const persisted = useRef('');
   const failedWriteHash = useRef<string | null>(null);
   const serverRevision = useRef(0);
+  const serverIdentity = useRef<string | undefined>(initialIdentity);
   const directoryHash = useRef<string | null>(null);
   const likedPeople = useRef(new Map<string, string | null>());
   const writing = useRef<Promise<void> | null>(null);
@@ -93,6 +108,7 @@ export function usePlatformPersistence(state: PlatformState, update: Dispatch<Se
     directoryHash.current = nextDirectoryHash; likedPeople.current = nextLikedPeople;
     if (directoryChanged) setDirectoryRevision(value => value + 1);
     serverRevision.current = result.revision;
+    serverIdentity.current = result.identity || serverIdentity.current;
     baseline.current = result.state;
     persisted.current = result.state ? hash(result.state) : '';
     setRevision(result.revision); setPeople(result.directoryPeople || []);
@@ -102,16 +118,19 @@ export function usePlatformPersistence(state: PlatformState, update: Dispatch<Se
   useEffect(() => {
     mounted.current = true;
     let active = true;
-    request().then(result => {
+    request('GET', undefined, serverIdentity.current).then(result => {
       if (!active) return;
       const buffered = recovery.current;
-      const recover = buffered?.dirty && buffered.draftHash === hash(current.current);
+      const identityChanged = Boolean(buffered?.identity && result.identity && buffered.identity !== result.identity);
+      const recover = !identityChanged && buffered?.dirty && buffered.draftHash === hash(current.current);
       // A known server account that disappeared was deleted elsewhere. Do
       // not migrate its browser cache back as a newly created account.
       const deleted = !result.state && Boolean(buffered?.baseline);
-      const merged = deleted ? createInitialState() : result.state && recover ? rebaseState(current.current, buffered.baseline, result.state) : result.state;
+      const neutral = !result.state && hash(current.current) === hash(createInitialState());
+      const merged = deleted || neutral || identityChanged && !result.state ? createInitialState()
+        : result.state && recover ? rebaseState(current.current, buffered.baseline, result.state) : result.state;
       receive(result);
-      if (deleted) persisted.current = hash(merged);
+      if (deleted || neutral) persisted.current = hash(merged);
       recovery.current = null;
       if (merged) { current.current = merged; update(merged); }
       setReady(true); setStatus(merged && hash(merged) === persisted.current ? 'saved' : 'saving');
@@ -121,7 +140,7 @@ export function usePlatformPersistence(state: PlatformState, update: Dispatch<Se
 
   useEffect(() => {
     if (!ready) return;
-    try { localStorage.setItem(syncCacheKey, hash({ baseline: baseline.current, draftHash: hash(state), dirty: hash(state) !== persisted.current })); }
+    try { localStorage.setItem(syncCacheKey, hash({ baseline: baseline.current, draftHash: hash(state), dirty: hash(state) !== persisted.current, identity: serverIdentity.current })); }
     catch { /* The interface reports browser-cache failures separately. */ }
   }, [ready, state, revision, status]);
 
@@ -146,10 +165,10 @@ export function usePlatformPersistence(state: PlatformState, update: Dispatch<Se
             const snapshotHash = hash(snapshot);
             attemptedHash = snapshotHash;
             let result: PlatformResponse;
-            try { result = await request('PUT', { state: snapshot, baseRevision: serverRevision.current }); }
+            try { result = await request('PUT', { state: snapshot, baseRevision: serverRevision.current }, serverIdentity.current); }
             catch (cause) {
               if (!(cause instanceof ApiError) || cause.status !== 409 || ++conflicts > 3) throw cause;
-              const fresh = await request();
+              const fresh = await request('GET', undefined, serverIdentity.current);
               if (blocked.current || !mounted.current) return;
               if (!fresh.state && baseline.current) {
                 const empty = createInitialState();
@@ -182,7 +201,7 @@ export function usePlatformPersistence(state: PlatformState, update: Dispatch<Se
     const refresh = async () => {
       if (blocked.current || writing.current || document.visibilityState === 'hidden' || hash(current.current) !== persisted.current) return;
       try {
-        const result = await request();
+        const result = await request('GET', undefined, serverIdentity.current);
         if (!active || blocked.current || writing.current || hash(current.current) !== persisted.current) return;
         receive(result);
         const next = result.state || createInitialState();
@@ -205,7 +224,7 @@ export function usePlatformPersistence(state: PlatformState, update: Dispatch<Se
       blocked.current = true;
       try {
         await writing.current;
-        await request('DELETE');
+        await request('DELETE', undefined, serverIdentity.current);
         const empty = createInitialState();
         current.current = empty; baseline.current = null; persisted.current = hash(empty); serverRevision.current = 0;
         directoryHash.current = null; likedPeople.current = new Map(); setDirectoryRevision(0);

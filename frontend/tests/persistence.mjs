@@ -40,6 +40,7 @@ async function session({ employer = false } = {}) {
   await context.route('**/api/**', async route => {
     const request = route.request();
     const url = new URL(request.url());
+    if (url.pathname === '/api/auth/me') { await route.fulfill({ status: 401, json: { error: 'Гостевой кабинет.' } }); return; }
     if (url.pathname === '/api/directory/search') {
       backend.directorySearches += 1;
       await route.fulfill({ json: { items: backend.searchPeople.map(person => ({ person: clone(person), rank: 1,

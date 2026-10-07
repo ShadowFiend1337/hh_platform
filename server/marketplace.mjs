@@ -103,10 +103,10 @@ export class MarketplaceService {
       });
     }
   }
-  account(owner) {
+  account(owner, { required = true } = {}) {
     if (typeof owner !== 'string' || !owner || owner.length > 200) throw new RequestError(401, 'Сессия недоступна.');
     const account = this.store.db.prepare('SELECT * FROM platform_accounts WHERE owner=?').get(owner);
-    if (!account) throw new RequestError(409, 'Сначала сохраните профиль или данные компании.');
+    if (!account && required) throw new RequestError(409, 'Сначала сохраните профиль или данные компании.');
     return account;
   }
   row(vacancyId) {
@@ -149,7 +149,7 @@ export class MarketplaceService {
     return this.companyDTO(row);
   }
   vacancies(owner, { own = false, companyId = null } = {}) {
-    if (own) this.account(owner);
+    if (own) this.account(owner, { required: false });
     const condition = own ? 'c.owner=?' : "v.status='open'";
     const args = own ? [owner] : [];
     let extra = '';
@@ -230,7 +230,7 @@ export class MarketplaceService {
     });
   }
   applications(owner, role) {
-    this.account(owner);
+    this.account(owner, { required: false });
     if (!['candidate', 'employer'].includes(role)) fail('Выберите роль для просмотра откликов.');
     const condition = role === 'candidate' ? 'a.candidate_owner=?' : 'c.owner=?';
     const rows = this.store.db.prepare(`SELECT a.* FROM marketplace_applications a JOIN marketplace_companies c ON c.id=a.company_id

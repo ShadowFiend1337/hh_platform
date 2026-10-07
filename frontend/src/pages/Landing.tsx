@@ -12,7 +12,7 @@ const examples = [
 ];
 const variants = ['Подбор', 'Профиль', 'Приглашение'];
 
-export function Landing({ onStart }: { onStart: (role?: Role, query?: string) => void }) {
+export function Landing({ onStart, onAuth }: { onStart: (role?: Role, query?: string) => void; onAuth: (mode: 'login' | 'register', role?: Role) => void }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [variant, setVariant] = useState(0);
   const [brief, setBrief] = useState('');
@@ -39,7 +39,7 @@ export function Landing({ onStart }: { onStart: (role?: Role, query?: string) =>
       <div className="nav-island"><Brand /><nav aria-label="Главная навигация">
         <a href="#possibilities">Возможности</a><a href="#how">Как это работает</a><a href="#try">Подбор</a>
       </nav><button className="menu-toggle icon-button" aria-label={menuOpen ? 'Закрыть меню' : 'Открыть меню'} aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}>{menuOpen ? <X /> : <Menu />}</button></div>
-      <div className="account-island"><button className="login-link" onClick={() => onStart('candidate')}>Кандидату</button><button className="button ink small" onClick={() => onStart()}>Попробовать<ArrowUpRight size={16} /></button></div>
+      <div className="account-island"><button className="login-link" onClick={() => onAuth('login')}>Войти</button><button className="button ink small" onClick={() => onAuth('register')}>Создать аккаунт<ArrowUpRight size={16} /></button></div>
       {menuOpen && <nav className="mobile-menu" aria-label="Мобильная навигация">
         {[['#possibilities', 'Возможности'], ['#how', 'Как это работает'], ['#try', 'Подбор']].map(([href, text]) => <a href={href} key={href} onClick={() => setMenuOpen(false)}>{text}<ArrowUpRight size={18} /></a>)}
       </nav>}

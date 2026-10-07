@@ -15,7 +15,8 @@ const page = await context.newPage();
 page.setDefaultTimeout(15000);
 const errors = [];
 page.on('pageerror', error => errors.push(error.message));
-page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
+page.on('console', message => { if (message.type() === 'error'
+  && !(new URL(message.location().url || base).pathname === '/api/auth/me' && message.text().includes('401'))) errors.push(message.text()); });
 await mkdir(resolve('test-results'), { recursive: true });
 
 async function auditMobile() {

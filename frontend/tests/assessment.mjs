@@ -15,7 +15,8 @@ const errors = [];
 let injectedFailure = false;
 page.on('pageerror', error => errors.push(error.message));
 page.on('console', message => {
-  if (message.type() === 'error' && !(injectedFailure && message.text().includes('503'))) errors.push(message.text());
+  if (message.type() === 'error' && !(injectedFailure && message.text().includes('503'))
+    && !(new URL(message.location().url || base).pathname === '/api/auth/me' && message.text().includes('401'))) errors.push(message.text());
 });
 async function mobileAudit() {
   await page.setViewportSize({ width: 320, height: 750 });

@@ -124,10 +124,33 @@ test('forged history, another session proof, FSP badges and synthetic flags cann
   const saved = platform.save(ownerA, state, 0);
   assert.equal(saved.state.profile.confirmed.grade, 'Junior', 'Unverifiable legacy data may remain private');
   assert.deepEqual(saved.state.history, []);
-  assert.equal(saved.state.profile.fspId, ''); assert.deepEqual(saved.state.profile.achievements, []);
+  assert.equal(saved.state.profile.fspId, 'REAL-FSP', 'A self-reported external ID does not grant verified achievements');
+  assert.deepEqual(saved.state.profile.achievements, []);
   assert.equal(saved.state.profile.synthetic, false);
   assert.equal(store.forOwner(ownerA).eligible, 0);
   assert.equal(store.matching(defaultSearchFilters).length, 0);
+});
+
+test('external federation IDs persist and changing one clears server-owned evidence', t => {
+  const { platform, store } = fixture(t);
+  const state = initial();
+  state.profile.consent = true;
+  state.profile.fspId = 'participant-first';
+  const first = platform.save(ownerA, state, 0, 'candidate');
+  assert.equal(platform.read(ownerA).state.profile.fspId, 'participant-first');
+  const stored = store.db.prepare('SELECT profile FROM platform_accounts WHERE owner=?').get(ownerA);
+  const withEvidence = JSON.parse(stored.profile);
+  withEvidence.achievements = [{ title: 'Серверное достижение', result: 'Участник', year: '2026' }];
+  store.db.prepare('UPDATE platform_accounts SET profile=? WHERE owner=?').run(JSON.stringify(withEvidence), ownerA);
+  const changed = structuredClone(first.state);
+  changed.profile.fspId = 'participant-second';
+  const second = platform.save(ownerA, changed, first.revision, 'candidate');
+  assert.equal(second.state.profile.fspId, 'participant-second');
+  assert.deepEqual(second.state.profile.achievements, []);
+  const invalid = structuredClone(second.state);
+  invalid.profile.fspId = 'x'.repeat(101);
+  assert.throws(() => platform.save(ownerA, invalid, second.revision, 'candidate'), errorStatus(400));
+  assert.equal(platform.read(ownerA).state.profile.fspId, 'participant-second');
 });
 
 test('published grade and score come from a passed owned result; contacts stay out of directory payload', t => {

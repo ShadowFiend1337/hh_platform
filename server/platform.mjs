@@ -112,14 +112,17 @@ function profile(input, stored) {
     workHistory: text(value.workHistory, resumeTextLimits.workHistory, 'История работы'),
     portfolio: url(value.portfolio, resumeTextLimits.portfolio, 'Портфолио'),
     languages: text(value.languages, resumeTextLimits.languages, 'Языки'),
-    // The client cannot grant itself federation achievements or demo status.
-    fspId: stored?.fspId || '', achievements: stored?.achievements || [], synthetic: false,
+    // A user may enter an external ID; only server-owned achievements count
+    // as federation evidence. Changing the ID clears the previous evidence.
+    fspId: value.fspId === undefined ? stored?.fspId || '' : text(value.fspId, 100, 'ID ФСП'),
+    achievements: stored?.achievements || [], synthetic: false,
     visible: flag(value.visible, 'Видимость'), consent: flag(value.consent, 'Согласие'),
     salaryFrom: integer(value.salaryFrom, 10000000, 'Зарплата от'), salaryTo: integer(value.salaryTo, 10000000, 'Зарплата до'),
     employmentType: choice(value.employmentType, ['', ...employmentTypes], 'Занятость'),
     availableFrom: text(value.availableFrom, 10, 'Дата готовности'),
     languageCodes: strings(value.languageCodes, allowedLanguages.size, 10, 'Коды языков'),
   };
+  if (result.fspId !== (stored?.fspId || '')) result.achievements = [];
   if (result.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(result.email)) fail('Проверьте email.');
   if (result.salaryFrom !== null && result.salaryTo !== null && result.salaryFrom > result.salaryTo) fail('Начало зарплатного диапазона превышает конец.');
   if (result.languageCodes.some(item => !allowedLanguages.has(item))) fail('Неизвестный язык.');
@@ -282,8 +285,9 @@ export class PlatformService {
       || invitations.some(item => item.candidateId === person.id && item.companyId === ownCompanyId && item.status === 'accepted')).map(person => person.id);
     return { state, revision: account.revision, directoryPeople, contactCandidateIds };
   }
-  save(owner, input, baseRevision) {
+  save(owner, input, baseRevision, role = null) {
     ownerKey(owner);
+    if (role !== null && role !== 'candidate' && role !== 'employer') throw new RequestError(403, 'Роль аккаунта недоступна.');
     if (!Number.isSafeInteger(baseRevision) || baseRevision < 0) fail('Некорректная версия данных.');
     const value = object(input, 'состояние');
     if (value.version !== 2 || Object.keys(value).some(key => !['version', 'profile', 'company', 'invitations', 'history', 'surveys', 'savedSearches', 'candidateDecisions'].includes(key))) fail('Неподдерживаемый формат состояния.');
@@ -295,11 +299,16 @@ export class PlatformService {
     const incomingSurveys = unique(list(value.surveys, 100, 'анкеты').map(survey), 'анкеты');
     const incomingDecisions = value.candidateDecisions === undefined ? null : candidateDecisions(value.candidateDecisions);
     const employer = company(value.company);
+    if (role === 'candidate' && savedSearches.length) throw new RequestError(403, 'Сохранённые поиски доступны работодателю.');
+    if (role === 'candidate' && incomingDecisions?.length) throw new RequestError(403, 'Подбор кандидатов доступен работодателю.');
     return this.store.transaction(() => {
       const account = this.store.db.prepare('SELECT * FROM platform_accounts WHERE owner=?').get(owner);
       if ((account?.revision || 0) !== baseRevision) throw new RequestError(409, 'Данные изменились в другой вкладке. Обновите страницу.');
       const oldProfile = account ? JSON.parse(account.profile) : null;
       const person = profile(value.profile, oldProfile);
+      if (role === 'employer' && (hasPrivateProfile(person) || person.consent || incomingSurveys.length)) {
+        throw new RequestError(403, 'Профиль и анкеты доступны соискателю.');
+      }
       if (!person.consent && (hasPrivateProfile(person) || incomingSurveys.length) && !hasPrivateProfile(oldProfile)) throw new RequestError(400, 'Для сохранения личной анкеты необходимо согласие.');
       const rows = this.assessments.completed(owner).filter(row => row.owner === owner && row.result);
       const byId = new Map(rows.map(row => [row.id, row]));
@@ -355,7 +364,7 @@ export class PlatformService {
       this.store.db.prepare(`INSERT INTO platform_accounts(owner,public_id,revision,profile,company,updated_at) VALUES(?,?,?,?,?,?)
         ON CONFLICT(owner) DO UPDATE SET revision=excluded.revision,profile=excluded.profile,company=excluded.company,updated_at=excluded.updated_at`)
         .run(owner, id, revision, JSON.stringify({ ...person, ...(selectedProof ? { _proofId: selectedProof.id } : {}) }), JSON.stringify(employer), timestamp);
-      syncMarketplaceCompany(this.store, owner, employer, id);
+      if (role !== 'candidate') syncMarketplaceCompany(this.store, owner, employer, id);
       const eligible = Boolean(selectedProof && person.name && person.email && person.professionalRole && person.stack.length);
       this.store.upsert({ ...person, id }, owner, eligible);
       this.store.db.prepare('DELETE FROM platform_surveys WHERE owner=?').run(owner);
@@ -375,6 +384,7 @@ export class PlatformService {
         const target = item.candidateId === ownCandidateId ? id : item.candidateId;
         const existing = this.store.db.prepare('SELECT * FROM platform_invitations WHERE id=?').get(item.id);
         if (!existing) {
+          if (role === 'candidate') throw new RequestError(403, 'Отправлять приглашения может только работодатель.');
           const candidate = this.store.get(target);
           if (!candidate || !candidate.eligible || !candidate.visible || !candidate.consent) throw new RequestError(404, 'Кандидат недоступен для приглашения.');
           if (item.status !== 'sent') throw new RequestError(403, 'Работодатель может только отправить приглашение.');
@@ -387,6 +397,7 @@ export class PlatformService {
         const candidate = this.store.get(existing.candidate_id);
         const recipient = candidate?.owner === owner;
         if (existing.sender !== owner && !recipient) throw new RequestError(403, 'Приглашение принадлежит другой сессии.');
+        if (role === 'employer' && recipient && existing.sender !== owner) throw new RequestError(403, 'Ответить на приглашение может только соискатель.');
         const stored = JSON.parse(existing.payload);
         if (target !== existing.candidate_id || ['title', 'description', 'contact', 'salaryFrom', 'salaryTo'].some(key => item[key] !== stored[key])) throw new RequestError(403, 'Отправленное предложение нельзя подменить.');
         if (item.status === existing.status) continue;

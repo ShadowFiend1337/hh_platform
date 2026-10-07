@@ -432,13 +432,13 @@ try {
     sessionStorage.setItem('predel:assessment:v1', 'local-session');
     sessionStorage.setItem('predel:search', 'local-search');
   });
-  await erasePolicy.getByRole('button', { name: 'Удалить данные браузера', exact: true }).click();
+  await erasePolicy.getByRole('button', { name: 'Удалить данные профиля', exact: true }).click();
   assert.deepEqual(await page.evaluate(key => JSON.parse(localStorage.getItem(key)), storageKey), beforeErase, 'First deletion click must not delete data');
   await erasePolicy.getByRole('button', { name: 'Отмена', exact: true }).click();
   assert.deepEqual(await page.evaluate(key => JSON.parse(localStorage.getItem(key)), storageKey), beforeErase, 'Cancelling must preserve saved questionnaire');
-  await erasePolicy.getByRole('button', { name: 'Удалить данные браузера', exact: true }).click();
+  await erasePolicy.getByRole('button', { name: 'Удалить данные профиля', exact: true }).click();
   await erasePolicy.getByRole('button', { name: 'Удалить', exact: true }).click();
-  await erasePolicy.getByText('Данные текущей сессии удалены из браузера и с сервера.', { exact: true }).waitFor();
+  await erasePolicy.getByText('Данные кабинета удалены из браузера и с сервера.', { exact: true }).waitFor();
   await page.getByRole('heading', { name: 'Анкета', exact: true }).waitFor();
   assert.equal(await page.locator('[name="name"]').inputValue(), '', 'Other tab must reset the deleted profile');
   const erased = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), storageKey);

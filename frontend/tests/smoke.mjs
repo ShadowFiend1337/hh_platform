@@ -18,7 +18,8 @@ const contexts = [context];
 const page = await context.newPage();
 const errors = [];
 page.on('pageerror', error => errors.push(error.message));
-page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
+page.on('console', message => { if (message.type() === 'error'
+  && !(new URL(message.location().url || base).pathname === '/api/auth/me' && message.text().includes('401'))) errors.push(message.text()); });
 page.setDefaultTimeout(15000);
 
 async function rows(expected) {

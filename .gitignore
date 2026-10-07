@@ -11,4 +11,5 @@ __pycache__/
 .venv/
 .pytest_cache/
 server/data/
+backend/data/
 frontend/public/resume-assets/

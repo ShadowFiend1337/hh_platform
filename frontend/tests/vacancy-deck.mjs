@@ -61,6 +61,7 @@ async function session({ applied = [], ...options } = {}) {
     applications: applied.map(index => application(vacancyFixtures[index])), posts: [], companyGets: [], vacancyGets: 0 };
   await context.route('**/api/**', async route => {
     const request = route.request(), url = new URL(request.url());
+    if (url.pathname === '/api/auth/me') { await route.fulfill({ status: 401, json: { error: 'Гостевой кабинет.' } }); return; }
     let payload;
     if (url.pathname === '/api/platform/state') {
       if (request.method() === 'PUT') {

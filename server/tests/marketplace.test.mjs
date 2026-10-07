@@ -38,6 +38,21 @@ function fixture(t, { seeds = false } = {}) {
   return { store, assessments, platform, marketplace, setTime: value => { clock = value; } };
 }
 
+test('fresh owners can read empty private lists without creating a profile or gaining mutation access', t => {
+  const { store, platform, marketplace } = fixture(t);
+  platform.save(employer, state(), 0);
+  const vacancy = marketplace.publish(employer, valid());
+  assert.deepEqual(marketplace.vacancies(outsider, { own: true }).items, []);
+  assert.deepEqual(marketplace.applications(outsider, 'employer').items, []);
+  assert.deepEqual(marketplace.applications(outsider, 'candidate').items, []);
+  assert.equal(store.forOwner(outsider), undefined);
+  assert.throws(() => marketplace.publish(outsider, valid()), status(409));
+  assert.throws(() => marketplace.apply(outsider, vacancy.id, {}), status(409));
+  assert.throws(() => marketplace.applications(null, 'candidate'), status(401));
+  assert.throws(() => marketplace.vacancies(null, { own: true }), status(401));
+  assert.throws(() => marketplace.applications(outsider, 'invalid'), status(400));
+});
+
 test('seed companies keep internal provenance, cover every catalog role and show concise descriptions', t => {
   const { store, marketplace } = fixture(t, { seeds: true });
   const companies = marketplace.companies().items;

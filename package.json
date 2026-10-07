@@ -5,9 +5,13 @@
   "engines": { "node": ">=24.0.0" },
   "scripts": {
     "dev": "node scripts/dev.mjs",
+    "dev:fastapi": "node scripts/dev.mjs --fastapi",
     "start": "node server/server.mjs",
+    "start:fastapi": "node scripts/start-backend.mjs",
+    "export:fastapi-data": "node scripts/export-fastapi-data.mjs",
     "build": "npm --prefix frontend run build",
     "test:server": "node --test server/tests/*.test.mjs",
+    "test:auth": "node frontend/tests/auth.mjs",
     "test:browser": "npm --prefix frontend run test:browser",
     "test:assessment": "npm --prefix frontend run test:assessment",
     "test:resume": "npm --prefix frontend run test:resume",
