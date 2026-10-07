@@ -130,7 +130,7 @@ export async function validateSuite() {
   assert.equal(new Set(cases.filter(item => item.group === 'role-paraphrase').flatMap(item => item.expected.rolesAny)).size, 14);
   const codeSourceHashes = Object.fromEntries(await Promise.all([
     'server/directory.mjs', 'server/directory-store.mjs', 'server/semantic-worker.mjs',
-    'server/query-role-scope.mjs', 'server/data-definitions/professional-role-scope.json',
+    'server/query-role-scope.mjs', 'server/search-evidence.mjs', 'server/data-definitions/professional-role-scope.json',
     'shared/search.ts', 'shared/catalog.ts', 'ml/common.py', 'ml/worker.py', 'ml/reranker.py',
   ].map(async path => [path, hash(await readFile(resolve(projectRoot, path), 'utf8'))])));
   return { version: suiteVersion, cases: cases.length, mandatory: cases.filter(item => item.tier === 'mandatory').length,

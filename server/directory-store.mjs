@@ -2,10 +2,11 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { createHash } from 'node:crypto';
+import { positiveProfessionalContent } from './search-evidence.mjs';
 
 export const textHash = text => createHash('sha256').update(text).digest('hex');
-export const PROFILE_INDEX_POLICY = 'profile-sections-max-v2';
-export const PROFILE_EVIDENCE_POLICY = 'professional-sections-with-sparse-competencies-v1';
+export const PROFILE_INDEX_POLICY = 'positive-profile-sections-max-v3';
+export const PROFILE_EVIDENCE_POLICY = 'professional-sections-with-strict-sparse-competencies-v2';
 const MAX_SEGMENTS = 8;
 const MAX_SEGMENT_CHARACTERS = 4000;
 const MAX_PROFILE_CHARACTERS = 12000;
@@ -39,7 +40,8 @@ function semanticSections(person, { includeIdentity = true } = {}) {
   if (includeIdentity) fields.push(['identity', identity]);
   for (const [field, value] of fields) {
     if (!value || !remaining || result.length >= MAX_SEGMENTS) continue;
-    const bounded = scrub(professionalContent(person, value, field === 'workHistory')).trim().slice(0, MAX_SEGMENT_CHARACTERS).trim();
+    const factual = scrub(professionalContent(person, value, field === 'workHistory')).trim();
+    const bounded = positiveProfessionalContent(factual).trim().slice(0, MAX_SEGMENT_CHARACTERS).trim();
     if (!bounded || seen.has(bounded)) continue;
     const text = bounded.slice(0, remaining).trim();
     if (!text || seen.has(text)) continue;
@@ -54,13 +56,33 @@ export function semanticSegments(person, options) {
 
 export function semanticRerankingSections(person) {
   const sections = semanticSections(person);
-  const hasNarrative = sections.some(section => section.field === 'bio' || section.field === 'workHistory');
+  const hasNarrative = hasOriginalNarrative(person);
   // A published role and stack are factual, self-reported competencies. With
   // no biography or work description they can be scored in their own right,
   // alongside education/achievements, without inventing professional tasks.
   // Described work retains the existing task-only second-stage behavior.
   return sections.filter(section => section.field !== 'identity' || !hasNarrative)
     .map(section => ({ text: section.text, kind: section.field === 'identity' ? 'competencies' : 'professional' }));
+}
+
+function hasOriginalNarrative(person) {
+  // An explicit denial is still a narrative. Removing it from the embedding
+  // must not turn a contradictory role/stack into the person's task evidence.
+  return ['bio', 'workHistory'].some(field => scrub(professionalContent(person, person[field], field === 'workHistory')).trim());
+}
+
+export function semanticEvidenceSections(person) {
+  // The worker's passage budget must not cut off a denial predicate or hide
+  // a later affirmative claim. These validated fields stay local to the
+  // evidence check; they are never sent to the model without index bounds.
+  return ['bio', 'workHistory', 'careerAchievements', 'education']
+    .map(field => scrub(professionalContent(person, person[field], field === 'workHistory')).trim()).filter(Boolean);
+}
+
+export function semanticCompetencySections(person) {
+  if (hasOriginalNarrative(person)) return [];
+  const identity=scrub([person.professionalRole, (person.stack || []).join(', ')].filter(Boolean).join('\n')).trim();
+  return identity ? [identity] : [];
 }
 
 export function semanticDocument(person) {

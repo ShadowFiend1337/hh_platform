@@ -22,7 +22,7 @@ const hash = value => createHash('sha256').update(value).digest('hex');
 const runtimeSources = [
   'ml/acceptance-control.mjs', 'ml/acceptance-control.json',
   'server/directory.mjs', 'server/directory-store.mjs', 'server/semantic-worker.mjs',
-  'server/search-ranking.mjs', 'server/query-role-scope.mjs',
+  'server/search-ranking.mjs', 'server/query-role-scope.mjs', 'server/search-evidence.mjs',
   'shared/catalog.ts', 'shared/grading.ts', 'shared/search.ts',
   'ml/worker.py', 'ml/common.py', 'ml/reranker.py', 'ml/requirements.txt',
 ];

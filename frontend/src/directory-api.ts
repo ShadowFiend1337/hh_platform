@@ -53,7 +53,7 @@ export interface DirectorySearch {
       groups?: Record<string, string[][]> } };
   effectiveFilters?: SearchFilters;
   model: { status: 'ready' | 'unavailable'; name: string; version: string; dimension: number; trained: boolean;
-    indexPolicy?: string; profileEvidencePolicy?: string;
+    indexPolicy?: string; profileEvidencePolicy?: string; taskEvidencePolicy?: string;
     reranker?: DirectoryReranker; stage?: DirectoryReranker;
     rerankerAggregation?: 'max-task-sections-v1' | 'max-fused-task-sections-v1'
       | 'max-professional-sections-v2' | 'max-fused-professional-sections-v2' };

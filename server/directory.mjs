@@ -1,4 +1,5 @@
-import { DirectoryStore, semanticMatch, semanticRerankingSections, parseSemanticSegments, PROFILE_INDEX_POLICY, PROFILE_EVIDENCE_POLICY } from './directory-store.mjs';
+import { DirectoryStore, semanticMatch, semanticRerankingSections, semanticEvidenceSections, semanticCompetencySections, parseSemanticSegments, PROFILE_INDEX_POLICY, PROFILE_EVIDENCE_POLICY } from './directory-store.mjs';
+import { queryEvidenceRequirements, assessTaskEvidence, TASK_EVIDENCE_POLICY } from './search-evidence.mjs';
 import { directoryCandidates } from './directory-seed.mjs';
 import { SemanticWorker, validScoreCalibration } from './semantic-worker.mjs';
 import { industryOptions, isSpecialization, specializationLabels, stackOptions } from '../shared/catalog.ts';
@@ -84,7 +85,7 @@ function stripRequestWrapper(text) {
   return text.replace(/^\s*(?:нуж(?:ен|на|ны)|ищем|хотим)\s+(?:специалист[а]?|человек[а]?|разработчик[а]?|исполнител[ья])\s*,?\s+котор(?:ый|ая|ые|ого|ую)\s+/iu, '')
     .replace(/^\s*(?:нуж(?:ен|на|ны)|ищем|хотим)\s+/iu, '');
 }
-function declaredTaskQuery(text) {
+function declaredTaskQuery(text, { includePreamble = false } = {}) {
   const headings = [...text.matchAll(queryHeadings)].map(match => ({
     label: match[0].replace(/\s*:\s*$/u, '').trim(), start: match.index, end: match.index + match[0].length,
   }));
@@ -94,9 +95,11 @@ function declaredTaskQuery(text) {
   // The employer explicitly identified the work to rank for. Preserve other
   // stated professional requirements, without weighting company copy as work.
   const requirements = sections.filter(section => professionalHeading.test(section.label) && section.text);
-  return [...tasks, ...requirements].map(section => section.text).join(' ');
+  const professional=[...tasks, ...requirements].map(section => section.text);
+  if (includePreamble && headings[0].start > 0) professional.unshift(text.slice(0,headings[0].start).trim());
+  return professional.join(includePreamble ? '; ' : ' ');
 }
-function semanticQuery(query, interpreted, { stripWrapper = true } = {}) {
+function semanticQuery(query, interpreted, { stripWrapper = true, includePreamble = false } = {}) {
   const spans = [...(interpreted[constraintSpans] || [])].sort((a, b) => a.start - b.start);
   let cursor = 0, parts = [];
   for (const span of spans) {
@@ -104,7 +107,7 @@ function semanticQuery(query, interpreted, { stripWrapper = true } = {}) {
     cursor = Math.max(cursor, span.end);
   }
   parts.push(query.slice(cursor));
-  const taskQuery = declaredTaskQuery(parts.join(' '));
+  const taskQuery = declaredTaskQuery(parts.join(' '), { includePreamble });
   return (stripWrapper ? stripRequestWrapper(taskQuery) : taskQuery).replace(/\s+/gu, ' ').replace(/\s+([,;.])/gu, '$1')
     .replace(/(?:[,;.]\s*){2,}/gu, ', ').replace(/^[\s,;.]+|[\s,;.]+$/gu, '').trim();
 }
@@ -124,13 +127,14 @@ function polarity(text, match) {
 }
 
 export function interpretQuery(query, options) {
+  const professionalQuery=declaredTaskQuery(query, { includePreamble:true });
   const interpreted = { queryConstraints: { exclude: {}, any: {}, all: {}, groups: {} } };
   interpreted[constraintSpans] = [];
   const constraints = interpreted.queryConstraints;
-  function categorical(key, matches, { conjunctive = false } = {}) {
+  function categorical(key, matches, { conjunctive = false, context = query } = {}) {
     const positive = [], negative = [];
     for (const match of matches) {
-      const kind = polarity(query, match);
+      const kind = polarity(context, match);
       if (kind === 'negative') negative.push(match.value);
       else if (kind === 'positive') positive.push(match.value);
     }
@@ -139,10 +143,10 @@ export function interpretQuery(query, options) {
     const values = unique(positive);
     if (!values.length) return;
     if (conjunctive) {
-      const accepted = matches.filter(match => polarity(query, match) === 'positive');
+      const accepted = matches.filter(match => polarity(context, match) === 'positive');
       const groups = [];
       for (const [index, match] of accepted.entries()) {
-        const between = index ? query.slice(accepted[index - 1].end, match.start) : '';
+        const between = index ? context.slice(accepted[index - 1].end, match.start) : '';
         const alternative = !/[,;]/u.test(between) && /(?:^|\s)(?:или|либо|or)(?:\s|$)/iu.test(between);
         if (alternative) groups.at(-1).push(match.value);
         else groups.push([match.value]);
@@ -159,9 +163,9 @@ export function interpretQuery(query, options) {
       if (values.length === 1) interpreted[key] = values[0];
     }
   }
-  const roleMentions = mentions(query, roleAliases).sort((a, b) => a.start - b.start);
-  categorical('specialization', roleMentions);
-  const unsupportedRole = unsupportedRequestedRoles(query, { supportedMentions: roleMentions, classify: match => polarity(query, match) });
+  const roleMentions = mentions(professionalQuery, roleAliases).sort((a, b) => a.start - b.start);
+  categorical('specialization', roleMentions, { context: professionalQuery });
+  const unsupportedRole = unsupportedRequestedRoles(professionalQuery, { supportedMentions: roleMentions, classify: match => polarity(professionalQuery, match) });
   if (unsupportedRole.length) interpreted.unsupportedRole = unsupportedRole;
   const gradeMentions = mentions(query, grades).sort((a, b) => a.start - b.start);
   categorical('grade', gradeMentions);
@@ -198,9 +202,9 @@ export function interpretQuery(query, options) {
       interpreted[constraintSpans].push({ start: match.start - prefix.length, end: match.end + suffix.length });
     }
   }
-  const stack = mentions(query, stackOptions.map(skill => [skill, escaped(skill)]));
+  const stack = mentions(professionalQuery, stackOptions.map(skill => [skill, escaped(skill)]));
   const fullStackNames = stack.filter(match => !stack.some(other => other.start <= match.start && other.end >= match.end && other.end - other.start > match.end - match.start));
-  categorical('stack', fullStackNames.sort((a, b) => a.start - b.start), { conjunctive: true });
+  categorical('stack', fullStackNames.sort((a, b) => a.start - b.start), { conjunctive: true, context: professionalQuery });
   categorical('language', mentions(query, languages).sort((a, b) => a.start - b.start), { conjunctive: true });
   const portfolio = mentions(query, [['portfolio', 'портфолио|portfolio']]);
   if (portfolio.some(match => polarity(query, match) === 'positive')) interpreted.hasPortfolio = true;
@@ -327,6 +331,7 @@ export class DirectoryService {
     const interpreted=interpretQuery(query,this.options(owner));
     const embeddingQuery=semanticQuery(query,interpreted);
     const rerankerQuery=semanticQuery(query,interpreted,{stripWrapper:false});
+    const evidenceRequirements=queryEvidenceRequirements(semanticQuery(query,interpreted,{stripWrapper:false,includePreamble:true}));
     for (const key of ['specialization','grade','format','city','language']) if (interpreted[key]&&!filters[key]) filters[key]=interpreted[key];
     if (interpreted.salaryMax!==undefined) filters.salaryMax=filters.salaryMax===null?interpreted.salaryMax:Math.min(filters.salaryMax,interpreted.salaryMax);
     if (interpreted.experienceMin!==undefined) filters.experienceMin=Math.max(filters.experienceMin??0,interpreted.experienceMin);
@@ -338,7 +343,16 @@ export class DirectoryService {
     // similarity, the model's availability or approximate admission scores.
     if (interpreted.unsupportedRole?.length) return {items:[],total:0,offset,limit,query,interpreted,effectiveFilters:filters,
       model:{...this.encoder.info,indexPolicy:PROFILE_INDEX_POLICY},warnings:[]};
-    const matching=()=>this.store.matching(filters,interpreted.queryConstraints).filter(row=>this.accessible(owner,row));
+    // A specific requested method needs an affirmative professional claim.
+    // Apply this to each fresh snapshot, before both strong and approximate
+    // admission; a large neural score cannot turn a denial into experience.
+    const matching=()=>this.store.matching(filters,interpreted.queryConstraints).filter(row=>{
+      if (!this.accessible(owner,row)) return false;
+      if (!embeddingQuery || !evidenceRequirements.length) return true;
+      const person=JSON.parse(row.public_payload);
+      return assessTaskEvidence(evidenceRequirements,semanticEvidenceSections(person),
+        { competencySections:semanticCompetencySections(person) }).eligible;
+    });
     let rows=matching();
     let vector=null, vectors=null;
     if (embeddingQuery) {
@@ -485,7 +499,10 @@ export class DirectoryService {
         // A DEV applicability floor can offer a small nearest list only when
         // no current eligible profile passed the unchanged strong pair cutoff.
         if (!items.length && fusion?.admission) {
-          items=eligible.filter(item=>item.rank>=fusion.admission.threshold).sort(order).slice(0,fusion.admission.limit)
+          // DEV's approximate floor was fitted on described professional
+          // tasks. Sparse role/skill claims use the unchanged strong cutoff;
+          // do not transfer a task-only floor to this new evidence type.
+          items=eligible.filter(item=>item.evidenceKind==='professional' && item.rank>=fusion.admission.threshold).sort(order).slice(0,fusion.admission.limit)
             .map(item=>({...item,approximate:true}));
           if (items.length) warnings.push('Точных совпадений нет. Показаны ближайшие профили.');
         }
@@ -493,7 +510,7 @@ export class DirectoryService {
     } else items=candidates.filter(item=>!embeddingQuery||item.semanticScore!==null&&item.semanticScore>=this.encoder.info.threshold);
     items.sort(order);
     return {items:items.slice(offset,offset+limit).map(({testScore,fsp,sourceId,documentHash,publicPayload,taskSections,reasonSuffix,roleLabel,...item})=>item),total:items.length,offset,limit,query,interpreted,effectiveFilters:filters,
-      model:{...this.encoder.info,indexPolicy:PROFILE_INDEX_POLICY,...(stage?{stage:structuredClone(stage),
+      model:{...this.encoder.info,indexPolicy:PROFILE_INDEX_POLICY,taskEvidencePolicy:TASK_EVIDENCE_POLICY,...(stage?{stage:structuredClone(stage),
         profileEvidencePolicy:PROFILE_EVIDENCE_POLICY,
         rerankerAggregation:stage.scoreCalibration?'max-fused-professional-sections-v2':'max-professional-sections-v2'}:{})},warnings};
   }
