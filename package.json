@@ -15,6 +15,7 @@
     "test:grades": "npm --prefix frontend run test:grades",
     "test:search": "npm --prefix frontend run test:search",
     "test:swipe": "npm --prefix frontend run test:swipe",
+    "test:companies": "node scripts/browser-companies.mjs",
     "setup:search": "node scripts/ml.mjs setup",
     "train:search": "node scripts/ml.mjs train",
     "prepare:search-ranker": "node scripts/ml.mjs prepare",

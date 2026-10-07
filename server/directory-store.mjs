@@ -135,6 +135,34 @@ export class DirectoryStore {
       ) STRICT;
       CREATE INDEX IF NOT EXISTS platform_invitation_sender ON platform_invitations(sender, created_at);
       CREATE INDEX IF NOT EXISTS platform_invitation_recipient ON platform_invitations(candidate_id, status);
+      CREATE TABLE IF NOT EXISTS marketplace_companies (
+        id TEXT PRIMARY KEY, owner TEXT UNIQUE REFERENCES platform_accounts(owner) ON DELETE CASCADE,
+        name TEXT NOT NULL, industry TEXT NOT NULL, website TEXT NOT NULL, contact TEXT NOT NULL,
+        description TEXT NOT NULL, synthetic INTEGER NOT NULL CHECK(synthetic IN (0,1))
+      ) STRICT;
+      CREATE TABLE IF NOT EXISTS marketplace_vacancies (
+        id TEXT PRIMARY KEY, company_id TEXT NOT NULL REFERENCES marketplace_companies(id) ON DELETE CASCADE,
+        title TEXT NOT NULL, description TEXT NOT NULL, specialization TEXT NOT NULL, grade TEXT NOT NULL,
+        city TEXT NOT NULL, format TEXT NOT NULL, salary_from INTEGER NOT NULL, salary_to INTEGER NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('open','closed')), created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+        CHECK(salary_from>0 AND salary_from<=salary_to AND salary_to<=10000000)
+      ) STRICT;
+      CREATE INDEX IF NOT EXISTS marketplace_vacancy_company ON marketplace_vacancies(company_id,status,created_at DESC);
+      CREATE TABLE IF NOT EXISTS marketplace_vacancy_skills (
+        vacancy_id TEXT NOT NULL REFERENCES marketplace_vacancies(id) ON DELETE CASCADE,
+        position INTEGER NOT NULL, skill TEXT NOT NULL, PRIMARY KEY(vacancy_id,skill)
+      ) STRICT;
+      CREATE TABLE IF NOT EXISTS marketplace_applications (
+        id TEXT PRIMARY KEY, vacancy_id TEXT NOT NULL REFERENCES marketplace_vacancies(id) ON DELETE CASCADE,
+        company_id TEXT NOT NULL REFERENCES marketplace_companies(id) ON DELETE CASCADE,
+        candidate_owner TEXT NOT NULL REFERENCES platform_accounts(owner) ON DELETE CASCADE,
+        candidate_id TEXT NOT NULL REFERENCES directory_candidates(id) ON DELETE CASCADE,
+        status TEXT NOT NULL CHECK(status IN ('sent','accepted','rejected')), created_at TEXT NOT NULL,
+        responded_at TEXT, message TEXT NOT NULL, vacancy_snapshot TEXT NOT NULL,
+        UNIQUE(vacancy_id,candidate_owner)
+      ) STRICT;
+      CREATE INDEX IF NOT EXISTS marketplace_application_candidate ON marketplace_applications(candidate_owner,created_at DESC);
+      CREATE INDEX IF NOT EXISTS marketplace_application_company ON marketplace_applications(company_id,created_at DESC);
     `);
     this.transaction(() => {
       for (const person of seeds) this.upsert(person, null, true);

@@ -7,6 +7,7 @@ import { openStore } from './store.mjs';
 import { createAttempt, digest, evaluate, programInfo, publicAttempt, RequestError, validateSurvey } from './assessment.mjs';
 import { DirectoryService } from './directory.mjs';
 import { PlatformService } from './platform.mjs';
+import { MarketplaceService } from './marketplace.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const cookieName = 'predel_session';
@@ -22,6 +23,7 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
   const store = openStore(dbPath);
   const directory = new DirectoryService(dbPath);
   const platform = new PlatformService(directory.store, store, { now });
+  const marketplace = new MarketplaceService(directory.store, { now });
   const limits = new Map();
   function send(response, status, value) {
     response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
@@ -91,6 +93,26 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
           return send(response, 200, await directory.search(url.searchParams.get('q') || '', filters,
             { owner: session, limit: Number(url.searchParams.get('limit') || 30), offset: Number(url.searchParams.get('offset') || 0) }));
         }
+        if (request.method === 'GET' && url.pathname === '/api/companies') return send(response, 200, marketplace.companies({
+          offset: Number(url.searchParams.get('offset') || 0), limit: Number(url.searchParams.get('limit') || 12), q: url.searchParams.get('q') || '' }));
+        const company = /^\/api\/companies\/([^/]+)$/.exec(url.pathname);
+        if (request.method === 'GET' && company) return send(response, 200, marketplace.company(decodeURIComponent(company[1])));
+        if (url.pathname === '/api/vacancies') {
+          if (request.method === 'GET') return send(response, 200, marketplace.vacancies(session, { own: url.searchParams.get('own') === '1' }));
+          if (request.method === 'POST') return send(response, 201, marketplace.publish(session, await body(request)));
+          throw new RequestError(405, 'Метод не поддерживается.');
+        }
+        const application = /^\/api\/vacancies\/([^/]+)\/applications$/.exec(url.pathname);
+        if (request.method === 'POST' && application) return send(response, 201, marketplace.apply(session, decodeURIComponent(application[1]), await body(request)));
+        const vacancy = /^\/api\/vacancies\/([^/]+)$/.exec(url.pathname);
+        if (vacancy) {
+          if (request.method === 'GET') return send(response, 200, marketplace.vacancy(session, decodeURIComponent(vacancy[1])));
+          if (request.method === 'PATCH') return send(response, 200, marketplace.edit(session, decodeURIComponent(vacancy[1]), await body(request)));
+          throw new RequestError(405, 'Метод не поддерживается.');
+        }
+        if (request.method === 'GET' && url.pathname === '/api/applications') return send(response, 200, marketplace.applications(session, url.searchParams.get('role')));
+        const answer = /^\/api\/applications\/([^/]+)$/.exec(url.pathname);
+        if (request.method === 'PATCH' && answer) return send(response, 200, marketplace.respond(session, decodeURIComponent(answer[1]), await body(request)));
         if (request.method === 'POST' && url.pathname === '/api/assessment/attempts') {
           const input = await body(request);
           if (Object.keys(input).some(key => !['survey', 'vacancyDescription'].includes(key))) throw new RequestError(400, 'Недопустимые поля запроса.');
@@ -144,7 +166,7 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
   server.requestTimeout = 15000;
   server.headersTimeout = 10000;
   server.on('close', () => { directory.close(); store.close(); });
-  return { server, store, directory, platform };
+  return { server, store, directory, platform, marketplace };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

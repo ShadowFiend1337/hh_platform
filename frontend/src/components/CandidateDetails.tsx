@@ -1,8 +1,8 @@
 import { BadgeCheck, LockKeyhole, MapPin, Medal, Printer } from 'lucide-react';
 import { dateLabel, gradeLabels, initials, specializationLabels, type Candidate } from '../model';
 
-export function CandidateDetails({ person, contacts, onInvite }: {
-  person: Candidate; contacts: boolean; onInvite?: () => void;
+export function CandidateDetails({ person, contacts, onInvite, contactNote = 'Откроются после принятия приглашения' }: {
+  person: Candidate; contacts: boolean; onInvite?: () => void; contactNote?: string;
 }) {
   return <div className="candidate-details">
     <div className="detail-person">
@@ -28,7 +28,7 @@ export function CandidateDetails({ person, contacts, onInvite }: {
     </section>
     <section className="contact-section"><h4>Контакты</h4>
       {contacts ? <div className="contact-data"><a href={'mailto:' + person.email}>{person.email}</a>{person.phone && <a href={'tel:' + person.phone}>{person.phone}</a>}</div>
-        : <div className="privacy-note"><LockKeyhole size={17} />Откроются после принятия приглашения</div>}
+        : <div className="privacy-note"><LockKeyhole size={17} />{contactNote}</div>}
       {contacts && person.portfolio && <p className="body-copy resume-copy">{person.portfolio}</p>}
     </section>
     <div className="dialog-actions no-print">

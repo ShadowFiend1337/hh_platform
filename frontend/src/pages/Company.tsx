@@ -1,13 +1,15 @@
 import type { LucideIcon } from 'lucide-react';
 import type { FormEvent } from 'react';
 import type { PlatformState } from '../model';
+import { CompanyOffers } from '../components/CompanyOffers';
 
 export function FormHeader({ title, Icon }: { title: string; Icon: LucideIcon }) {
   return <div className="form-header"><div className="form-icon"><Icon size={22} /></div><h2>{title}</h2></div>;
 }
 
-export function Company({ state, update, notify }: {
+export function Company({ state, update, notify, syncStatus = 'saved' }: {
   state: PlatformState; update: (fn: (state: PlatformState) => PlatformState) => void; notify: (message: string) => void;
+  syncStatus?: 'loading' | 'saving' | 'saved' | 'error';
 }) {
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -28,5 +30,5 @@ export function Company({ state, update, notify }: {
     <div className="form-grid"><label className="field"><span>Сайт</span><input name="website" type="url" defaultValue={state.company.website} /></label><label className="field"><span>Контактный email</span><input name="contact" type="email" required defaultValue={state.company.contact} /></label></div>
     <label className="field"><span>О компании</span><textarea name="description" rows={4} maxLength={3000} defaultValue={state.company.description} /></label>
     <div className="form-actions"><button className="button primary" type="submit">Сохранить</button></div>
-  </form></>;
+  </form><CompanyOffers company={state.company} syncStatus={syncStatus} notify={notify} /></>;
 }

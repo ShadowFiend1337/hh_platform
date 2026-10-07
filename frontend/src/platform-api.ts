@@ -1,7 +1,7 @@
 ﻿import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { createInitialState, type Candidate, type PlatformState } from './model';
 
-interface PlatformResponse { state: PlatformState | null; revision: number; directoryPeople: Candidate[] }
+interface PlatformResponse { state: PlatformState | null; revision: number; directoryPeople: Candidate[]; contactCandidateIds?: string[] }
 class ApiError extends Error { constructor(message: string, readonly status: number) { super(message); } }
 const hash = (value: unknown) => JSON.stringify(value);
 export const syncCacheKey = 'predel:sync:v1';
@@ -64,6 +64,7 @@ export function usePlatformPersistence(state: PlatformState, update: Dispatch<Se
   const [revision, setRevision] = useState(0);
   const [directoryRevision, setDirectoryRevision] = useState(0);
   const [people, setPeople] = useState<Candidate[]>([]);
+  const [contactCandidateIds, setContactCandidateIds] = useState<string[]>([]);
   const [status, setStatus] = useState<'loading' | 'saving' | 'saved' | 'error'>('loading');
   const [error, setError] = useState('');
   const [retryVersion, setRetryVersion] = useState(0);
@@ -95,6 +96,7 @@ export function usePlatformPersistence(state: PlatformState, update: Dispatch<Se
     baseline.current = result.state;
     persisted.current = result.state ? hash(result.state) : '';
     setRevision(result.revision); setPeople(result.directoryPeople || []);
+    setContactCandidateIds(result.contactCandidateIds || []);
   }
 
   useEffect(() => {
@@ -193,7 +195,7 @@ export function usePlatformPersistence(state: PlatformState, update: Dispatch<Se
     return () => { active = false; window.clearInterval(timer); window.removeEventListener('focus', refresh); };
   }, [ready, update]);
 
-  return { ready, revision, directoryRevision, people, status, error,
+  return { ready, revision, directoryRevision, people, contactCandidateIds, status, error,
     retry: () => {
       setError('');
       if (ready) setStatus('saving');
@@ -208,7 +210,7 @@ export function usePlatformPersistence(state: PlatformState, update: Dispatch<Se
         current.current = empty; baseline.current = null; persisted.current = hash(empty); serverRevision.current = 0;
         directoryHash.current = null; likedPeople.current = new Map(); setDirectoryRevision(0);
         localStorage.removeItem(syncCacheKey);
-        update(empty); setRevision(0); setPeople([]); setError(''); setStatus('saved'); setReady(true);
+        update(empty); setRevision(0); setPeople([]); setContactCandidateIds([]); setError(''); setStatus('saved'); setReady(true);
       } finally { blocked.current = false; }
     } };
 }

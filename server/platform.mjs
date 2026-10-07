@@ -4,6 +4,7 @@ import { MAX_STACK_SKILLS, resumeTextLimits } from '../shared/resume-limits.ts';
 import { defaultSearchFilters, employmentTypes, languageOptions, normalizeSearchFilters } from '../shared/search.ts';
 import { publicCandidate } from './directory-store.mjs';
 import { RequestError, threshold } from './assessment.mjs';
+import { syncMarketplaceCompany } from './marketplace.mjs';
 
 const ownCandidateId = 'candidate-anna';
 const ownCompanyId = 'company-line';
@@ -267,14 +268,19 @@ export class PlatformService {
       surveys: this.store.db.prepare('SELECT payload FROM platform_surveys WHERE owner=? ORDER BY created_at DESC,id').all(owner).map(row => JSON.parse(row.payload)),
       savedSearches: this.store.db.prepare('SELECT payload FROM platform_searches WHERE owner=? ORDER BY position').all(owner).map(row => JSON.parse(row.payload)),
       candidateDecisions: this.candidateDecisions(owner) };
+    const applicants = this.store.db.prepare(`SELECT DISTINCT a.candidate_id FROM marketplace_applications a
+      JOIN marketplace_companies c ON c.id=a.company_id WHERE c.owner=?`).all(owner).map(row => row.candidate_id);
+    const applicantIds = new Set(applicants);
     const ids = [...new Set([...invitations.map(item => item.candidateId === ownCandidateId ? account.public_id : item.candidateId),
-      ...state.candidateDecisions.filter(item => item.decision === 'liked').map(item => item.candidateId)])];
+      ...state.candidateDecisions.filter(item => item.decision === 'liked').map(item => item.candidateId), ...applicants])];
     const directoryPeople = ids.flatMap(id => {
       const row = this.store.get(id);
-      if (!row || row.owner !== owner && (!row.eligible || !row.visible || !row.consent)) return [];
+      if (!row || row.owner !== owner && (!row.consent || !applicantIds.has(id) && (!row.eligible || !row.visible))) return [];
       return [publicCandidate(JSON.parse(row.public_payload), row.owner === owner ? ownCandidateId : row.id)];
     });
-    return { state, revision: account.revision, directoryPeople };
+    const contactCandidateIds = directoryPeople.filter(person => applicantIds.has(person.id)
+      || invitations.some(item => item.candidateId === person.id && item.companyId === ownCompanyId && item.status === 'accepted')).map(person => person.id);
+    return { state, revision: account.revision, directoryPeople, contactCandidateIds };
   }
   save(owner, input, baseRevision) {
     ownerKey(owner);
@@ -349,6 +355,7 @@ export class PlatformService {
       this.store.db.prepare(`INSERT INTO platform_accounts(owner,public_id,revision,profile,company,updated_at) VALUES(?,?,?,?,?,?)
         ON CONFLICT(owner) DO UPDATE SET revision=excluded.revision,profile=excluded.profile,company=excluded.company,updated_at=excluded.updated_at`)
         .run(owner, id, revision, JSON.stringify({ ...person, ...(selectedProof ? { _proofId: selectedProof.id } : {}) }), JSON.stringify(employer), timestamp);
+      syncMarketplaceCompany(this.store, owner, employer, id);
       const eligible = Boolean(selectedProof && person.name && person.email && person.professionalRole && person.stack.length);
       this.store.upsert({ ...person, id }, owner, eligible);
       this.store.db.prepare('DELETE FROM platform_surveys WHERE owner=?').run(owner);
@@ -402,7 +409,10 @@ export class PlatformService {
     const account = this.store.db.prepare('SELECT * FROM platform_accounts WHERE owner=?').get(candidate.owner);
     if (!account) throw new RequestError(404, 'Контакты недоступны.');
     const person = JSON.parse(account.profile);
-    if (candidate.owner !== owner && (!person.consent || !this.store.db.prepare(`SELECT 1 FROM platform_invitations WHERE sender=? AND candidate_id=? AND status='accepted' LIMIT 1`).get(owner, target))) throw new RequestError(403, 'Контакты доступны после принятия приглашения и при действующем согласии.');
+    const accepted = this.store.db.prepare(`SELECT 1 FROM platform_invitations WHERE sender=? AND candidate_id=? AND status='accepted' LIMIT 1`).get(owner, target);
+    const applied = this.store.db.prepare(`SELECT 1 FROM marketplace_applications a JOIN marketplace_companies c ON c.id=a.company_id
+      WHERE c.owner=? AND a.candidate_id=? LIMIT 1`).get(owner, target);
+    if (candidate.owner !== owner && (!person.consent || !accepted && !applied)) throw new RequestError(403, 'Контакты доступны после отклика или принятия приглашения и при действующем согласии.');
     return { email: person.email, phone: person.phone };
   }
   delete(owner) {
@@ -412,6 +422,11 @@ export class PlatformService {
       if (!account) return;
       const affected = this.store.db.prepare('SELECT sender,candidate_id FROM platform_invitations WHERE sender=? OR candidate_id=?').all(owner, account.public_id);
       const others = new Set();
+      for (const row of this.store.db.prepare(`SELECT a.candidate_owner,c.owner FROM marketplace_applications a
+        JOIN marketplace_companies c ON c.id=a.company_id WHERE a.candidate_owner=? OR c.owner=?`).all(owner, owner)) {
+        if (row.candidate_owner !== owner) others.add(row.candidate_owner);
+        if (row.owner && row.owner !== owner) others.add(row.owner);
+      }
       for (const row of this.store.db.prepare('SELECT owner FROM platform_candidate_decisions WHERE candidate_id=?').all(account.public_id)) {
         if (row.owner !== owner) others.add(row.owner);
       }

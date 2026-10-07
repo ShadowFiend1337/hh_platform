@@ -43,9 +43,10 @@ export function App() {
   const persistence = usePlatformPersistence(state, setState);
   const candidates = [...new Map([...otherCandidates, ...persistence.people, ...knownPeople, state.profile].map(person => [person.id, person])).values()];
   const surveyComplete = Boolean(currentSurvey(state));
-  const candidatePage = !surveyComplete ? 'onboarding' : !state.profile.confirmed && route.page !== 'onboarding' ? 'assessment' : route.page;
+  const candidatePage = !surveyComplete ? 'onboarding' : !state.profile.confirmed && route.page !== 'onboarding' && route.page !== 'invitations' ? 'assessment' : route.page;
   const page = route.role === 'candidate' ? candidatePage : route.page;
-  const candidateStarted = Boolean(state.profile.confirmed && surveyComplete);
+  const candidateStarted = surveyComplete;
+  const contactsAllowed = (id: string) => hasContactAccess(state, id) || persistence.contactCandidateIds.includes(id);
   const pending = state.invitations.filter(invitation => (invitation.status === 'sent' || invitation.status === 'viewed')
     && (route.role === 'candidate' ? invitation.candidateId === ownCandidateId : invitation.companyId === state.company.id)).length;
 
@@ -78,8 +79,8 @@ export function App() {
   useEffect(() => {
     if (route.role !== 'employer') return;
     let active = true;
-    const ids = [...new Set(state.invitations.filter(item => item.status === 'accepted' && item.companyId === state.company.id
-      && item.candidateId !== ownCandidateId).map(item => item.candidateId))];
+    const ids = [...new Set([...persistence.contactCandidateIds, ...state.invitations.filter(item => item.status === 'accepted' && item.companyId === state.company.id
+      && item.candidateId !== ownCandidateId).map(item => item.candidateId)])];
     for (const id of ids) {
       const person = candidates.find(item => item.id === id);
       if (!person) continue;
@@ -90,7 +91,7 @@ export function App() {
       });
     }
     return () => { active = false; };
-  }, [route.role, state.invitations, state.company.id, persistence.revision]);
+  }, [route.role, state.invitations, state.company.id, persistence.revision, persistence.contactCandidateIds]);
 
   function navigate(role: Role, page: Page) {
     history.pushState(null, '', '/app?role=' + role + '&tab=' + page);
@@ -100,7 +101,7 @@ export function App() {
   const remember = (person: Candidate) => setKnownPeople(previous => [...previous.filter(item => item.id !== person.id), person]);
   const onProfile = (person: Candidate) => {
     remember(person); setDialog({ type: 'profile', person });
-    if (route.role === 'employer' && hasContactAccess(state, person.id) && person.id !== ownCandidateId) {
+    if (route.role === 'employer' && contactsAllowed(person.id) && person.id !== ownCandidateId) {
       void readCandidateContacts(person.id).then(contacts => {
         const updated = { ...person, ...contacts }; remember(updated);
         setDialog(previous => previous?.person.id === person.id ? { ...previous, person: updated } : previous);
@@ -150,8 +151,8 @@ export function App() {
       {!persistence.ready ? <div className="panel empty-state"><p role="status">Загружаем ваши данные…</p>{persistence.error && <><p role="alert">{persistence.error}</p><button className="button secondary" onClick={persistence.retry}>Повторить загрузку</button></>}</div> : <>
       {persistence.status === 'error' && <div className="data-error" role="alert"><span>{persistence.error}</span><button className="text-button" onClick={persistence.retry}>Повторить сохранение</button></div>}
       {page === 'candidates' && <Employer directoryRevision={persistence.directoryRevision} state={state} candidates={candidates} update={setState} onProfile={onProfile} onInvite={onInvite} notify={setToast} />}
-      {page === 'invitations' && <Invitations state={state} candidates={candidates} role={route.role} update={setState} notify={setToast} onProfile={onProfile} />}
-      {page === 'company' && <Company state={state} update={setState} notify={setToast} />}
+      {page === 'invitations' && <Invitations state={state} candidates={candidates} role={route.role} update={setState} notify={setToast} onProfile={onProfile} syncStatus={persistence.status} revision={persistence.revision} />}
+      {page === 'company' && <Company state={state} update={setState} notify={setToast} syncStatus={persistence.status} />}
       {page === 'profile' && <Profile state={state} update={setState} notify={setToast} onTest={() => navigate('candidate', 'assessment')} onPreview={() => onProfile(state.profile)} />}
       {page === 'onboarding' && <Onboarding state={state} update={setState} onComplete={() => navigate('candidate', 'assessment')} />}
       {page === 'assessment' && <Assessment state={state} update={setState} notify={setToast} onProfile={() => navigate('candidate', 'profile')} onSurvey={() => navigate('candidate', 'onboarding')} />}
@@ -164,7 +165,7 @@ export function App() {
     {toast && <div className="toast" role="status"><Check size={17} /><span>{toast}</span><button className="icon-button" onClick={() => setToast('')} aria-label="Закрыть уведомление"><X size={15} /></button></div>}
     {dialog && <Dialog title={dialog.type === 'profile' ? 'Профиль кандидата' : 'Приглашение'} wide={dialog.type === 'profile'} onClose={() => setDialog(null)}>
       {dialog.type === 'profile' ? <CandidateDetails person={candidates.find(person => person.id === dialog.person.id) || dialog.person}
-        contacts={route.role === 'candidate' ? dialog.person.id === ownCandidateId : hasContactAccess(state, dialog.person.id)}
+        contacts={route.role === 'candidate' ? dialog.person.id === ownCandidateId : contactsAllowed(dialog.person.id)}
         onInvite={route.role === 'employer' ? () => onInvite(dialog.person) : undefined} />
         : <InviteForm person={dialog.person} state={state} onSubmit={invitation => {
           setState(previous => {
