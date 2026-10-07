@@ -1,10 +1,11 @@
-import { DirectoryStore, semanticMatch, parseSemanticSegments, PROFILE_INDEX_POLICY } from './directory-store.mjs';
+import { DirectoryStore, semanticMatch, semanticSegments, parseSemanticSegments, PROFILE_INDEX_POLICY } from './directory-store.mjs';
 import { directoryCandidates } from './directory-seed.mjs';
-import { SemanticWorker } from './semantic-worker.mjs';
-import { industryOptions, isSpecialization, stackOptions } from '../shared/catalog.ts';
+import { SemanticWorker, validScoreCalibration } from './semantic-worker.mjs';
+import { industryOptions, isSpecialization, specializationLabels, stackOptions } from '../shared/catalog.ts';
 import { gradeOptions, isGrade } from '../shared/grading.ts';
 import { defaultSearchFilters, normalizeSearchFilters, employmentTypes, languageOptions } from '../shared/search.ts';
 import { RequestError } from './assessment.mjs';
+import { unsupportedRequestedRoles } from './query-role-scope.mjs';
 
 const legacySeeds = [
   ['candidate-mikhail','Михаил Соколов','Frontend','Middle',91,['React','TypeScript','JavaScript','CSS'],'Москва',48,true],
@@ -94,7 +95,7 @@ function declaredTaskQuery(text) {
   const requirements = sections.filter(section => professionalHeading.test(section.label) && section.text);
   return [...tasks, ...requirements].map(section => section.text).join(' ');
 }
-function semanticQuery(query, interpreted) {
+function semanticQuery(query, interpreted, { stripWrapper = true } = {}) {
   const spans = [...(interpreted[constraintSpans] || [])].sort((a, b) => a.start - b.start);
   let cursor = 0, parts = [];
   for (const span of spans) {
@@ -102,7 +103,8 @@ function semanticQuery(query, interpreted) {
     cursor = Math.max(cursor, span.end);
   }
   parts.push(query.slice(cursor));
-  return stripRequestWrapper(declaredTaskQuery(parts.join(' '))).replace(/\s+/gu, ' ').replace(/\s+([,;.])/gu, '$1')
+  const taskQuery = declaredTaskQuery(parts.join(' '));
+  return (stripWrapper ? stripRequestWrapper(taskQuery) : taskQuery).replace(/\s+/gu, ' ').replace(/\s+([,;.])/gu, '$1')
     .replace(/(?:[,;.]\s*){2,}/gu, ', ').replace(/^[\s,;.]+|[\s,;.]+$/gu, '').trim();
 }
 
@@ -156,7 +158,10 @@ export function interpretQuery(query, options) {
       if (values.length === 1) interpreted[key] = values[0];
     }
   }
-  categorical('specialization', mentions(query, roleAliases).sort((a, b) => a.start - b.start));
+  const roleMentions = mentions(query, roleAliases).sort((a, b) => a.start - b.start);
+  categorical('specialization', roleMentions);
+  const unsupportedRole = unsupportedRequestedRoles(query, { supportedMentions: roleMentions, classify: match => polarity(query, match) });
+  if (unsupportedRole.length) interpreted.unsupportedRole = unsupportedRole;
   const gradeMentions = mentions(query, grades).sort((a, b) => a.start - b.start);
   categorical('grade', gradeMentions);
   if (gradeMentions.length === 1 && polarity(query, gradeMentions[0]) === 'positive') {
@@ -260,6 +265,16 @@ export class DirectoryService {
     return cached && cached.model_version === this.indexVersion() && cached.document_hash === row.document_hash
       && cached.dimension === dimension && cached.vector.byteLength === dimension * 4;
   }
+  async encodeStable(texts) {
+    const version=this.indexVersion(), dimension=this.encoder.info.dimension;
+    const vectors=await this.encoder.encode(texts);
+    // A reply from the preceding model must never acquire the replacement's
+    // index/cache version, even if activation finishes just after inference.
+    if (version!==this.indexVersion() || dimension!==this.encoder.info.dimension) {
+      throw new Error('Модель поиска изменилась во время кодирования.');
+    }
+    return vectors;
+  }
   async ensureIndex() {
     if (this.indexing) return this.indexing;
     this.indexing=(async()=>{
@@ -272,7 +287,7 @@ export class DirectoryService {
       for (let index=0;index<missing.length;index+=32) {
         const batch=missing.slice(index,index+32);
         const documents=batch.map(row=>parseSemanticSegments(row.document));
-        const vectors=await this.encoder.encode(documents.flat());
+        const vectors=await this.encodeStable(documents.flat());
         if (!Array.isArray(vectors) || vectors.length!==documents.reduce((count,segments)=>count+segments.length,0)
           || vectors.some(vector=>!Array.isArray(vector)||vector.length!==this.encoder.info.dimension||vector.some(number=>!Number.isFinite(number)))) {
           throw new Error('Модель вернула некорректные векторы секций.');
@@ -293,12 +308,18 @@ export class DirectoryService {
     const filters=validateFilters(inputFilters);
     const interpreted=interpretQuery(query,this.options());
     const embeddingQuery=semanticQuery(query,interpreted);
+    const rerankerQuery=semanticQuery(query,interpreted,{stripWrapper:false});
     for (const key of ['specialization','grade','format','city','language']) if (interpreted[key]&&!filters[key]) filters[key]=interpreted[key];
     if (interpreted.salaryMax!==undefined) filters.salaryMax=filters.salaryMax===null?interpreted.salaryMax:Math.min(filters.salaryMax,interpreted.salaryMax);
     if (interpreted.experienceMin!==undefined) filters.experienceMin=Math.max(filters.experienceMin??0,interpreted.experienceMin);
     if (interpreted.experienceMax!==undefined) filters.experienceMax=Math.min(filters.experienceMax??Infinity,interpreted.experienceMax);
     if (interpreted.hasPortfolio) filters.hasPortfolio=true;
     if (interpreted.stack?.length) filters.stack=[...new Set([...filters.stack,...interpreted.stack])];
+    // An explicitly requested profession outside our catalog has no eligible
+    // profiles. This is a structural scope constraint, independent of neural
+    // similarity, the model's availability or approximate admission scores.
+    if (interpreted.unsupportedRole?.length) return {items:[],total:0,offset,limit,query,interpreted,effectiveFilters:filters,
+      model:{...this.encoder.info,indexPolicy:PROFILE_INDEX_POLICY},warnings:[]};
     let rows=this.store.matching(filters,interpreted.queryConstraints);
     let vector=null, vectors=null;
     if (embeddingQuery) {
@@ -308,7 +329,7 @@ export class DirectoryService {
         const cacheKey=version+'\n'+embeddingQuery;
         vector=this.queryCache.get(cacheKey);
         if (!vector) {
-          [vector]=await this.encoder.encode([embeddingQuery]);
+          [vector]=await this.encodeStable([embeddingQuery]);
           if (this.queryCache.size>=128) this.queryCache.delete(this.queryCache.keys().next().value);
           version=this.indexVersion();
           this.queryCache.set(version+'\n'+embeddingQuery,vector);
@@ -326,7 +347,7 @@ export class DirectoryService {
           rows=this.store.matching(filters,interpreted.queryConstraints);
         }
         if (version!==this.indexVersion()) {
-          [vector]=await this.encoder.encode([embeddingQuery]);
+          [vector]=await this.encodeStable([embeddingQuery]);
           if (this.queryCache.size>=128) this.queryCache.delete(this.queryCache.keys().next().value);
           this.queryCache.set(this.indexVersion()+'\n'+embeddingQuery,vector);
           rows=this.store.matching(filters,interpreted.queryConstraints);
@@ -334,7 +355,10 @@ export class DirectoryService {
         }
       } catch { throw new RequestError(503,'Поиск по смыслу недоступен. Повторите запрос или используйте фильтры без текста.'); }
     }
-    const items=rows.map(row=>{
+    const stage=embeddingQuery?this.encoder.info.reranker:null;
+    const order=(a,b)=>(embeddingQuery?b.rank-a.rank||b.semanticScore-a.semanticScore:0)||b.testScore-a.testScore||b.fsp-a.fsp
+      ||a.person.name.localeCompare(b.person.name,'ru')||a.person.id.localeCompare(b.person.id);
+    const candidates=rows.map(row=>{
       const cached=vector?vectors.get(row.id):null;
       const stored=this.currentVector(row,cached)?cached:null;
       const match=stored?semanticMatch(vector,stored.vector):null;
@@ -346,12 +370,105 @@ export class DirectoryService {
       if (filters.salaryMax!==null) reasons.push(`Ожидания от ${row.salary_from.toLocaleString('ru-RU')} ₽ в месяц укладываются в бюджет.`);
       if (person.synthetic) reasons.push('Вымышленный профиль; результат теста демонстрационный.');
       else reasons.push(`Результат серверного теста ${row.score}/100.`);
-      return {person,semanticScore,rank:semanticScore??row.score,reason:reasons.join(' '),testScore:row.score,fsp:row.fsp};
-    }).filter(item=>!embeddingQuery||item.semanticScore!==null&&item.semanticScore>=this.encoder.info.threshold)
-      .sort((a,b)=>(embeddingQuery?b.semanticScore-a.semanticScore:0)||b.testScore-a.testScore||b.fsp-a.fsp
-        ||a.person.name.localeCompare(b.person.name,'ru')||a.person.id.localeCompare(b.person.id));
-    return {items:items.slice(offset,offset+limit).map(({testScore,fsp,...item})=>item),total:items.length,offset,limit,query,interpreted,effectiveFilters:filters,
-      model:{...this.encoder.info,indexPolicy:PROFILE_INDEX_POLICY},warnings:[]};
+      return {person,semanticScore,rank:semanticScore??row.score,reason:reasons.join(' '),testScore:row.score,fsp:row.fsp,
+        sourceId:row.id,documentHash:row.document_hash,publicPayload:row.public_payload,
+        taskSections:stage?semanticSegments(person,{includeIdentity:false}):[],reasonSuffix:reasons.slice(1),
+        roleLabel:specializationLabels[row.specialization] || row.specialization};
+    });
+    let items;
+    const warnings=[];
+    if (stage) {
+      try {
+        if (typeof this.encoder.rerank!=='function' || !Number.isFinite(stage.threshold)) throw new Error('Модель ранжирования недоступна.');
+        const fusion=stage.scoreCalibration;
+        if (fusion!==undefined && !validScoreCalibration(fusion)) throw new Error('Некорректная калибровка оценок поиска.');
+        // Recall first: the cross-encoder may rescue a correct task below the
+        // legacy cosine cutoff, so that cutoff never precedes neural scoring.
+        const shortlist=candidates.filter(item=>item.semanticScore!==null&&item.taskSections.length).sort((a,b)=>b.semanticScore-a.semanticScore
+          ||b.testScore-a.testScore||b.fsp-a.fsp||a.sourceId.localeCompare(b.sourceId)).slice(0,50);
+        const version=this.indexVersion(), stageVersion=JSON.stringify(stage);
+        let rawVector=null;
+        if (fusion && shortlist.length) {
+          const cacheKey=version+'\n'+rerankerQuery;
+          rawVector=this.queryCache.get(cacheKey);
+          if (!rawVector) {
+            [rawVector]=await this.encodeStable([rerankerQuery]);
+            if (version!==this.indexVersion() || stageVersion!==JSON.stringify(this.encoder.info.reranker)) {
+              throw new Error('Модель поиска изменилась во время кодирования.');
+            }
+            if (!Array.isArray(rawVector) || rawVector.length!==this.encoder.info.dimension || rawVector.some(value=>!Number.isFinite(value))) {
+              throw new Error('Модель вернула некорректный вектор запроса.');
+            }
+            if (this.queryCache.size>=128) this.queryCache.delete(this.queryCache.keys().next().value);
+            this.queryCache.set(cacheKey,rawVector);
+          }
+          if (!Array.isArray(rawVector) || rawVector.length!==this.encoder.info.dimension || rawVector.some(value=>!Number.isFinite(value))) {
+            throw new Error('Модель вернула некорректный вектор запроса.');
+          }
+        }
+        // Identity helps recall; the calibrated second stage compares actual
+        // work, achievements and education. It always sees biography evidence.
+        const passages=shortlist.flatMap(item=>item.taskSections.map(text=>`${item.roleLabel}\n${text}`));
+        // DEV calibration pairs the raw query with this exact task section,
+        // never with the maximum retrieval cosine of the whole profile.
+        const rowLookup=new Map(rows.map(row=>[row.id,row]));
+        const sectionCosines=fusion?shortlist.flatMap(item=>{
+          const row=rowLookup.get(item.sourceId), stored=vectors.get(item.sourceId);
+          if (!row || !this.currentVector(row,stored)) throw new Error('Секции профиля не соответствуют индексу.');
+          const indexed=parseSemanticSegments(row.document), stride=this.encoder.info.dimension*4;
+          return item.taskSections.map(text=>{
+            const index=indexed.indexOf(text);
+            const match=index<0?null:semanticMatch(rawVector,stored.vector.subarray(index*stride,(index+1)*stride));
+            if (!match || !Number.isFinite(match.score)) throw new Error('Секция профиля не соответствует вектору.');
+            return match.score;
+          });
+        }):null;
+        const scores=[];
+        for (let offset=0;offset<passages.length;offset+=256) {
+          const batch=passages.slice(offset,offset+256);
+          const values=await this.encoder.rerank(rerankerQuery,batch);
+          if (version!==this.indexVersion() || stageVersion!==JSON.stringify(this.encoder.info.reranker)
+            || !Array.isArray(values) || values.length!==batch.length || values.some(score=>!Number.isFinite(score))) {
+            throw new Error('Модель ранжирования изменилась или вернула некорректные оценки.');
+          }
+          scores.push(...values);
+        }
+        const ranks=fusion?scores.map((logit,index)=>{
+          const cosine=sectionCosines[index];
+          const linear=fusion.weights[0]*cosine+fusion.weights[1]*logit+fusion.bias;
+          if (fusion.kind!=='class-QDA-diagonal-shrinkage-v1') return linear;
+          const matrix=fusion.quadraticMatrix;
+          return linear+matrix[0][0]*cosine*cosine+(matrix[0][1]+matrix[1][0])*cosine*logit+matrix[1][1]*logit*logit;
+        }):scores;
+        if (ranks.some(score=>!Number.isFinite(score))) throw new Error('Некорректная совместная оценка поиска.');
+        // Never return an obsolete passage or a profile withdrawn while the
+        // second neural stage was running. No mixed-model retry/fallback.
+        const fresh=new Map(this.store.matching(filters,interpreted.queryConstraints).map(row=>[row.id,row]));
+        let offset=0;
+        const eligible=shortlist.flatMap(item=>{
+          const sectionScores=scores.slice(offset,offset+item.taskSections.length);
+          const sectionRanks=ranks.slice(offset,offset+item.taskSections.length);
+          offset+=item.taskSections.length;
+          const maximum=Math.max(...sectionRanks), winning=sectionRanks.indexOf(maximum);
+          const row=fresh.get(item.sourceId);
+          if (!row || row.document_hash!==item.documentHash || row.public_payload!==item.publicPayload
+            || !this.currentVector(row,vectors.get(row.id))) return [];
+          return [{...item,rerankerScore:sectionScores[winning],rank:maximum,
+            reason:[`Похожие задачи в профиле: ${item.taskSections[winning].slice(0,350)}`,...item.reasonSuffix].join(' ')}];
+        });
+        items=eligible.filter(item=>item.rank>=(fusion?.threshold??stage.threshold));
+        // A DEV applicability floor can offer a small nearest list only when
+        // no current eligible profile passed the unchanged strong pair cutoff.
+        if (!items.length && fusion?.admission) {
+          items=eligible.filter(item=>item.rank>=fusion.admission.threshold).sort(order).slice(0,fusion.admission.limit)
+            .map(item=>({...item,approximate:true}));
+          if (items.length) warnings.push('Точных совпадений нет. Показаны ближайшие профили.');
+        }
+      } catch { throw new RequestError(503,'Поиск по смыслу недоступен. Повторите запрос или используйте фильтры без текста.'); }
+    } else items=candidates.filter(item=>!embeddingQuery||item.semanticScore!==null&&item.semanticScore>=this.encoder.info.threshold);
+    items.sort(order);
+    return {items:items.slice(offset,offset+limit).map(({testScore,fsp,sourceId,documentHash,publicPayload,taskSections,reasonSuffix,roleLabel,...item})=>item),total:items.length,offset,limit,query,interpreted,effectiveFilters:filters,
+      model:{...this.encoder.info,indexPolicy:PROFILE_INDEX_POLICY,...(stage?{stage:structuredClone(stage),rerankerAggregation:stage.scoreCalibration?'max-fused-task-sections-v1':'max-task-sections-v1'}:{})},warnings};
   }
   close() { this.encoder.close();this.store.close(); }
 }

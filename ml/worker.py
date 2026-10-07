@@ -5,7 +5,7 @@ import json
 import sys
 import time
 import numpy as np
-from common import Encoder, MODEL_DIR, DIMENSION, sha256_file, encoding_fingerprint, policy_from_metadata
+from common import Encoder, MODEL_DIR, DIMENSION, sha256_file, encoding_fingerprint, policy_from_metadata, canonical_hash
 
 def main():
     if hasattr(sys.stdin, "reconfigure"):
@@ -28,7 +28,22 @@ def main():
     if metadata.get("encodingFingerprint", fingerprint) != fingerprint:
         raise ValueError("Encoding policy fingerprint does not match metadata")
     encoder = Encoder(model_dir, threads=args.threads)
+    reranker = None
+    reranker_metadata = metadata.get("reranker")
+    if reranker_metadata:
+        from reranker import Reranker, validate_artifact
+        reranker_path = validate_artifact(model_dir, reranker_metadata)
+        calibration = reranker_metadata.get("scoreCalibration")
+        if calibration and (calibration["hashes"]["encodingFingerprint"] != fingerprint
+                            or calibration["hashes"]["encoderWeightsSha256"] != metadata["weightsSha256"]
+                            or calibration["hashes"]["datasetSha256"] != metadata["datasetSha256"]):
+            raise ValueError("Fusion calibration does not match the frozen encoder")
+        pipeline = canonical_hash(dict(encoderEncodingFingerprint=fingerprint, rerankerVersion=reranker_metadata["version"]))
+        if metadata.get("pipelineFingerprint") != pipeline or metadata["modelVersion"] != metadata["encoderModelVersion"] + "-rank-" + pipeline[:12]:
+            raise ValueError("Composite model fingerprint does not match its stages")
+        reranker = Reranker(reranker_path, threads=args.threads)
     durations = deque(maxlen=200)
+    reranker_durations = deque(maxlen=200)
     for line in sys.stdin:
         identifier = None
         try:
@@ -46,6 +61,22 @@ def main():
                                 cpuThreads=args.threads, batchSize=16,
                                 p95LatencyMs=round(float(np.percentile(durations, 95)), 3) if durations else None,
                                 latencySamples=len(durations))
+                if reranker_metadata:
+                    response["reranker"] = reranker_metadata
+                    response["encoderModelVersion"] = metadata["encoderModelVersion"]
+                    response["pipelineFingerprint"] = metadata["pipelineFingerprint"]
+                    response["rerankerP95LatencyMs"] = round(float(np.percentile(reranker_durations, 95)), 3) if reranker_durations else None
+                    response["rerankerLatencySamples"] = len(reranker_durations)
+            elif request.get("kind") == "rerank":
+                query, texts = request.get("query"), request.get("texts")
+                if reranker is None or not isinstance(query, str) or len(query) > 1200:
+                    raise ValueError("Invalid or unavailable reranking request")
+                if not isinstance(texts, list) or len(texts) > 256 or any(not isinstance(t, str) or len(t) > 12000 for t in texts):
+                    raise ValueError("Invalid reranking documents")
+                started = time.perf_counter()
+                scores = reranker.score(query, texts)
+                reranker_durations.append((time.perf_counter() - started) * 1000)
+                response = dict(id=identifier, scores=scores.tolist())
             else:
                 texts = request.get("texts")
                 if not isinstance(texts, list) or len(texts) > 256:

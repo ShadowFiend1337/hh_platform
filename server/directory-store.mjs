@@ -29,12 +29,14 @@ function professionalContent(person, value, history = false) {
   return lines.filter(line => !syntheticMetadataLine.test(line.trimStart())).join('\n');
 }
 
-export function semanticSegments(person) {
+export function semanticSegments(person, { includeIdentity = true } = {}) {
   const result = [], seen = new Set();
   let remaining = MAX_PROFILE_CHARACTERS;
   const identity = [person.professionalRole, (person.stack || []).join(', ')].filter(Boolean).join('\n');
-  for (const [field, value] of [['bio', person.bio], ['workHistory', person.workHistory],
-    ['careerAchievements', person.careerAchievements], ['education', person.education], ['identity', identity]]) {
+  const fields = [['bio', person.bio], ['workHistory', person.workHistory],
+    ['careerAchievements', person.careerAchievements], ['education', person.education]];
+  if (includeIdentity) fields.push(['identity', identity]);
+  for (const [field, value] of fields) {
     if (!value || !remaining || result.length >= MAX_SEGMENTS) continue;
     const bounded = scrub(professionalContent(person, value, field === 'workHistory')).trim().slice(0, MAX_SEGMENT_CHARACTERS).trim();
     if (!bounded || seen.has(bounded)) continue;

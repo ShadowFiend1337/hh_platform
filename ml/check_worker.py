@@ -47,9 +47,23 @@ def main():
             long_vector = np.asarray(request(dict(id="long", texts=[long_text]))["vectors"])
             assert long_vector.shape == (1, DIMENSION) and np.isfinite(long_vector).all()
             assert np.allclose(np.linalg.norm(long_vector, axis=1), 1., atol=1e-5)
+        if health.get("reranker"):
+            from reranker import document_context
+            passage = document_context(profile["role"], profile["text"]) if snapshot_path.exists() else texts[1]
+            pair = dict(kind="rerank", query=texts[0], texts=[passage])
+            scores = request(dict(id="rerank", **pair))["scores"]
+            assert len(scores) == 1 and np.isfinite(scores).all()
+            repeated_scores = request(dict(id="rerank-again", **pair))["scores"]
+            assert np.allclose(scores, repeated_scores, atol=1e-7)
+            assert request(dict(id="rerank-empty", kind="rerank", query=texts[0], texts=[]))["scores"] == []
+            for identifier, query_text, candidates in [("bad-query", None, []), ("large-query", "x" * 1201, []),
+                                                       ("many-rerank", "x", ["x"] * 257), ("long-rerank", "x", ["x" * 12001]),
+                                                       ("invalid-rerank", "x", [None])]:
+                assert request(dict(id=identifier, kind="rerank", query=query_text, texts=candidates))["error"] == "invalid_request"
         final_health = request(dict(id="latency", kind="health"))
         assert final_health["latencySamples"] >= 3
-        print(json.dumps(dict(passed=True, dimension=DIMENSION, modelVersion=health["modelVersion"], p95LatencyMs=final_health["p95LatencyMs"])))
+        print(json.dumps(dict(passed=True, dimension=DIMENSION, modelVersion=health["modelVersion"], p95LatencyMs=final_health["p95LatencyMs"],
+                             rerankerVersion=health.get("reranker", {}).get("version"), rerankerP95LatencyMs=final_health.get("rerankerP95LatencyMs"))))
     finally:
         process.stdin.close()
         process.wait(timeout=20)

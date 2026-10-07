@@ -1,4 +1,4 @@
-# Tested on Python 3.11.9. Install the CPU build of torch (see semantic_model.md).
+# Tested on Python 3.12.10. Install the CPU build of torch (see semantic_model.md).
 torch==2.12.0
 transformers==4.57.6
 numpy==2.3.3

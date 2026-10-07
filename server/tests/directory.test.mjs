@@ -311,7 +311,7 @@ test('content changes during query encoding receive one bounded index catch-up',
   assert.equal(value.store.vectors().get('person').document_hash, value.store.get('person').document_hash);
 });
 
-test('activation during index catch-up refreshes the query vector and its cache version', async t => {
+test('activation during index catch-up rejects ambiguous vectors and a bounded retry refreshes their version', async t => {
   const encoder = new FakeEncoder();
   const value = service(t, [profile('person')], encoder);
   let calls = 0;
@@ -322,11 +322,14 @@ test('activation during index catch-up refreshes the query vector and its cache 
     if (calls === 3) encoder.info.version = 'test-v2';
     return texts.map(() => encoder.info.version === 'test-v2' ? [0, 1] : [1, 0]);
   };
-  assert.equal((await value.search('задачи')).total, 1, 'Vectors from the same model are compared');
-  assert.equal(calls, 4, 'The changed index and query each receive one bounded refresh');
+  await assert.rejects(value.search('задачи'),error=>error.status===503,'An in-flight encoding cannot be assigned a new model version');
+  assert.equal(calls,3);
+  assert.equal(value.store.vectors().get('person').model_version,'test-v1:'+PROFILE_INDEX_POLICY);
+  assert.equal((await value.search('задачи')).total,1,'A later request compares vectors from the same stable model');
+  assert.equal(calls, 5, 'Retry refreshes the changed document and query once');
   assert.deepEqual(value.queryCache.get('test-v2:' + PROFILE_INDEX_POLICY + '\nзадачи'), [0, 1]);
   assert.equal((await value.search('задачи')).total, 1);
-  assert.equal(calls, 4, 'The refreshed query is cached under its actual model version');
+  assert.equal(calls, 5, 'The refreshed query is cached under its actual model version');
 });
 
 test('consent is checked again after a model activation forces the final query encoding', async t => {
@@ -340,8 +343,24 @@ test('consent is checked again after a model activation forces the final query e
     if (calls === 4) value.store.upsert(profile('person', { consent: false }), null, true);
     return texts.map(() => [1, 0]);
   };
+  await assert.rejects(value.search('задачи'),error=>error.status===503);
   assert.equal((await value.search('задачи')).total, 0);
-  assert.equal(calls, 4);
+  assert.equal(calls, 5);
+});
+
+for(const phase of ['index','query']) test(`a stale ${phase} reply never acquires a replacement model's index or cache tag`,async t=>{
+  const encoder=new FakeEncoder(),value=service(t,[profile('person')],encoder);
+  let calls=0;
+  encoder.encode=async texts=>{
+    const vectors=texts.map(()=>encoder.info.version==='test-v1'?[1,0]:[0,1]);
+    if(++calls===(phase==='index'?1:2)) encoder.info.version='test-v2';
+    return vectors;
+  };
+  await assert.rejects(value.search('задачи'),error=>error.status===503);
+  assert.notEqual(value.store.vectors().get('person')?.model_version,'test-v2:'+PROFILE_INDEX_POLICY);
+  assert.equal(value.queryCache.get('test-v2:'+PROFILE_INDEX_POLICY+'\nзадачи'),undefined);
+  assert.equal((await value.search('задачи')).total,1);
+  assert.deepEqual(value.queryCache.get('test-v2:'+PROFILE_INDEX_POLICY+'\nзадачи'),[0,1]);
 });
 
 test('semantic relevance is primary and test score or federation achievements only break ties', async t => {

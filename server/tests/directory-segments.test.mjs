@@ -58,6 +58,27 @@ test('professional section bounds apply before encoding and empty evidence creat
   assert.throws(() => parseSemanticSegments('[null]'));
 });
 
+test('task-only extraction excludes role and stack without inventing task evidence', () => {
+  const person=profile('actual-sections');
+  assert.deepEqual(semanticSegments(person,{includeIdentity:false}), [person.bio,person.workHistory,person.careerAchievements,person.education]);
+  assert.equal(semanticSegments(person).at(-1), [person.professionalRole,person.stack.join(', ')].join('\n'), 'The persisted recall document retains its existing identity section');
+  const empty=profile('identity-only',{bio:'',workHistory:'',careerAchievements:'',education:''});
+  assert.deepEqual(semanticSegments(empty,{includeIdentity:false}), []);
+  assert.equal(semanticSegments(empty).length,1);
+});
+
+test('task-only extraction preserves the same private-contact, provenance and duplication protections', () => {
+  const person=profile('actual-sections',{bio:'Калибрую датчики. hidden@example.com',
+    workHistory:'Калибрую датчики. hidden@example.com',careerAchievements:'Уменьшил дрейф\nДемонстрационный профиль: синтетическое происхождение',
+    education:'Радиотехника\nДемонстрационные данные: синтетическое происхождение'});
+  const sections=semanticSegments(person,{includeIdentity:false});
+  assert.equal(sections.length,3,'Repeated factual evidence counts once');
+  assert.match(sections[0],/Калибрую датчики/u);
+  assert.deepEqual(sections.slice(1),['Уменьшил дрейф','Радиотехника']);
+  assert.doesNotMatch(JSON.stringify(sections),/hidden@example|Демонстрацион|Инженер электроники|C\+\+/u);
+  assert.equal(person.workHistory,person.bio,'Extraction does not mutate the account');
+});
+
 test('maximum cosine finds the strongest actual section and rejects truncated or non-finite vector bundles', () => {
   const query = axis(0), positive = axis(0, 0.8); positive[1] = 0.6;
   const packed = bytes([axis(0, -1), positive]);

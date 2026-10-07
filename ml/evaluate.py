@@ -17,6 +17,14 @@ def main():
     args = parser.parse_args()
     model_dir = args.model.resolve()
     metadata = json.loads((model_dir / "metadata.json").read_text(encoding="utf-8"))
+    if metadata.get("reranker"):
+        raise RuntimeError(
+            "This is a composite retrieval pipeline; this evaluator scores only the encoder. "
+            f"Its original frozen encoder report is {model_dir / 'encoder-evaluation.json'}. "
+            "No new independent pipeline TEST evaluation is available. "
+            "The reranker-calibration.json report contains DEV calibration only; "
+            "do not score the encoder's already viewed holdout again or label it with the composite version."
+        )
     value = json.loads((model_dir / metadata["datasetSnapshot"]).read_text(encoding="utf-8"))
     validate(value)
     assert metadata["datasetSha256"] == dataset_hash(value)

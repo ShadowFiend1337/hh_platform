@@ -13,6 +13,32 @@ export interface DirectoryItem {
   rank: number;
   reason: string;
   semanticScore: number | null;
+  rerankerScore?: number;
+  approximate?: true;
+}
+export interface DirectoryReranker {
+  version: string;
+  threshold: number;
+  baseModel: string;
+  revision: string;
+  maxLength: number;
+  weightsSha256?: string;
+  scoreCalibration?: {
+    kind: 'pooled-LDA-diagonal-shrinkage-v1' | 'class-QDA-diagonal-shrinkage-v1';
+    quadraticMatrix?: [[number, number], [number, number]];
+    weights: [number, number]; bias: number; threshold: number;
+    shrink: 0.1; split: 'dev'; hashes: Record<string, string>;
+    featurePolicy: { features: ['encoderCosine', 'crossEncoderRawLogit']; encoderQueryContext: 'raw-query';
+      encoderDocumentContext: 'task-section-without-role'; crossEncoderQueryContext: 'raw-query';
+      crossEncoderDocumentContext: 'catalog-professional-role-newline-task-section';
+      aggregation: 'maximum-fused-score-over-task-sections';
+      formula: 'weights[0]*encoderCosine+weights[1]*crossEncoderRawLogit+bias'
+        | 'features^T*quadraticMatrix*features+weights[0]*encoderCosine+weights[1]*crossEncoderRawLogit+bias' };
+    DEVmetrics: { resubstitution: true; [key: string]: unknown };
+    admission?: { kind: 'query-max-applicability-top3-v1'; threshold: number; limit: 3; split: 'dev';
+      metrics: { resubstitution: true; heldOutScored: false; functionalBenchmarkScored: false; [key: string]: unknown };
+      hashes: Record<string, string> };
+  };
 }
 export interface DirectorySearch {
   items: DirectoryItem[];
@@ -21,11 +47,12 @@ export interface DirectorySearch {
   limit: number;
   query: string;
   interpreted: { salaryMax?: number; specialization?: string; grade?: string; format?: string; city?: string;
-    experienceMin?: number; experienceMax?: number; stack?: string[]; language?: string; hasPortfolio?: boolean;
+    experienceMin?: number; experienceMax?: number; stack?: string[]; language?: string; hasPortfolio?: boolean; unsupportedRole?: string[];
     queryConstraints?: { exclude?: Record<string, string[]>; any?: Record<string, string[]>; all?: Record<string, string[]>;
       groups?: Record<string, string[][]> } };
   effectiveFilters?: SearchFilters;
-  model: { status: 'ready' | 'unavailable'; name: string; version: string; dimension: number; trained: boolean };
+  model: { status: 'ready' | 'unavailable'; name: string; version: string; dimension: number; trained: boolean;
+    reranker?: DirectoryReranker; stage?: DirectoryReranker; rerankerAggregation?: 'max-task-sections-v1' | 'max-fused-task-sections-v1' };
   warnings?: string[];
 }
 export interface DirectoryOptions {

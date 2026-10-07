@@ -105,10 +105,10 @@ export const cases = [
 export async function validateSuite() {
   const ids = new Set(), knownRoles = new Set(specializationOptions.map(item => item.value));
   const seeds = new Map(directoryCandidates.map(person => [person.id, person]));
-  const corpusSources = Object.fromEntries(await Promise.all(['dataset.py', 'dataset_v2.py'].map(async name =>
+  const corpusSources = Object.fromEntries(await Promise.all(['dataset.py', 'dataset_v2.py', 'dataset_v3.py'].map(async name =>
     [name, await readFile(new URL('./' + name, import.meta.url), 'utf8')])));
   const normalized = value => value.normalize('NFKC').trim().replace(/\s+/gu, ' ').toLocaleLowerCase('ru');
-  // Both corpora store authored rows as double-quoted string literals. Do not
+  // Corpora store authored rows as double-quoted string literals. Do not
   // execute training code or import a Python environment just to check copies.
   const corpusLiterals = new Set(Object.values(corpusSources).flatMap(source => Array.from(source.matchAll(/"(?:[^"\\]|\\.)*"/gu), match => {
     try { return normalized(JSON.parse(match[0])); } catch { return ''; }
@@ -130,7 +130,8 @@ export async function validateSuite() {
   assert.equal(new Set(cases.filter(item => item.group === 'role-paraphrase').flatMap(item => item.expected.rolesAny)).size, 14);
   const codeSourceHashes = Object.fromEntries(await Promise.all([
     'server/directory.mjs', 'server/directory-store.mjs', 'server/semantic-worker.mjs',
-    'shared/search.ts', 'shared/catalog.ts', 'ml/common.py', 'ml/worker.py',
+    'server/query-role-scope.mjs', 'server/data-definitions/professional-role-scope.json',
+    'shared/search.ts', 'shared/catalog.ts', 'ml/common.py', 'ml/worker.py', 'ml/reranker.py',
   ].map(async path => [path, hash(await readFile(resolve(projectRoot, path), 'utf8'))])));
   return { version: suiteVersion, cases: cases.length, mandatory: cases.filter(item => item.tier === 'mandatory').length,
     challenge: cases.filter(item => item.tier === 'challenge').length,
@@ -172,7 +173,11 @@ export function evaluateCase(item, result) {
     if (!row.person.visible || !row.person.consent || !row.person.confirmed) failures.push('ineligible-public-card');
   }
   return { id: item.id, group: item.group, tier: item.tier, pass: failures.length === 0, failures: [...new Set(failures)],
+    approximateCount: items.filter(row => row.approximate === true).length, warnings: result.warnings || [],
     total: result.total, roleRank, seedRank, top3: top.map(row => ({ id: row.person.id, role: row.person.confirmed?.specialization || row.person.specialization,
+      approximate: row.approximate === true,
+      rank: Number.isFinite(row.rank) ? Number(row.rank.toFixed(6)) : null,
+      rerankerScore: Number.isFinite(row.rerankerScore) ? Number(row.rerankerScore.toFixed(6)) : null,
       score: Number.isFinite(row.semanticScore) ? Number(row.semanticScore.toFixed(6)) : null })) };
 }
 
@@ -189,6 +194,8 @@ function summarize(rows) {
     taskHitAt1: rate(row => row.seedRank === 1), taskHitAt3: rate(row => row.seedRank !== null && row.seedRank <= 3),
     taskMRRAt30: semantic.length ? semantic.reduce((sum, row) => sum + (row.seedRank ? 1 / row.seedRank : 0), 0) / semantic.length : null,
     outOfScopeRejected: negatives.filter(row => row.pass).length, outOfScopeTotal: negatives.length,
+    approximateQueries: rows.filter(row => row.approximateCount > 0).length,
+    approximateProfiles: rows.reduce((count, row) => count + (row.approximateCount || 0), 0),
     transportErrors: rows.filter(row => row.error).length,
   };
 }
@@ -218,7 +225,7 @@ export async function runSuite({ modelPath, onlyCase } = {}) {
       } catch (error) { if (error.code !== 'ENOENT') throw error; }
       const source = JSON.parse(await readFile(resolve(artifactPath, 'metadata.json'), 'utf8'));
       artifact = { path: relative(projectRoot, artifactPath).replaceAll('\\', '/'),
-        ...Object.fromEntries(['modelVersion', 'weightsSha256', 'encodingFingerprint', 'encodingPolicy', 'datasetSha256', 'holdoutSha256', 'corpusSha256', 'baseModel', 'baseRevision', 'revision', 'threshold', 'dimension'].filter(key => source[key] !== undefined).map(key => [key, source[key]])) };
+        ...Object.fromEntries(['modelVersion', 'encoderModelVersion', 'pipelineFingerprint', 'reranker', 'weightsSha256', 'encodingFingerprint', 'encodingPolicy', 'datasetSha256', 'holdoutSha256', 'corpusSha256', 'baseModel', 'baseRevision', 'revision', 'threshold', 'dimension'].filter(key => source[key] !== undefined).map(key => [key, source[key]])) };
     } catch { /* A missing artifact is explicit in per-case errors and worker info. */ }
     return { kind: 'authored-functional-regression', limitation: 'Synthetic seeds and authored expectations; not independently labelled real-world validation. Never use for training or threshold selection.',
       ...metadata, runAt: new Date().toISOString(), seedCount: directoryCandidates.length,

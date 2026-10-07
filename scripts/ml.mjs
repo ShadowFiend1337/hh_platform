@@ -10,6 +10,10 @@ const python = join(root, process.platform === 'win32' ? '.venv/Scripts/python.e
 const action = process.argv[2];
 const argumentsList = process.argv.slice(3);
 const defaultRun = join(root, 'server/data/semantic-runs/task-v2');
+const defaultRankedRun = join(root, 'server/data/semantic-runs/task-v2-ranked');
+const defaultFusedRun = join(root, 'server/data/semantic-runs/task-v2-fused');
+const defaultQdaRun = join(root, 'server/data/semantic-runs/task-v2-fused-qda');
+const defaultSearchRun = join(root, 'server/data/semantic-runs/task-v2-search');
 function argument(name, fallback) {
   let result = fallback;
   for (let index = 0; index < argumentsList.length; index++) {
@@ -44,6 +48,28 @@ async function activate(path) {
   const digest = createHash('sha256');
   for await (const chunk of createReadStream(join(artifact, 'model.safetensors'))) digest.update(chunk);
   if (digest.digest('hex') !== metadata.weightsSha256) throw new Error('Вес модели не соответствует метаданным.');
+  if (metadata.reranker) {
+    const stage = metadata.reranker;
+    const stagePath = resolve(artifact, stage.path || '');
+    const withinArtifact = relative(artifact, stagePath);
+    const files = stage.fileHashes;
+    if (!withinArtifact || isAbsolute(withinArtifact) || withinArtifact === '..' || withinArtifact.startsWith('..' + sep)
+      || !Number.isFinite(stage.threshold) || typeof stage.version !== 'string' || !stage.version.trim()
+      || !files || !/^[a-f0-9]{64}$/.test(stage.weightsSha256 || '') || files['model.safetensors'] !== stage.weightsSha256
+      || !['config.json', 'tokenizer.json', 'tokenizer_config.json', 'special_tokens_map.json', 'sentencepiece.bpe.model', 'README.md'].every(name => name in files)) {
+      throw new Error('Метаданные второго этапа поиска некорректны.');
+    }
+    for (const [name, expected] of Object.entries(files)) {
+      if (name.includes('/') || name.includes('\\') || name === '..' || !/^[a-f0-9]{64}$/.test(expected)) {
+        throw new Error('Некорректный манифест файлов второго этапа.');
+      }
+      const stageDigest = createHash('sha256');
+      for await (const chunk of createReadStream(join(stagePath, name))) stageDigest.update(chunk);
+      if (stageDigest.digest('hex') !== expected) throw new Error('Файл второго этапа не соответствует манифесту: ' + name);
+    }
+    if (!existsSync(python)) throw new Error('Подготовьте локальную Python-среду: npm run setup:search.');
+    await run(python, ['-X', 'utf8', 'ml/validate_model.py', '--model', artifact]);
+  }
   const registry = join(root, 'server/data/semantic-model');
   await mkdir(registry, { recursive: true });
   const temporary = join(registry, `active-${randomUUID()}.json`);
@@ -67,13 +93,16 @@ try {
     await activate(argumentsList[0] || defaultRun);
   } else {
     if (!existsSync(python)) throw new Error('Подготовьте локальную Python-среду: npm run setup:search.');
-    const tasks = { train: 'train.py', evaluate: 'evaluate.py', check: 'check_worker.py' };
+    const tasks = { train: 'train.py', evaluate: 'evaluate.py', check: 'check_worker.py', prepare: 'prepare_reranker.py', calibrate: 'prepare_fusion.py', admit: 'prepare_admission.py' };
     if (!tasks[action]) throw new Error('Неизвестная команда модели.');
-    const flag = action === 'train' ? '--output' : '--model';
+    const flag = ['train', 'prepare', 'calibrate', 'admit'].includes(action) ? '--output' : '--model';
     const requested = argument(flag);
-    const target = requested ?? (action === 'train' ? defaultRun : await selectedModel());
+    const target = requested ?? (action === 'train' ? defaultRun : action === 'prepare' ? defaultRankedRun : action === 'calibrate' ? defaultFusedRun : action === 'admit' ? defaultSearchRun : await selectedModel());
     const args = [...argumentsList];
     if (requested === undefined) args.push(flag, target);
+    if (action === 'prepare' && argument('--encoder-model') === undefined) args.push('--encoder-model', defaultRun);
+    if (action === 'calibrate' && argument('--model') === undefined) args.push('--model', defaultRankedRun);
+    if (action === 'admit' && argument('--model') === undefined) args.push('--model', defaultQdaRun);
     await run(python, ['-X', 'utf8', 'ml/' + tasks[action], ...args]);
     if (action === 'train') await activate(target);
   }
