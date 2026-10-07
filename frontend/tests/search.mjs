@@ -60,10 +60,29 @@ try {
   const exampleResults = await exampleResponse.json();
   assert.equal(exampleResults.model.status, 'ready');
   assert.equal(exampleResults.model.trained, true);
+  assert.ok(exampleResults.model.stage?.scoreCalibration, 'The live service must use the full trained search composition');
   assert.equal(exampleResults.interpreted.salaryMax, 200000);
-  const names = exampleResults.items.map(item => item.person.name);
-  assert.ok(names.includes('Иван Лопатин') && names.includes('Дарья Пайвина'), 'Electronics specialists from the actual SQL corpus must be found');
+  const electronicsIds = directoryCandidates.filter(person => person.semanticTopics.some(topic =>
+    ['embedded-schematics', 'embedded-analog-sensors', 'embedded-diagnostics'].includes(topic))).map(person => person.id);
+  assert.ok(exampleResults.items.some(item => electronicsIds.includes(item.person.id) && item.approximate !== true),
+    'The original task must have a strict match with relevant electronic circuit experience');
   assert.ok(exampleResults.items.every(item => item.person.specialization === 'Embedded' && item.person.salaryFrom <= 200000));
+
+  // Task relevance uses professional experience rather than a required set of names.
+  const sensorQuery = 'нужен специалист по аналоговым датчикам, настройке АЦП и измерению слабых сигналов с зарплатой до 200 тысяч';
+  const sensorResponse = await live.request.get(base + '/api/directory/search?' + new URLSearchParams({
+    q: sensorQuery, filters: '{}', limit: '30', offset: '0',
+  }), { timeout: 90000 });
+  assert.equal(sensorResponse.status(), 200);
+  const sensorResults = await sensorResponse.json();
+  assert.equal(sensorResults.model.status, 'ready');
+  assert.equal(sensorResults.model.trained, true);
+  assert.equal(sensorResults.interpreted.salaryMax, 200000);
+  const sensorId = directoryCandidates.find(person => person.semanticTopics.includes('embedded-analog-sensors')).id;
+  const sensorSpecialist = sensorResults.items.find(item => item.person.id === sensorId);
+  assert.ok(sensorSpecialist, 'The analog measurement profile must match the sensor and ADC task');
+  assert.notEqual(sensorSpecialist.approximate, true, 'The sensor task must have a strict match');
+  assert.ok(sensorResults.items.every(item => item.person.specialization === 'Embedded' && item.person.salaryFrom <= 200000));
 
   const people = [];
   let offset = 0, total = Infinity;
@@ -79,7 +98,7 @@ try {
   assert.equal(new Set(people.map(person => person.id)).size, total);
   assert.equal(people.filter(person => person.synthetic).length, 146);
   assert.equal(new Set(people.filter(person => person.synthetic).map(person => person.specialization)).size, 14);
-  console.log('PASS Actual trained encoder, electronics example, 146 fictional profiles and 14 directions');
+  console.log('PASS Actual trained model, electronic schematics and analog sensors, fictional SQL corpus');
 
   // Prime canonical state before pagination: initial migration must not cancel a page request.
   const initialPlatform = await (await live.request.get(base + '/api/platform/state')).json();
@@ -104,7 +123,8 @@ try {
   await pause(350);
   assert.equal(requests.length, beforeDraft, 'Typing a draft must not run semantic search');
   await submit(page, example);
-  assert.ok((await page.locator('.person-link').allTextContents()).some(name => name.includes('Иван Лопатин')));
+  assert.ok((await page.locator('.person-link').allTextContents()).some(name =>
+    exampleResults.items.some(item => name.includes(item.person.name))));
   assert.match(await page.locator('.directory-interpretation').textContent(), /Зарплата до 200\s000 ₽/u);
   assert.equal(await page.locator('.directory-demo').count(), exampleResults.items.length);
   await page.locator('.match-details').first().locator('summary').click();
