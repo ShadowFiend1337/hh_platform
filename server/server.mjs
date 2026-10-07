@@ -7,9 +7,11 @@ import { openStore } from './store.mjs';
 import { createAttempt, digest, evaluate, programInfo, publicAttempt, RequestError, validateSurvey } from './assessment.mjs';
 import { DirectoryService } from './directory.mjs';
 import { PlatformService } from './platform.mjs';
+import { AuthError, AuthService } from './auth.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const cookieName = 'predel_session';
+const authCookieName = 'predel_account_session';
 const mime = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml', '.woff2': 'font/woff2',
@@ -18,10 +20,11 @@ const mime = {
   '.json': 'application/json; charset=utf-8', '.txt': 'text/plain; charset=utf-8',
 };
 
-export function createAssessmentServer({ dbPath = resolve(root, 'server/data/assessment.sqlite'), now = Date.now, webOrigin = process.env.WEB_ORIGIN, secureCookie = process.env.COOKIE_SECURE === '1', distPath = resolve(root, 'frontend/dist') } = {}) {
+export function createAssessmentServer({ dbPath = resolve(root, 'server/data/assessment.sqlite'), now = Date.now, webOrigin = process.env.WEB_ORIGIN, secureCookie = process.env.COOKIE_SECURE === '1', distPath = resolve(root, 'frontend/dist'), authEnv = process.env, authMailer, authCodeTtlMinutes, authSessionDays } = {}) {
   const store = openStore(dbPath);
   const directory = new DirectoryService(dbPath);
   const platform = new PlatformService(directory.store, store, { now });
+  const auth = new AuthService(dbPath, { now, env: authEnv, mailer: authMailer, codeTtlMinutes: authCodeTtlMinutes, sessionDays: authSessionDays });
   const limits = new Map();
   function send(response, status, value) {
     response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
@@ -46,12 +49,34 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
       return value;
     } catch { throw new RequestError(400, 'Некорректный JSON.'); }
   }
+  function cookie(request, name) {
+    return String(request.headers.cookie || '').split(';').map(part => part.trim()).find(part => part.startsWith(name + '='))?.slice(name.length + 1);
+  }
+  function setCookie(response, value) {
+    const current = response.getHeader('Set-Cookie');
+    response.setHeader('Set-Cookie', current ? [...(Array.isArray(current) ? current : [current]), value] : value);
+  }
+  function expireCookie(response, name) {
+    setCookie(response, name + '=; Path=/api; HttpOnly; SameSite=Strict; Max-Age=0' + (secureCookie ? '; Secure' : ''));
+  }
+  function setAuthCookie(response, token, maxAge) {
+    setCookie(response, authCookieName + '=' + token + '; Path=/api; HttpOnly; SameSite=Strict; Max-Age=' + maxAge + (secureCookie ? '; Secure' : ''));
+  }
   function owner(request, response) {
-    const supplied = String(request.headers.cookie || '').split(';').map(part => part.trim()).find(part => part.startsWith(cookieName + '='))?.slice(cookieName.length + 1);
-    if (supplied && /^[a-f0-9]{64}$/.test(supplied)) return digest(supplied);
+    const authToken = cookie(request, authCookieName);
+    const signedIn = auth.accountForToken(authToken);
+    if (signedIn) return { owner: signedIn.platformOwner, account: signedIn.account, authToken };
+    const supplied = cookie(request, cookieName);
+    if (supplied && /^[a-f0-9]{64}$/.test(supplied)) {
+      const anonymousOwner = digest(supplied);
+      // A pre-registration cookie is deliberately no longer enough to reopen
+      // an account after its auth session is removed.
+      if (!auth.accountForPlatformOwner(anonymousOwner)) return { owner: anonymousOwner, account: null, authToken: null };
+      expireCookie(response, cookieName);
+    }
     const session = randomBytes(32).toString('hex');
-    response.setHeader('Set-Cookie', cookieName + '=' + session + '; Path=/api; HttpOnly; SameSite=Strict; Max-Age=2592000' + (secureCookie ? '; Secure' : ''));
-    return digest(session);
+    setCookie(response, cookieName + '=' + session + '; Path=/api; HttpOnly; SameSite=Strict; Max-Age=2592000' + (secureCookie ? '; Secure' : ''));
+    return { owner: digest(session), account: null, authToken: null };
   }
   function authorized(id, session, token) {
     const row = store.get(id);
@@ -70,14 +95,52 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
         if (origin && !allowed.has(origin)) throw new RequestError(403, 'Источник запроса не разрешён.');
         if (request.method === 'GET' && url.pathname === '/api/health') return send(response, 200, { status: 'ok' });
         if (request.method === 'GET' && url.pathname === '/api/assessment/program') return send(response, 200, programInfo(url.searchParams.get('specialization'), url.searchParams.get('grade')));
-        const session = owner(request, response);
+        const identity = owner(request, response);
+        const session = identity.owner;
+        if (url.pathname === '/api/auth/register/request-code') {
+          if (request.method !== 'POST') throw new RequestError(405, 'Метод не поддерживается.');
+          limit('auth-code-ip:' + request.socket.remoteAddress, 12, 600000);
+          const input = await body(request);
+          const email = typeof input.email === 'string' ? input.email.normalize('NFKC').trim().toLocaleLowerCase('en-US') : '';
+          if (email) limit('auth-code-email:' + email, 4, 600000);
+          const result = await auth.requestRegistration(input, session);
+          return send(response, 202, { status: 'code_sent', email: result.email, expiresAt: result.expiresAt });
+        }
+        if (url.pathname === '/api/auth/register/verify') {
+          if (request.method !== 'POST') throw new RequestError(405, 'Метод не поддерживается.');
+          limit('auth-verify-ip:' + request.socket.remoteAddress, 20, 600000);
+          const account = auth.verifyRegistration(await body(request));
+          const created = auth.createSession(account);
+          setAuthCookie(response, created.token, created.maxAge);
+          return send(response, 201, { account: created.account });
+        }
+        if (url.pathname === '/api/auth/login') {
+          if (request.method !== 'POST') throw new RequestError(405, 'Метод не поддерживается.');
+          limit('auth-login-ip:' + request.socket.remoteAddress, 20, 600000);
+          const account = await auth.login(await body(request));
+          const created = auth.createSession(account);
+          setAuthCookie(response, created.token, created.maxAge);
+          return send(response, 200, { account: created.account });
+        }
+        if (url.pathname === '/api/auth/me') {
+          if (request.method !== 'GET') throw new RequestError(405, 'Метод не поддерживается.');
+          if (!identity.account) throw new RequestError(401, 'Войдите в аккаунт.');
+          return send(response, 200, { account: identity.account });
+        }
+        if (url.pathname === '/api/auth/logout') {
+          if (request.method !== 'POST') throw new RequestError(405, 'Метод не поддерживается.');
+          auth.revokeToken(identity.authToken);
+          expireCookie(response, authCookieName);
+          expireCookie(response, cookieName);
+          return send(response, 200, { status: 'signed_out' });
+        }
         if (url.pathname === '/api/platform/state') {
           if (request.method === 'GET') return send(response, 200, platform.read(session));
           if (request.method === 'DELETE') return send(response, 200, platform.delete(session));
           if (request.method === 'PUT') {
             const input = await body(request, 1000000);
             if (Object.keys(input).some(key => !['state', 'baseRevision'].includes(key))) throw new RequestError(400, 'Недопустимые поля запроса.');
-            return send(response, 200, platform.save(session, input.state, input.baseRevision));
+            return send(response, 200, platform.save(session, input.state, input.baseRevision, identity.account?.role || null));
           }
           throw new RequestError(405, 'Метод не поддерживается.');
         }
@@ -85,6 +148,7 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
         if (request.method === 'GET' && contacts) return send(response, 200, platform.contacts(session, decodeURIComponent(contacts[1])));
         if (request.method === 'GET' && url.pathname === '/api/directory/options') return send(response, 200, directory.options());
         if (request.method === 'GET' && url.pathname === '/api/directory/search') {
+          if (identity.account?.role === 'candidate') throw new RequestError(403, 'Поиск кандидатов доступен работодателю.');
           let filters;
           try { filters = JSON.parse(url.searchParams.get('filters') || '{}'); }
           catch { throw new RequestError(400, 'Некорректные фильтры.'); }
@@ -92,6 +156,7 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
             { owner: session, limit: Number(url.searchParams.get('limit') || 30), offset: Number(url.searchParams.get('offset') || 0) }));
         }
         if (request.method === 'POST' && url.pathname === '/api/assessment/attempts') {
+          if (identity.account?.role === 'employer') throw new RequestError(403, 'Тестирование доступно соискателю.');
           const input = await body(request);
           if (Object.keys(input).some(key => !['survey', 'vacancyDescription'].includes(key))) throw new RequestError(400, 'Недопустимые поля запроса.');
           limit('starts:' + request.socket.remoteAddress, 40, 3600000);
@@ -128,7 +193,7 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
       }
       if (!['GET', 'HEAD'].includes(request.method)) throw new RequestError(405, 'Метод не поддерживается.');
       const path = decodeURIComponent(url.pathname);
-      const file = ['/', '/app', '/privacy'].includes(path) ? resolve(distPath, 'index.html') : resolve(distPath, '.' + path);
+      const file = ['/', '/app', '/auth', '/privacy'].includes(path) ? resolve(distPath, 'index.html') : resolve(distPath, '.' + path);
       const within = relative(distPath, file);
       if (within.startsWith('..') || within.includes(':') || !mime[extname(file)]) throw new RequestError(404, 'Страница не найдена.');
       let content;
@@ -136,18 +201,22 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
       response.writeHead(200, { 'Content-Type': mime[extname(file)], 'Cache-Control': extname(file) === '.html' || path.startsWith('/resume-assets/') ? 'no-cache' : 'public, max-age=3600', 'X-Content-Type-Options': 'nosniff' });
       response.end(request.method === 'HEAD' ? undefined : content);
     } catch (error) {
-      if (!response.headersSent) send(response, error instanceof RequestError ? error.status : 500, { error: error instanceof RequestError ? error.message : 'Сервис временно недоступен. Попробуйте снова.' });
+      if (!response.headersSent) send(response, error instanceof RequestError || error instanceof AuthError ? error.status : 500, { error: error instanceof RequestError || error instanceof AuthError ? error.message : 'Сервис временно недоступен. Попробуйте снова.' });
       else response.end();
-      if (!(error instanceof RequestError)) console.error('Assessment service error:', error.message);
+      if (!(error instanceof RequestError) && !(error instanceof AuthError)) console.error('Assessment service error:', error.message);
     }
   });
   server.requestTimeout = 15000;
   server.headersTimeout = 10000;
-  server.on('close', () => { directory.close(); store.close(); });
-  return { server, store, directory, platform };
+  server.on('close', () => { auth.close(); directory.close(); store.close(); });
+  return { server, store, directory, platform, auth };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  if (typeof process.loadEnvFile === 'function') {
+    try { process.loadEnvFile(resolve(root, '.env')); }
+    catch (error) { if (error?.code !== 'ENOENT') console.error('Cannot load .env:', error.message); }
+  }
   const port = Number(process.env.PORT || 8787);
   const { server, directory } = createAssessmentServer({ dbPath: process.env.ASSESSMENT_DB || undefined });
   server.listen(port, process.env.HOST || '127.0.0.1', () => {

@@ -5,7 +5,8 @@
   "engines": { "node": ">=24.0.0" },
   "scripts": {
     "dev": "node scripts/dev.mjs",
-    "start": "node server/server.mjs",
+    "start": "node scripts/start-backend.mjs",
+    "export:fastapi-data": "node scripts/export-fastapi-data.mjs",
     "build": "npm --prefix frontend run build",
     "test:server": "node --test server/tests/*.test.mjs",
     "test:browser": "npm --prefix frontend run test:browser",

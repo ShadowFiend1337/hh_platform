@@ -12,7 +12,7 @@ const examples = [
 ];
 const variants = ['Подбор', 'Профиль', 'Приглашение'];
 
-export function Landing({ onStart }: { onStart: (role?: Role, query?: string) => void }) {
+export function Landing({ onStart, onAuth }: { onStart: (role?: Role, query?: string) => void; onAuth: (mode: 'login' | 'register', role?: Role) => void }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [variant, setVariant] = useState(0);
   const [brief, setBrief] = useState('');
@@ -39,7 +39,7 @@ export function Landing({ onStart }: { onStart: (role?: Role, query?: string) =>
       <div className="nav-island"><Brand /><nav aria-label="Главная навигация">
         <a href="#possibilities">Возможности</a><a href="#how">Как это работает</a><a href="#try">Подбор</a>
       </nav><button className="menu-toggle icon-button" aria-label={menuOpen ? 'Закрыть меню' : 'Открыть меню'} aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}>{menuOpen ? <X /> : <Menu />}</button></div>
-      <div className="account-island"><button className="login-link" onClick={() => onStart('candidate')}>Кандидату</button><button className="button ink small" onClick={() => onStart()}>Попробовать<ArrowUpRight size={16} /></button></div>
+      <div className="account-island"><button className="login-link" onClick={() => onAuth('login')}>Войти</button><button className="button ink small" onClick={() => onAuth('register')}>Создать аккаунт<ArrowUpRight size={16} /></button></div>
       {menuOpen && <nav className="mobile-menu" aria-label="Мобильная навигация">
         {[['#possibilities', 'Возможности'], ['#how', 'Как это работает'], ['#try', 'Подбор']].map(([href, text]) => <a href={href} key={href} onClick={() => setMenuOpen(false)}>{text}<ArrowUpRight size={18} /></a>)}
       </nav>}
@@ -53,7 +53,7 @@ export function Landing({ onStart }: { onStart: (role?: Role, query?: string) =>
         <motion.div className="hero-copy" initial={{ opacity: 0, y: 22 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: reduced ? 0 : .15, duration: reduced ? 0 : .65 }}>
           <h1>Ваши навыки.<br /><span>Подходящая команда.</span></h1>
           <p className="hero-description">Подтвердите уровень и получайте предложения<br className="mobile-break" /> с зарплатной вилкой.</p>
-          <div className="hero-actions"><button className="button primary" onClick={() => onStart()}>Попробовать<ArrowUpRight size={19} /></button><a href="#possibilities" className="text-link">Как это работает<ArrowDown size={15} /></a></div>
+          <div className="hero-actions"><button className="button primary" onClick={() => onAuth('register')}>Создать аккаунт<ArrowUpRight size={19} /></button><a href="#possibilities" className="text-link">Как это работает<ArrowDown size={15} /></a></div>
         </motion.div>
         <div className="hero-bottom"><a href="#possibilities" aria-label="Прокрутить к возможностям"><ArrowDown size={18} /></a></div>
       </section>

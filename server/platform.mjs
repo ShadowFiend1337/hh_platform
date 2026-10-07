@@ -255,8 +255,9 @@ export class PlatformService {
     });
     return { state, revision: account.revision, directoryPeople };
   }
-  save(owner, input, baseRevision) {
+  save(owner, input, baseRevision, role = null) {
     ownerKey(owner);
+    if (role !== null && role !== 'candidate' && role !== 'employer') throw new RequestError(403, 'Роль аккаунта недоступна.');
     if (!Number.isSafeInteger(baseRevision) || baseRevision < 0) fail('Некорректная версия данных.');
     const value = object(input, 'состояние');
     if (value.version !== 2 || Object.keys(value).some(key => !['version', 'profile', 'company', 'invitations', 'history', 'surveys', 'savedSearches'].includes(key))) fail('Неподдерживаемый формат состояния.');
@@ -267,11 +268,15 @@ export class PlatformService {
     const savedSearches = unique(list(value.savedSearches, 100, 'поиски').map(search), 'поиски');
     const incomingSurveys = unique(list(value.surveys, 100, 'анкеты').map(survey), 'анкеты');
     const employer = company(value.company);
+    if (role === 'candidate' && savedSearches.length) throw new RequestError(403, 'Сохранённые поиски доступны работодателю.');
     return this.store.transaction(() => {
       const account = this.store.db.prepare('SELECT * FROM platform_accounts WHERE owner=?').get(owner);
       if ((account?.revision || 0) !== baseRevision) throw new RequestError(409, 'Данные изменились в другой вкладке. Обновите страницу.');
       const oldProfile = account ? JSON.parse(account.profile) : null;
       const person = profile(value.profile, oldProfile);
+      if (role === 'employer' && (hasPrivateProfile(person) || person.consent || incomingSurveys.length)) {
+        throw new RequestError(403, 'Профиль и анкеты доступны соискателю.');
+      }
       if (!person.consent && (hasPrivateProfile(person) || incomingSurveys.length) && !hasPrivateProfile(oldProfile)) throw new RequestError(400, 'Для сохранения личной анкеты необходимо согласие.');
       const rows = this.assessments.completed(owner).filter(row => row.owner === owner && row.result);
       const byId = new Map(rows.map(row => [row.id, row]));
@@ -328,6 +333,7 @@ export class PlatformService {
         const target = item.candidateId === ownCandidateId ? id : item.candidateId;
         const existing = this.store.db.prepare('SELECT * FROM platform_invitations WHERE id=?').get(item.id);
         if (!existing) {
+          if (role === 'candidate') throw new RequestError(403, 'Отправлять приглашения может только работодатель.');
           const candidate = this.store.get(target);
           if (!candidate || !candidate.eligible || !candidate.visible || !candidate.consent) throw new RequestError(404, 'Кандидат недоступен для приглашения.');
           if (item.status !== 'sent') throw new RequestError(403, 'Работодатель может только отправить приглашение.');
@@ -340,6 +346,7 @@ export class PlatformService {
         const candidate = this.store.get(existing.candidate_id);
         const recipient = candidate?.owner === owner;
         if (existing.sender !== owner && !recipient) throw new RequestError(403, 'Приглашение принадлежит другой сессии.');
+        if (role === 'employer' && recipient && existing.sender !== owner) throw new RequestError(403, 'Ответить на приглашение может только соискатель.');
         const stored = JSON.parse(existing.payload);
         if (target !== existing.candidate_id || ['title', 'description', 'contact', 'salaryFrom', 'salaryTo'].some(key => item[key] !== stored[key])) throw new RequestError(403, 'Отправленное предложение нельзя подменить.');
         if (item.status === existing.status) continue;

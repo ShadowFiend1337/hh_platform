@@ -12,7 +12,8 @@ import { CandidateDetails } from './components/CandidateDetails';
 import { InviteForm } from './components/InviteForm';
 import { Brand } from './components/Brand';
 import { Landing } from './pages/Landing';
-import { readCandidateContacts, usePlatformPersistence } from './platform-api';
+import { Auth, type AuthMode } from './pages/Auth';
+import { readCandidateContacts, syncCacheKey, usePlatformPersistence } from './platform-api';
 import {
   currentSurvey, emptyFilters, hasContactAccess, otherCandidates, ownCandidateId, readState, saveState, storageKey,
   type Candidate, type Page, type Role,
@@ -23,14 +24,26 @@ const navigation: Record<Role, { page: Page; label: string }[]> = {
   candidate: [{ page: 'profile', label: 'Профиль' }, { page: 'assessment', label: 'Тестирование' }, { page: 'invitations', label: 'Приглашения' }],
 };
 
-function routeFromLocation(): { role: Role; page: Page; home: boolean; privacy: boolean } {
+type AppRoute = { role: Role; page: Page; home: boolean; privacy: boolean; auth: AuthMode | null };
+type AuthAccount = { login: string; email: string; role: Role; name?: string; companyName?: string };
+
+function clearLocalPlatformCache() {
+  localStorage.removeItem(storageKey);
+  localStorage.removeItem('predel:platform:v1');
+  localStorage.removeItem(syncCacheKey);
+  sessionStorage.removeItem('predel:assessment:v1');
+  sessionStorage.removeItem('predel:search');
+}
+
+function routeFromLocation(): AppRoute {
   const params = new URLSearchParams(location.search);
   const role = params.get('role') === 'candidate' ? 'candidate' : 'employer';
   const requested = params.get('tab');
   const page = role === 'candidate' && requested === 'onboarding' ? 'onboarding'
     : navigation[role].find(item => item.page === requested)?.page || navigation[role][0].page;
   const home = location.pathname === '/' && !params.has('role') && !params.has('tab');
-  return { role, page, home, privacy: location.pathname === '/privacy' };
+  const auth = location.pathname === '/auth' ? (params.get('mode') === 'login' ? 'login' : 'register') : null;
+  return { role, page, home, privacy: location.pathname === '/privacy', auth };
 }
 
 export function App() {
@@ -38,6 +51,8 @@ export function App() {
   const [route, setRoute] = useState(routeFromLocation);
   const [roleMenu, setRoleMenu] = useState(false);
   const [toast, setToast] = useState('');
+  const [authAccount, setAuthAccount] = useState<AuthAccount | null>(null);
+  const [signingOut, setSigningOut] = useState(false);
   const [dialog, setDialog] = useState<{ type: 'profile' | 'invite'; person: Candidate } | null>(null);
   const [knownPeople, setKnownPeople] = useState<Candidate[]>([]);
   const persistence = usePlatformPersistence(state, setState);
@@ -51,7 +66,34 @@ export function App() {
 
   useEffect(() => { if (!saveState(state)) setToast('Хранилище браузера недоступно. Изменения сохранятся до закрытия страницы.'); }, [state]);
   useEffect(() => {
-    if (!persistence.ready || route.home || route.privacy || route.role !== 'candidate' || route.page === candidatePage) return;
+    let active = true;
+    void fetch('/api/auth/me', { credentials: 'same-origin' }).then(async response => {
+      if (!response.ok) return;
+      const payload = await response.json() as { account?: AuthAccount };
+      if (active && payload.account) setAuthAccount(payload.account);
+    }).catch(() => { /* The public demo remains available without an auth service. */ });
+    return () => { active = false; };
+  }, []);
+  useEffect(() => {
+    if (!authAccount) return;
+    const role = authAccount.role;
+    if (route.auth || (!route.home && !route.privacy && route.role !== role)) {
+      const requestedPage = route.role === role && route.page === 'onboarding'
+        ? 'onboarding' : navigation[role].some(item => item.page === route.page) ? route.page : navigation[role][0].page;
+      history.replaceState(null, '', '/app?role=' + role + '&tab=' + requestedPage);
+      setRoute({ role, page: requestedPage, home: false, privacy: false, auth: null });
+      setRoleMenu(false); setDialog(null);
+    }
+  }, [authAccount, route.auth, route.home, route.privacy, route.role, route.page]);
+  useEffect(() => {
+    if (!authAccount || !persistence.ready || authAccount.role !== 'employer' || !authAccount.companyName) return;
+    setState(previous => {
+      if (previous.company.name !== 'Линия' || previous.company.contact !== 'team@example.com') return previous;
+      return { ...previous, company: { ...previous.company, name: authAccount.companyName || previous.company.name, contact: authAccount.email || previous.company.contact } };
+    });
+  }, [authAccount, persistence.ready]);
+  useEffect(() => {
+    if (!persistence.ready || route.home || route.privacy || route.auth || route.role !== 'candidate' || route.page === candidatePage) return;
     history.replaceState(null, '', '/app?role=candidate&tab=' + candidatePage);
     setRoute(previous => ({ ...previous, page: candidatePage }));
   }, [route, candidatePage, persistence.ready]);
@@ -62,7 +104,10 @@ export function App() {
     return () => { window.removeEventListener('popstate', pop); window.removeEventListener('storage', sync); };
   }, []);
   useEffect(() => {
-    document.title = route.privacy ? 'Политика конфиденциальности · predel' : route.home ? 'predel · Ваша следующая команда' : (page === 'onboarding' ? 'Анкета' : navigation[route.role].find(item => item.page === page)?.label || 'predel') + ' · predel';
+    document.title = route.privacy ? 'Политика конфиденциальности · predel'
+      : route.auth === 'register' ? 'Регистрация · predel'
+        : route.auth === 'login' ? 'Вход · predel'
+          : route.home ? 'predel · Ваша следующая команда' : (page === 'onboarding' ? 'Анкета' : navigation[route.role].find(item => item.page === page)?.label || 'predel') + ' · predel';
   }, [route, page]);
   useEffect(() => {
     if (!toast) return;
@@ -92,9 +137,12 @@ export function App() {
     return () => { active = false; };
   }, [route.role, state.invitations, state.company.id, persistence.revision]);
 
-  function navigate(role: Role, page: Page) {
+  function navigate(requestedRole: Role, requestedPage: Page) {
+    const role = authAccount?.role || requestedRole;
+    const page = role === requestedRole && (requestedPage === 'onboarding' || navigation[role].some(item => item.page === requestedPage))
+      ? requestedPage : navigation[role][0].page;
     history.pushState(null, '', '/app?role=' + role + '&tab=' + page);
-    setRoute({ role, page, home: false, privacy: false }); setRoleMenu(false); setDialog(null);
+    setRoute({ role, page, home: false, privacy: false, auth: null }); setRoleMenu(false); setDialog(null);
     window.scrollTo({ top: 0, behavior: 'instant' });
   }
   const remember = (person: Candidate) => setKnownPeople(previous => [...previous.filter(item => item.id !== person.id), person]);
@@ -110,8 +158,39 @@ export function App() {
   const onInvite = (person: Candidate) => { remember(person); setDialog({ type: 'invite', person }); };
   function goHome() {
     history.pushState(null, '', '/');
-    setRoute({ role: 'employer', page: 'candidates', home: true, privacy: false }); setRoleMenu(false); setDialog(null);
+    setRoute({ role: 'employer', page: 'candidates', home: true, privacy: false, auth: null }); setRoleMenu(false); setDialog(null);
     window.scrollTo({ top: 0, behavior: 'instant' });
+  }
+  function openAuth(mode: AuthMode, preferredRole?: Role) {
+    if (authAccount) {
+      navigate(authAccount.role, navigation[authAccount.role][0].page);
+      return;
+    }
+    const role = preferredRole || (mode === 'register' ? 'candidate' : route.role);
+    history.pushState(null, '', '/auth?mode=' + mode + '&role=' + role);
+    setRoute({ role, page: navigation[role][0].page, home: false, privacy: false, auth: mode }); setRoleMenu(false); setDialog(null);
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }
+  function updateAuthRole(role: Role) {
+    if (!route.auth || authAccount) return;
+    history.replaceState(null, '', '/auth?mode=' + route.auth + '&role=' + role);
+    setRoute(previous => ({ ...previous, role, page: navigation[role][0].page }));
+  }
+  function completeAuthentication(role: Role) {
+    const page = role === 'candidate' ? 'onboarding' : 'candidates';
+    clearLocalPlatformCache();
+    window.location.assign('/app?role=' + role + '&tab=' + page);
+  }
+  async function signOut() {
+    setSigningOut(true);
+    try {
+      const response = await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
+      if (!response.ok) throw new Error();
+      clearLocalPlatformCache();
+      window.location.assign('/');
+    } catch {
+      setSigningOut(false); setToast('Не удалось завершить сессию. Повторите попытку.');
+    }
   }
   function start(role: Role = 'employer', query?: string) {
     if (query) {
@@ -123,14 +202,13 @@ export function App() {
 
   if (route.privacy) return <Privacy onHome={goHome} onClearLocal={async () => {
     await persistence.clear();
-    localStorage.removeItem(storageKey);
-    localStorage.removeItem('predel:platform:v1');
-    sessionStorage.removeItem('predel:assessment:v1');
-    sessionStorage.removeItem('predel:search');
+    clearLocalPlatformCache();
     setKnownPeople([]);
     setDialog(null);
   }} />;
-  if (route.home) return <Landing onStart={start} />;
+  if (route.auth) return <Auth key={route.auth} mode={route.auth} initialRole={route.role} onBack={goHome}
+    onSwitchMode={mode => openAuth(mode, route.role)} onRoleChange={updateAuthRole} onAuthenticated={completeAuthentication} />;
+  if (route.home) return <Landing onStart={start} onAuth={openAuth} />;
   return <div className="app-shell">
     <a className="skip-link" href="#main-content">К содержимому</a>
     <header className="site-header"><div className="header-inner">
@@ -139,12 +217,19 @@ export function App() {
         <a href={'?role=' + route.role + '&tab=' + item.page} key={item.page} aria-current={page === item.page ? 'page' : undefined}
           onClick={event => { event.preventDefault(); navigate(route.role, item.page); }}>{item.label}{item.page === 'invitations' && pending > 0 && <span className="nav-count">{pending}</span>}</a>,
       )}</nav>
-      <div className="header-account"><span className="demo-label">Демо</span><div className="role-control">
-        <button className="role-button" aria-expanded={roleMenu} aria-controls="role-options" onClick={() => setRoleMenu(!roleMenu)}>{route.role === 'employer' ? 'Работодатель' : 'Кандидат'}<ChevronDown size={15} /></button>
-        {roleMenu && <><button className="menu-dismiss" tabIndex={-1} aria-label="Закрыть выбор роли" onClick={() => setRoleMenu(false)} /><div className="role-menu" id="role-options">
-          {(['employer', 'candidate'] as const).map(role => <button key={role} onClick={() => navigate(role, navigation[role][0].page)}>{role === 'employer' ? 'Работодатель' : 'Кандидат'}{route.role === role && <Check size={15} />}</button>)}
-        </div></>}
-      </div></div>
+      <div className="header-account">{authAccount ? <>
+        <span className="app-account-name" title={authAccount.login}>{authAccount.companyName || authAccount.name || authAccount.login}</span>
+        <button className="app-signout" disabled={signingOut} onClick={() => void signOut()}>{signingOut ? 'Выходим…' : 'Выйти'}</button>
+        <span className="role-button role-static">{authAccount.role === 'employer' ? 'Работодатель' : 'Ищу работу'}</span>
+      </> : <>
+        <div className="app-auth-actions"><button onClick={() => openAuth('login')}>Войти</button><button onClick={() => openAuth('register')}>Регистрация</button></div>
+        <span className="demo-label">Демо</span><div className="role-control">
+          <button className="role-button" aria-expanded={roleMenu} aria-controls="role-options" onClick={() => setRoleMenu(!roleMenu)}>{route.role === 'employer' ? 'Работодатель' : 'Кандидат'}<ChevronDown size={15} /></button>
+          {roleMenu && <><button className="menu-dismiss" tabIndex={-1} aria-label="Закрыть выбор роли" onClick={() => setRoleMenu(false)} /><div className="role-menu" id="role-options">
+            {(['employer', 'candidate'] as const).map(role => <button key={role} onClick={() => navigate(role, navigation[role][0].page)}>{role === 'employer' ? 'Работодатель' : 'Кандидат'}{route.role === role && <Check size={15} />}</button>)}
+          </div></>}
+        </div>
+      </>}</div>
     </div></header>
     <main id="main-content" className="main-content" key={route.role + ':' + page}>
       {!persistence.ready ? <div className="panel empty-state"><p role="status">Загружаем ваши данные…</p>{persistence.error && <><p role="alert">{persistence.error}</p><button className="button secondary" onClick={persistence.retry}>Повторить загрузку</button></>}</div> : <>
@@ -153,7 +238,8 @@ export function App() {
       {page === 'invitations' && <Invitations state={state} candidates={candidates} role={route.role} update={setState} notify={setToast} onProfile={onProfile} />}
       {page === 'company' && <Company state={state} update={setState} notify={setToast} />}
       {page === 'profile' && <Profile state={state} update={setState} notify={setToast} onTest={() => navigate('candidate', 'assessment')} onPreview={() => onProfile(state.profile)} />}
-      {page === 'onboarding' && <Onboarding state={state} update={setState} onComplete={() => navigate('candidate', 'assessment')} />}
+      {page === 'onboarding' && <Onboarding state={state} update={setState} onComplete={() => navigate('candidate', 'assessment')}
+        accountPrefill={authAccount?.role === 'candidate' ? { name: authAccount.name, email: authAccount.email } : undefined} />}
       {page === 'assessment' && <Assessment state={state} update={setState} notify={setToast} onProfile={() => navigate('candidate', 'profile')} onSurvey={() => navigate('candidate', 'onboarding')} />}
       </>}
     </main>
