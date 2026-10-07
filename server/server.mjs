@@ -9,6 +9,9 @@ import { DirectoryService } from './directory.mjs';
 import { PlatformService } from './platform.mjs';
 import { MarketplaceService } from './marketplace.mjs';
 import { AuthError, AuthService } from './auth.mjs';
+import { IntegrationService } from './integrations/service.mjs';
+import { claimRoutes } from './integrations/claims-http.mjs';
+import { callbackPage, readWebhook, integrationRoutes } from './integrations/http.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const cookieName = 'predel_session';
@@ -21,12 +24,13 @@ const mime = {
   '.json': 'application/json; charset=utf-8', '.txt': 'text/plain; charset=utf-8',
 };
 
-export function createAssessmentServer({ dbPath = resolve(root, 'server/data/assessment.sqlite'), now = Date.now, webOrigin = process.env.WEB_ORIGIN, secureCookie = process.env.COOKIE_SECURE === '1', distPath = resolve(root, 'frontend/dist'), authEnv = process.env, authMailer, authCodeTtlMinutes, authSessionDays } = {}) {
+export function createAssessmentServer({ dbPath = resolve(root, 'server/data/assessment.sqlite'), now = Date.now, webOrigin = process.env.WEB_ORIGIN, secureCookie = process.env.COOKIE_SECURE === '1', distPath = resolve(root, 'frontend/dist'), authEnv = process.env, authMailer, authCodeTtlMinutes, authSessionDays, integrationOptions = {} } = {}) {
   const store = openStore(dbPath);
   const directory = new DirectoryService(dbPath);
   const platform = new PlatformService(directory.store, store, { now });
   const marketplace = new MarketplaceService(directory.store, { now });
   const auth = new AuthService(dbPath, { now, env: authEnv, mailer: authMailer, codeTtlMinutes: authCodeTtlMinutes, sessionDays: authSessionDays });
+  const integrations = new IntegrationService(directory.store, { dbPath, env: authEnv, now, ...integrationOptions });
   const limits = new Map();
   function send(response, status, value) {
     response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
@@ -101,8 +105,18 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
         if (origin && !allowed.has(origin)) throw new RequestError(403, 'Источник запроса не разрешён.');
         if (request.method === 'GET' && url.pathname === '/api/health') return send(response, 200, { status: 'ok' });
         if (request.method === 'GET' && url.pathname === '/api/assessment/program') return send(response, 200, programInfo(url.searchParams.get('specialization'), url.searchParams.get('grade')));
+        if (url.pathname === '/api/integrations/openapi.json' && request.method === 'GET') {
+          return send(response, 200, JSON.parse(await readFile(resolve(root, 'docs/api/integrations.openapi.json'), 'utf8')));
+        }
+        if (url.pathname === '/api/integrations/fsp/callback' && request.method === 'GET') return callbackPage(response);
+        if (url.pathname === '/api/integrations/fsp/webhook' && request.method === 'POST') {
+          limit('integration-webhook:' + request.socket.remoteAddress, 60, 60000);
+          return send(response, 202, integrations.webhook(await readWebhook(request), request.headers));
+        }
         const identity = owner(request, response);
         const session = identity.owner;
+        if (await claimRoutes({ request, response, url, identity, integrations, body, send, limit })) return;
+        if (await integrationRoutes({ request, response, url, identity, integrations, body, send, limit })) return;
         if (url.pathname === '/api/auth/register/request-code') {
           if (request.method !== 'POST') throw new RequestError(405, 'Метод не поддерживается.');
           limit('auth-code-ip:' + request.socket.remoteAddress, 12, 600000);
@@ -150,11 +164,13 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
             }
           }
           if (request.method === 'GET') return send(response, 200, platform.read(session));
-          if (request.method === 'DELETE') return send(response, 200, platform.delete(session));
+          if (request.method === 'DELETE') { integrations.removeOwner(session); return send(response, 200, platform.delete(session)); }
           if (request.method === 'PUT') {
             const input = await body(request, 1000000);
             if (Object.keys(input).some(key => !['state', 'baseRevision'].includes(key))) throw new RequestError(400, 'Недопустимые поля запроса.');
-            return send(response, 200, platform.save(session, input.state, input.baseRevision, identity.account?.role || null));
+            const saved = platform.save(session, input.state, input.baseRevision, identity.account?.role || null);
+            if (saved.state && !saved.state.profile.consent) { integrations.removeOwner(session); return send(response, 200, platform.read(session)); }
+            return send(response, 200, saved);
           }
           throw new RequestError(405, 'Метод не поддерживается.');
         }
@@ -248,7 +264,7 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
       }
       if (!['GET', 'HEAD'].includes(request.method)) throw new RequestError(405, 'Метод не поддерживается.');
       const path = decodeURIComponent(url.pathname);
-      const file = ['/', '/app', '/auth', '/privacy'].includes(path) ? resolve(distPath, 'index.html') : resolve(distPath, '.' + path);
+      const file = ['/', '/app', '/auth', '/privacy', '/moderation'].includes(path) ? resolve(distPath, 'index.html') : resolve(distPath, '.' + path);
       const within = relative(distPath, file);
       if (within.startsWith('..') || within.includes(':') || !mime[extname(file)]) throw new RequestError(404, 'Страница не найдена.');
       let content;
@@ -263,8 +279,8 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
   });
   server.requestTimeout = 15000;
   server.headersTimeout = 10000;
-  server.on('close', () => { auth.close(); directory.close(); store.close(); });
-  return { server, store, directory, platform, marketplace, auth };
+  server.on('close', () => { integrations.close(); auth.close(); directory.close(); store.close(); });
+  return { server, store, directory, platform, marketplace, auth, integrations };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

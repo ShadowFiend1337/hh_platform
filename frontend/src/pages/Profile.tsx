@@ -5,6 +5,7 @@ import { FormHeader } from './Company';
 import { MAX_STACK_SKILLS, resumeTextLimits } from '../../../shared/resume-limits';
 import { employmentTypes } from '../../../shared/search.ts';
 import { deriveExperienceMonths, deriveLanguageCodes } from '../candidate-preferences';
+import { IntegrationPanel } from '../components/IntegrationPanel';
 
 function sameValues(left: string[], right: string[]) {
   const leftValues = new Set(left);
@@ -12,9 +13,10 @@ function sameValues(left: string[], right: string[]) {
   return leftValues.size === rightValues.size && [...leftValues].every(value => rightValues.has(value));
 }
 
-export function Profile({ state, update, notify, onTest, onPreview }: {
+export function Profile({ state, update, notify, onTest, onPreview, accountId }: {
   state: PlatformState; update: (fn: (state: PlatformState) => PlatformState) => void;
   notify: (message: string) => void; onTest: () => void; onPreview: () => void;
+  accountId?: string;
 }) {
   const [fspId, setFspId] = useState(state.profile.fspId);
   const [consent, setConsent] = useState(state.profile.consent);
@@ -109,7 +111,7 @@ export function Profile({ state, update, notify, onTest, onPreview }: {
         <div className="section-divider" />
         <FormHeader title="ФСП" Icon={Medal} />
         <label className="field"><span>ID участника</span><input value={fspId} maxLength={100} onChange={event => setFspId(event.target.value)} placeholder="Необязательно" /></label>
-        {fspId && <p className="field-help">Привязка ожидает проверки</p>}
+        {fspId && <p className="field-help">Указанный вручную ID требует проверки. Для подтверждения аккаунта подключите ФСП в разделе «Внешние подтверждения».</p>}
         <div className="section-divider" />
         <label className="checkbox-field"><input type="checkbox" disabled={!consent} checked={visible && consent} onChange={event => setVisible(event.target.checked)} /><span>Показывать профиль работодателям</span></label>
         <label className="checkbox-field"><input type="checkbox" checked={consent} onChange={event => { setConsent(event.target.checked); if (!event.target.checked) setVisible(false); }} /><span>Согласен на обработку персональных данных</span></label>
@@ -118,6 +120,7 @@ export function Profile({ state, update, notify, onTest, onPreview }: {
         <div className="form-actions"><button type="submit" className="button primary">Сохранить изменения</button></div>
       </form>
       <aside className="profile-sidebar">
+        <IntegrationPanel accountId={accountId} consent={profile.consent} />
         <section className="panel category-panel"><h2 className="sr-only">Подтверждённая категория</h2><p className="muted">{specializationLabels[profile.confirmed?.specialization || profile.specialization]}</p>
           <div className="category-status"><BadgeCheck size={20} /><div><span className="field-caption">Подтверждённый грейд</span><strong>{profile.confirmed ? gradeLabels[profile.confirmed.grade] : 'Не подтверждён'}</strong></div></div>
           {profile.confirmed && <div className="category-score" aria-label={'Результат теста: ' + profile.confirmed.score + ' из 100'}><strong>{profile.confirmed.score}<span>/100</span></strong></div>}

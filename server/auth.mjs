@@ -116,9 +116,10 @@ export async function passwordMatches(value, stored) {
   return derived.length === expected.length && timingSafeEqual(derived, expected);
 }
 
-function accountPayload(row) {
+function accountPayload(row, canModerate = false) {
   return {
     id: row.id,
+    canModerate,
     email: row.email,
     login: row.login,
     role: row.role,
@@ -148,6 +149,14 @@ export class AuthStore {
         platform_owner TEXT NOT NULL UNIQUE,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
+      ) STRICT;
+      CREATE TABLE IF NOT EXISTS auth_moderator_grants (
+        account_id TEXT PRIMARY KEY REFERENCES auth_accounts(id) ON DELETE CASCADE,
+        granted_at TEXT NOT NULL, granted_by TEXT NOT NULL
+      ) STRICT;
+      CREATE TABLE IF NOT EXISTS auth_moderator_audit (
+        id INTEGER PRIMARY KEY, account_id TEXT NOT NULL, action TEXT NOT NULL,
+        actor TEXT NOT NULL, created_at TEXT NOT NULL
       ) STRICT;
       CREATE TABLE IF NOT EXISTS auth_pending_registrations (
         email TEXT PRIMARY KEY,
@@ -257,6 +266,15 @@ export class AuthStore {
       .run(tokenHash, accountId, createdAt, expiresAt);
   }
 
+  canModerate(accountId) { return Boolean(this.db.prepare('SELECT 1 FROM auth_moderator_grants WHERE account_id=?').get(accountId)); }
+  setModerator(accountId, enabled, actor = 'local-operator', nowText = new Date().toISOString()) {
+    if (!this.db.prepare('SELECT 1 FROM auth_accounts WHERE id=?').get(accountId)) throw new AuthError(404, 'Аккаунт не найден.');
+    this.transaction(() => {
+      if (enabled) this.db.prepare('INSERT INTO auth_moderator_grants VALUES(?,?,?) ON CONFLICT(account_id) DO NOTHING').run(accountId,nowText,actor);
+      else this.db.prepare('DELETE FROM auth_moderator_grants WHERE account_id=?').run(accountId);
+      this.db.prepare('INSERT INTO auth_moderator_audit(account_id,action,actor,created_at) VALUES(?,?,?,?)').run(accountId,enabled ? 'grant' : 'revoke',actor,nowText);
+    });
+  }
   revokeSession(tokenHash) { this.db.prepare('DELETE FROM auth_sessions WHERE token_hash=?').run(tokenHash); }
 
   close() { this.db.close(); }
@@ -535,18 +553,18 @@ export class AuthService {
     const raw = randomBytes(32).toString('hex');
     const now = this.now();
     this.store.createSession(account.id, hash(raw), timestamp(() => now), new Date(now + this.sessionMs).toISOString());
-    return { token: raw, maxAge: Math.floor(this.sessionMs / 1000), account: accountPayload(account) };
+    return { token: raw, maxAge: Math.floor(this.sessionMs / 1000), account: accountPayload(account, this.store.canModerate(account.id)) };
   }
 
   accountForToken(token) {
     if (typeof token !== 'string' || !/^[a-f0-9]{64}$/u.test(token)) return null;
     const account = this.store.accountBySession(hash(token), timestamp(this.now));
-    return account ? { account: accountPayload(account), platformOwner: account.platform_owner } : null;
+    return account ? { account: accountPayload(account, this.store.canModerate(account.id)), platformOwner: account.platform_owner } : null;
   }
 
   accountForPlatformOwner(platformOwner) {
     const account = this.store.accountByPlatformOwner(platformOwner);
-    return account ? accountPayload(account) : null;
+    return account ? accountPayload(account, this.store.canModerate(account.id)) : null;
   }
 
   revokeToken(token) {

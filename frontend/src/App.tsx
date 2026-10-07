@@ -3,6 +3,7 @@ import { Check, ChevronDown, X } from 'lucide-react';
 import { Employer } from './pages/Employer';
 import { Company } from './pages/Company';
 import { Invitations } from './pages/Invitations';
+import { Moderation } from './pages/Moderation';
 import { Profile } from './pages/Profile';
 import { Assessment } from './pages/Assessment';
 import { Onboarding } from './pages/Onboarding';
@@ -25,7 +26,7 @@ const navigation: Record<Role, { page: Page; label: string }[]> = {
 };
 
 type AppRoute = { role: Role; page: Page; home: boolean; privacy: boolean; auth: AuthMode | null };
-type AuthAccount = { id: string; login: string; email: string; role: Role; name?: string; companyName?: string };
+type AuthAccount = { canModerate?: boolean; id: string; login: string; email: string; role: Role; name?: string; companyName?: string };
 const accountCacheKey = 'predel:account:v1';
 
 function clearLocalPlatformCache() {
@@ -83,6 +84,9 @@ export function App() {
   if (!identity.ready) return <main className="main-content"><div className="panel empty-state">
     {identity.error ? <><p role="alert">{identity.error}</p><button className="button secondary" onClick={() => setRetry(value => value + 1)}>Повторить</button></> : <p role="status">Загружаем…</p>}
   </div></main>;
+  if (location.pathname === '/moderation') return identity.account?.canModerate
+    ? <Moderation accountId={identity.account.id} role={identity.account.role} />
+    : <main className="main-content"><div className="panel empty-state"><h1>Модерация достижений</h1><p>Для доступа требуется назначенное право модератора.</p><a href={identity.account ? '/app?role='+identity.account.role : '/auth?mode=login'}>Вернуться в кабинет</a></div></main>;
   return <Workspace key={identity.account?.id || 'anonymous'} authAccount={identity.account} />;
 }
 
@@ -247,7 +251,7 @@ function Workspace({ authAccount }: { authAccount: AuthAccount | null }) {
       <nav className="main-nav" aria-label="Основная навигация">{(route.role === 'candidate' && !candidateStarted ? [{ page: 'onboarding' as Page, label: 'Анкета' }, { page: 'assessment' as Page, label: 'Тестирование' }] : navigation[route.role]).map(item =>
         <a href={'?role=' + route.role + '&tab=' + item.page} key={item.page} aria-current={page === item.page ? 'page' : undefined}
           onClick={event => { event.preventDefault(); navigate(route.role, item.page); }}>{item.label}{item.page === 'invitations' && pending > 0 && <span className="nav-count">{pending}</span>}</a>,
-      )}</nav>
+      )}{authAccount?.canModerate && <a href="/moderation">Модерация</a>}</nav>
       <div className="header-account">{authAccount ? <>
         <span className="app-account-name" title={authAccount.login}>{authAccount.companyName || authAccount.name || authAccount.login}</span>
         <button className="app-signout" disabled={signingOut} onClick={() => void signOut()}>{signingOut ? 'Выходим…' : 'Выйти'}</button>
@@ -268,7 +272,7 @@ function Workspace({ authAccount }: { authAccount: AuthAccount | null }) {
       {page === 'candidates' && <Employer directoryRevision={persistence.directoryRevision} state={state} candidates={candidates} update={setState} onProfile={onProfile} onInvite={onInvite} notify={setToast} />}
       {page === 'invitations' && <Invitations state={state} candidates={candidates} role={route.role} update={setState} notify={setToast} onProfile={onProfile} syncStatus={persistence.status} revision={persistence.revision} />}
       {page === 'company' && <Company state={state} update={setState} notify={setToast} syncStatus={persistence.status} />}
-      {page === 'profile' && <Profile state={state} update={setState} notify={setToast} onTest={() => navigate('candidate', 'assessment')} onPreview={() => onProfile(state.profile)} />}
+      {page === 'profile' && <Profile state={state} update={setState} notify={setToast} accountId={authAccount?.id} onTest={() => navigate('candidate', 'assessment')} onPreview={() => onProfile(state.profile)} />}
       {page === 'onboarding' && <Onboarding state={state} update={setState} onComplete={() => navigate('candidate', 'assessment')}
         accountPrefill={authAccount?.role === 'candidate' ? { name: authAccount.name, email: authAccount.email } : undefined} />}
       {page === 'assessment' && <Assessment state={state} update={setState} notify={setToast} onProfile={() => navigate('candidate', 'profile')} onSurvey={() => navigate('candidate', 'onboarding')} />}

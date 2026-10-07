@@ -197,7 +197,8 @@ export class DirectoryStore {
       .run(person.id, owner, Number(person.synthetic === true), Number(person.visible === true), Number(person.consent === true), Number(eligible),
         person.confirmed?.specialization || person.specialization || '', person.confirmed?.grade || '', person.confirmed?.score || 0,
         person.city || '', person.industry || '', person.format || '', person.salaryFrom ?? null, person.salaryTo ?? null, person.experienceMonths ?? null,
-        person.employmentType || '', Number(Boolean(person.portfolio)), Number((person.achievements || []).length > 0), JSON.stringify(payload), document, textHash(document));
+        person.employmentType || '', Number(Boolean(person.portfolio)), Number(person.synthetic !== true && this.integrationCount
+          ? this.integrationCount(owner) > 0 : (person.achievements || []).length > 0), JSON.stringify(payload), document, textHash(document));
     this.replaceSkills(person.id, payload.stack || []);
     this.db.prepare('DELETE FROM directory_languages WHERE candidate_id=?').run(person.id);
     for (const language of new Set(person.languageCodes || [])) this.db.prepare('INSERT INTO directory_languages VALUES (?,?)').run(person.id, language);

@@ -1,0 +1,361 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Предлагаемый контракт ресурса ФСП для predel",
+    "version": "1.0.0",
+    "description": "Предложение команды, НЕ опубликованный официальный API ФСП. Требует согласования. Адаптер FspProvider ожидает этот формат. Base URL задаётся оператором. OIDC: Authorization Code + PKCE S256, nonce; scope openid profile fsp:achievements:read. Discovery issuer и endpoints находятся на одном origin. ID token RS256/JWKS; client_secret_post. subject в ресурсе равен sub ID token. Авторизация не является API достижений."
+  },
+  "servers": [
+    {
+      "url": "https://fsp-api.example.invalid",
+      "description": "Placeholder, заменить согласованным FSP_API_BASE_URL"
+    }
+  ],
+  "security": [
+    {
+      "bearerToken": []
+    }
+  ],
+  "paths": {
+    "/v1/me": {
+      "get": {
+        "operationId": "getFspIdentity",
+        "summary": "Идентичность текущего участника",
+        "responses": {
+          "200": {
+            "description": "Успешный ответ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Identity"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Токен недействителен"
+          },
+          "403": {
+            "description": "Нет прав"
+          },
+          "404": {
+            "description": "Участник не найден"
+          },
+          "429": {
+            "description": "Лимит запросов, Retry-After в секундах"
+          },
+          "503": {
+            "description": "Источник недоступен"
+          }
+        }
+      }
+    },
+    "/v1/me/achievements": {
+      "get": {
+        "operationId": "getFspAchievements",
+        "summary": "Полный снимок истории текущего участника с пагинацией",
+        "description": "Стабильные ID достижений. Пагинация должна возвращать согласованный полный снимок, включая явные отзывы при наличии. Пустая история: items:[], nextCursor:null. Отсутствие записи в завершённом снимке означает отзыв локального доказательства. Не более 20 страниц / 2000 записей. Получение частичного снимка или ошибка не заменяет предыдущий. sourceUrl — HTTPS без query и credentials. Дата — RFC3339. Неизвестная discipline сохраняется без inferred skills. Дополнительные поля игнорируются и не публикуются.",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 100
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 1000
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Успешный ответ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AchievementPage"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Токен недействителен"
+          },
+          "403": {
+            "description": "Нет согласованного scope"
+          },
+          "404": {
+            "description": "Участник не найден"
+          },
+          "429": {
+            "description": "Лимит запросов; Retry-After в секундах"
+          },
+          "503": {
+            "description": "Источник недоступен"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerToken": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    },
+    "schemas": {
+      "Identity": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "subject": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "fspId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        },
+        "required": [
+          "subject",
+          "fspId"
+        ]
+      },
+      "Achievement": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "discipline": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "result": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "place": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1000000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "participation": {
+            "type": "string",
+            "enum": [
+              "individual",
+              "team"
+            ]
+          },
+          "teamRole": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sourceUrl": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uri",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "revoked"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "discipline",
+          "occurredAt",
+          "result",
+          "place",
+          "participation",
+          "teamRole",
+          "sourceUrl",
+          "status"
+        ]
+      },
+      "AchievementPage": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "subject": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "fspId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Achievement"
+            },
+            "maxItems": 100
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "subject",
+          "fspId",
+          "items",
+          "nextCursor"
+        ]
+      }
+    }
+  },
+  "webhooks": {
+    "fspEvent": {
+      "post": {
+        "operationId": "receiveFspEvent",
+        "summary": "Принять подписанное событие ФСП",
+        "description": "HMAC-SHA256(secret, timestamp + \".\" + rawBody), окно ±300 секунд. Повтор того же ID и тех же байтов идемпотентен; изменённое тело с тем же ID — 409. Неизвестный участник также получает accepted. identity.revoked немедленно отзывает доказательства и удаляет локальные токены. Максимум 20 000 байт, 60 событий/минуту на IP. Требуется FSP_WEBHOOK_SECRET. Идентификаторы событий хранятся без срока удаления.",
+        "tags": [
+          "Integrations"
+        ],
+        "security": [],
+        "responses": {
+          "202": {
+            "description": "Событие принято"
+          },
+          "401": {
+            "description": "Подпись неверна или timestamp истёк"
+          },
+          "409": {
+            "description": "Тот же ID с другим payload"
+          },
+          "429": {
+            "description": "Частота событий превышена"
+          },
+          "503": {
+            "description": "Webhook не настроен"
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-Integration-Timestamp",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{10}$"
+            }
+          },
+          {
+            "name": "X-Integration-Signature",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^v1=[a-f0-9]{64}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "achievements.changed",
+                      "identity.revoked"
+                    ]
+                  },
+                  "subject": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  },
+                  "fspId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  }
+                },
+                "required": [
+                  "id",
+                  "type",
+                  "subject",
+                  "fspId"
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

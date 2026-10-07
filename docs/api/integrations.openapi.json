@@ -1,0 +1,3750 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "predel — API внешних подтверждений",
+    "version": "1.2.0",
+    "description": "Реализованные маршруты основного Node.js backend. Это спецификация модуля интеграций, не всего существующего API. Без внешнего контракта и доступа ФСП real-провайдер disabled; demo включён только вне production. Общий лимит /api — 180 запросов/минуту на IP; ошибки всегда {error:string}. API ответы no-store. Максимум запросов — 20 000 байт. Cookie Path=/api, HttpOnly, SameSite=Strict; Secure задаётся COOKIE_SECURE."
+  },
+  "servers": [
+    {
+      "url": "/"
+    }
+  ],
+  "paths": {
+    "/api/integrations/providers": {
+      "get": {
+        "operationId": "listProviders",
+        "summary": "Источники и их возможности",
+        "description": "",
+        "tags": [
+          "Integrations"
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Успешный ответ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "providers": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Provider"
+                      }
+                    }
+                  },
+                  "required": [
+                    "providers"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "405": {
+            "$ref": "#/components/responses/Error405"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error413"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          }
+        }
+      }
+    },
+    "/api/integrations": {
+      "get": {
+        "operationId": "listConnections",
+        "summary": "Подключения текущего кандидата",
+        "description": "Только зарегистрированный кандидат. Ответ содержит X-Platform-Identity.",
+        "tags": [
+          "Integrations"
+        ],
+        "security": [
+          {
+            "accountSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Успешный ответ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "connections": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Connection"
+                      }
+                    }
+                  },
+                  "required": [
+                    "connections"
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Platform-Identity": {
+                "description": "Для эндпоинтов кабинета кандидата — auth:<account.id>; отсутствует на /directory/{id}/evidence.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "405": {
+            "$ref": "#/components/responses/Error405"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error413"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          }
+        }
+      }
+    },
+    "/api/integrations/{provider}/connect": {
+      "post": {
+        "operationId": "connectProvider",
+        "summary": "Начать подключение источника",
+        "description": "Нужно сохранённое согласие профиля и отдельное consent:true. Для fsp возвращается URL OIDC с state, nonce, PKCE S256; для fsp-demo — подключение и задача. 10 запросов за 10 минут на владельца. scenario допускается только для демо. Статус 202 означает начало работы, а не подтверждение достижений.",
+        "tags": [
+          "Integrations"
+        ],
+        "security": [
+          {
+            "accountSession": []
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Успешный ответ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-Platform-Identity": {
+                "description": "Для эндпоинтов кабинета кандидата — auth:<account.id>; отсутствует на /directory/{id}/evidence.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "405": {
+            "$ref": "#/components/responses/Error405"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error413"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          }
+        },
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "fsp",
+                "fsp-demo"
+              ]
+            }
+          },
+          {
+            "name": "X-Platform-Identity",
+            "in": "header",
+            "required": true,
+            "description": "auth:<account.id> текущего аккаунта; получить из GET /api/integrations или /api/platform/state. Несовпадение возвращает 409.",
+            "schema": {
+              "type": "string",
+              "pattern": "^auth:.+$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectRequest"
+              },
+              "examples": {
+                "live": {
+                  "summary": "Подключить ФСП",
+                  "value": {
+                    "consent": true
+                  }
+                },
+                "demo": {
+                  "summary": "Демонстрация пустой истории",
+                  "value": {
+                    "consent": true,
+                    "scenario": "empty"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/integrations/fsp/callback": {
+      "get": {
+        "operationId": "fspCallbackBridge",
+        "summary": "Страница завершения OIDC",
+        "description": "Публичная HTML-страница. Удаляет query из адреса и выполняет одноимённый POST с same-origin cookie. Сохраняет SameSite=Strict. При успехе перенаправляет на /app?role=candidate&tab=profile. Не возвращает токены.",
+        "security": [],
+        "parameters": [
+          {
+            "name": "state",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "code",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "error",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Страница завершения",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          }
+        }
+      },
+      "post": {
+        "operationId": "completeFspConnection",
+        "summary": "Подтвердить подключение ФСП",
+        "description": "Только текущий кандидат. State связан с владельцем, живёт 10 минут и одноразовый; отсутствие или истечение — 400. Ошибка проверки внешнего аккаунта — 403. При уже связанной идентичности — 409. X-Platform-Identity не требуется: связь проверяется по state и владельцу. 20 запросов за 10 минут.",
+        "tags": [
+          "Integrations"
+        ],
+        "security": [
+          {
+            "accountSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Успешный ответ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallbackResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-Platform-Identity": {
+                "description": "Для эндпоинтов кабинета кандидата — auth:<account.id>; отсутствует на /directory/{id}/evidence.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "405": {
+            "$ref": "#/components/responses/Error405"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error413"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CallbackRequest"
+              },
+              "example": {
+                "state": "opaque-state-from-authorization",
+                "code": "one-time-authorization-code"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/integrations/{provider}/sync": {
+      "post": {
+        "operationId": "syncProvider",
+        "summary": "Поставить обновление в очередь",
+        "description": "Только кандидат с действующим согласием. Повтор во время queued/running возвращает ту же задачу. До 10 запросов за 10 минут. При успехе атомарно применяется полный снимок. Пропавшие достижения помечаются revoked.",
+        "tags": [
+          "Integrations"
+        ],
+        "security": [
+          {
+            "accountSession": []
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Успешный ответ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "job": {
+                      "$ref": "#/components/schemas/Job"
+                    }
+                  },
+                  "required": [
+                    "job"
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Platform-Identity": {
+                "description": "Для эндпоинтов кабинета кандидата — auth:<account.id>; отсутствует на /directory/{id}/evidence.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "405": {
+            "$ref": "#/components/responses/Error405"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error413"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          }
+        },
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "fsp",
+                "fsp-demo"
+              ]
+            }
+          },
+          {
+            "name": "X-Platform-Identity",
+            "in": "header",
+            "required": true,
+            "description": "auth:<account.id> текущего аккаунта; получить из GET /api/integrations или /api/platform/state. Несовпадение возвращает 409.",
+            "schema": {
+              "type": "string",
+              "pattern": "^auth:.+$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {},
+                "required": []
+              },
+              "example": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/integration-jobs/{id}": {
+      "get": {
+        "operationId": "readIntegrationJob",
+        "summary": "Прочитать свою задачу",
+        "description": "Чужая задача возвращает 404. Завершённые задачи очищаются через 30 дней.",
+        "tags": [
+          "Integrations"
+        ],
+        "security": [
+          {
+            "accountSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Успешный ответ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            },
+            "headers": {
+              "X-Platform-Identity": {
+                "description": "Для эндпоинтов кабинета кандидата — auth:<account.id>; отсутствует на /directory/{id}/evidence.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "405": {
+            "$ref": "#/components/responses/Error405"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error413"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ]
+      }
+    },
+    "/api/integrations/{provider}": {
+      "delete": {
+        "operationId": "disconnectProvider",
+        "summary": "Отключить источник и удалить его данные",
+        "description": "Удаляет локальные токены, доказательства и незавершённую авторизацию; активные задачи отменяются. Поздние ответы не публикуются. Отключение разрешено и для disabled/снятого с регистрации источника с существующим подключением. Повтор для известного источника возвращает 200. Отзыв токена на стороне провайдера не гарантируется.",
+        "tags": [
+          "Integrations"
+        ],
+        "security": [
+          {
+            "accountSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Успешный ответ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "disconnected"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Platform-Identity": {
+                "description": "Для эндпоинтов кабинета кандидата — auth:<account.id>; отсутствует на /directory/{id}/evidence.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "405": {
+            "$ref": "#/components/responses/Error405"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error413"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          }
+        },
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "fsp",
+                "fsp-demo"
+              ]
+            }
+          },
+          {
+            "name": "X-Platform-Identity",
+            "in": "header",
+            "required": true,
+            "description": "auth:<account.id> текущего аккаунта; получить из GET /api/integrations или /api/platform/state. Несовпадение возвращает 409.",
+            "schema": {
+              "type": "string",
+              "pattern": "^auth:.+$"
+            }
+          }
+        ]
+      }
+    },
+    "/api/profile/evidence": {
+      "get": {
+        "operationId": "readOwnEvidence",
+        "summary": "Все доказательства текущего кандидата",
+        "description": "Доказательства — серверные данные, редактирование анкеты их не создаёт. Демо и устаревшие записи не дают бонуса ФСП.",
+        "tags": [
+          "Integrations"
+        ],
+        "security": [
+          {
+            "accountSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Успешный ответ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvidenceList"
+                },
+                "example": {
+                  "items": [
+                    {
+                      "id": "e59638d2b4f2a5b9e02a531d4ffffbe78608c179ac38f8e7d16a7db0d33c2271",
+                      "provider": "fsp-demo",
+                      "externalRecordId": "demo-contest-2026",
+                      "title": "Демонстрационное соревнование ФСП",
+                      "discipline": "algorithms",
+                      "occurredAt": "2026-09-01T00:00:00.000Z",
+                      "result": "Вымышленный финалист",
+                      "place": 3,
+                      "participation": "individual",
+                      "teamRole": null,
+                      "sourceUrl": null,
+                      "status": "demo",
+                      "identityVerified": false,
+                      "checkedAt": "2026-10-07T16:34:48.911Z",
+                      "validUntil": "2026-10-14T16:34:48.911Z",
+                      "skills": [
+                        {
+                          "skill": "Алгоритмы",
+                          "scope": "individual_result",
+                          "ruleVersion": "fsp-discipline-v1"
+                        },
+                        {
+                          "skill": "Структуры данных",
+                          "scope": "individual_result",
+                          "ruleVersion": "fsp-discipline-v1"
+                        }
+                      ],
+                      "snapshotHash": "9c729b74b8dcb37366889308aaffa57987b70501bd658c49a91f2236a04e83db",
+                      "mappingVersion": "fsp-discipline-v1"
+                    }
+                  ],
+                  "mappingVersion": "fsp-discipline-v1"
+                }
+              }
+            },
+            "headers": {
+              "X-Platform-Identity": {
+                "description": "Для эндпоинтов кабинета кандидата — auth:<account.id>; отсутствует на /directory/{id}/evidence.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "405": {
+            "$ref": "#/components/responses/Error405"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error413"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          }
+        }
+      }
+    },
+    "/api/directory/{id}/evidence": {
+      "get": {
+        "operationId": "readCandidateEvidence",
+        "summary": "Разрешённые доказательства кандидата",
+        "description": "Владелец видит свои записи. Другие записи доступны только зарегистрированному работодателю при опубликованном профиле, согласии и подтверждённой категории. Нет доступа — 403/404. Для работодателя скрыты externalRecordId и snapshotHash. Гости получают 401.",
+        "tags": [
+          "Integrations"
+        ],
+        "security": [
+          {
+            "accountSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Успешный ответ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvidenceList"
+                }
+              }
+            },
+            "headers": {
+              "X-Platform-Identity": {
+                "description": "Для эндпоинтов кабинета кандидата — auth:<account.id>; отсутствует на /directory/{id}/evidence.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "405": {
+            "$ref": "#/components/responses/Error405"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error413"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 100
+            }
+          }
+        ]
+      }
+    },
+    "/api/integrations/fsp/webhook": {
+      "post": {
+        "operationId": "receiveFspEvent",
+        "summary": "Принять подписанное событие ФСП",
+        "description": "HMAC-SHA256(secret, timestamp + \".\" + rawBody), окно ±300 секунд. Повтор того же ID и тех же байтов идемпотентен; изменённое тело с тем же ID — 409. Неизвестный участник также получает accepted. identity.revoked немедленно отзывает доказательства и удаляет локальные токены. Максимум 20 000 байт, 60 событий/минуту на IP. Требуется FSP_WEBHOOK_SECRET. Идентификаторы событий хранятся без срока удаления.",
+        "tags": [
+          "Integrations"
+        ],
+        "security": [],
+        "responses": {
+          "202": {
+            "description": "Успешный ответ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "accepted"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "405": {
+            "$ref": "#/components/responses/Error405"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error413"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-Integration-Timestamp",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{10}$"
+            }
+          },
+          {
+            "name": "X-Integration-Signature",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^v1=[a-f0-9]{64}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookEvent"
+              },
+              "example": {
+                "id": "event-unique-id",
+                "type": "achievements.changed",
+                "subject": "oidc-subject",
+                "fspId": "participant-id"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/integrations/openapi.json": {
+      "get": {
+        "operationId": "integrationOpenapi",
+        "summary": "Получить эту спецификацию",
+        "description": "",
+        "tags": [
+          "Integrations"
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Успешный ответ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "405": {
+            "$ref": "#/components/responses/Error405"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error413"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          }
+        }
+      }
+    },
+    "/api/integrations/fsp-public/search": {
+      "get": {
+        "operationId": "searchPublicFspProtocols",
+        "summary": "Поиск по ФИО в публичных протоколах ФСП",
+        "tags": [
+          "Integrations"
+        ],
+        "security": [
+          {
+            "accountSession": []
+          }
+        ],
+        "description": "Только кандидат с сохранённым согласием профиля. Поиск полных слов без учёта порядка, регистра и ё/е. Лимит 30 запросов/минуту на аккаунт. coverage.complete=false: отсутствие совпадения не доказывает отсутствие участия. Записи никогда не прикрепляются к профилю автоматически и не меняют фильтр ФСП. OCR новых протоколов требует визуальной проверки. Произвольные URL источников не принимаются.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 5,
+              "maxLength": 100
+            },
+            "description": "Фамилия и имя полностью; отчество необязательно."
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "minimum": 1,
+              "maximum": 50
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "minimum": 0,
+              "maximum": 999999
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Совпадения имени в проверенной выгрузке. Не являются подтверждением владения аккаунтом, навыка или грейда.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicFspSearchResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "405": {
+            "$ref": "#/components/responses/Error405"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          }
+        }
+      }
+    },
+    "/api/achievement-claims": {
+      "get": {
+        "operationId": "listAchievementClaims",
+        "summary": "Мои заявки на привязку результатов",
+        "description": "Только владелец-кандидат. Изменения требуют X-Platform-Identity=auth:<account.id>. Заявка не подтверждает владение автоматически. После одобрения активное достижение доступно работодателю только по правилам публикации профиля.",
+        "tags": [
+          "AchievementClaims"
+        ],
+        "security": [
+          {
+            "accountSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Успешный ответ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "claims": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AchievementClaim"
+                      }
+                    }
+                  },
+                  "required": [
+                    "claims"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "405": {
+            "$ref": "#/components/responses/Error405"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error413"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          }
+        }
+      },
+      "post": {
+        "operationId": "createAchievementClaim",
+        "summary": "Отправить заявку на проверку",
+        "description": "Только владелец-кандидат. Изменения требуют X-Platform-Identity=auth:<account.id>. Заявка не подтверждает владение автоматически. После одобрения активное достижение доступно работодателю только по правилам публикации профиля. Нужно сохранённое согласие профиля и consent=true. Один файл до 2 МБ; тело запроса до 2 900 000 байт. Файл или подтверждающая ссылка обязательны. До 20 незавершённых заявок на владельца, до 10 отправок/10 минут.",
+        "tags": [
+          "AchievementClaims"
+        ],
+        "security": [
+          {
+            "accountSession": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Успешный ответ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AchievementClaim"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "405": {
+            "$ref": "#/components/responses/Error405"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error413"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClaimCreate"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/achievement-claims/{id}": {
+      "get": {
+        "operationId": "getAchievementClaim",
+        "summary": "Моя заявка",
+        "description": "Только владелец-кандидат. Изменения требуют X-Platform-Identity=auth:<account.id>. Заявка не подтверждает владение автоматически. После одобрения активное достижение доступно работодателю только по правилам публикации профиля.",
+        "tags": [
+          "AchievementClaims"
+        ],
+        "security": [
+          {
+            "accountSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Успешный ответ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AchievementClaim"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "405": {
+            "$ref": "#/components/responses/Error405"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error413"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ]
+      },
+      "put": {
+        "operationId": "reviseAchievementClaim",
+        "summary": "Дополнить и повторно отправить",
+        "description": "Только владелец-кандидат. Изменения требуют X-Platform-Identity=auth:<account.id>. Заявка не подтверждает владение автоматически. После одобрения активное достижение доступно работодателю только по правилам публикации профиля. Для pending, needs_info, rejected, withdrawn, revoked. Одобренную заявку нужно сначала отозвать. retainDocument=true сохраняет текущий файл; одновременно передавать новый document нельзя. Версия предотвращает потерю параллельных изменений.",
+        "tags": [
+          "AchievementClaims"
+        ],
+        "security": [
+          {
+            "accountSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Успешный ответ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AchievementClaim"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "405": {
+            "$ref": "#/components/responses/Error405"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error413"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClaimRevise"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "withdrawAchievementClaim",
+        "summary": "Отозвать заявку и убрать подтверждение",
+        "description": "Только владелец-кандидат. Изменения требуют X-Platform-Identity=auth:<account.id>. Заявка не подтверждает владение автоматически. После одобрения активное достижение доступно работодателю только по правилам публикации профиля. Отзыв не удаляет приватные материалы и историю: они используются для повторной подачи. Отзыв согласия профиля/удаление профиля удаляет заявки, материалы и историю.",
+        "tags": [
+          "AchievementClaims"
+        ],
+        "security": [
+          {
+            "accountSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Успешный ответ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AchievementClaim"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "405": {
+            "$ref": "#/components/responses/Error405"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error413"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "version": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "required": [
+                  "version"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/moderation/claims": {
+      "get": {
+        "operationId": "listModerationClaims",
+        "summary": "Очередь модерации",
+        "description": "Требуется назначенное серверным оператором право canModerate; роль candidate/employer сама его не даёт. Изменения требуют X-Platform-Identity=auth:<account.id>. Собственную заявку нельзя модерировать.",
+        "tags": [
+          "AchievementClaims"
+        ],
+        "security": [
+          {
+            "accountSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Успешный ответ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 50
+                    },
+                    "offset": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "claims": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AchievementClaim"
+                      }
+                    }
+                  },
+                  "required": [
+                    "total",
+                    "limit",
+                    "offset",
+                    "claims"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "405": {
+            "$ref": "#/components/responses/Error405"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error413"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "needs_info",
+                "approved",
+                "rejected",
+                "withdrawn",
+                "revoked"
+              ],
+              "default": "pending"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 999999
+            }
+          }
+        ]
+      }
+    },
+    "/api/moderation/claims/{id}": {
+      "get": {
+        "operationId": "inspectModerationClaim",
+        "summary": "Материалы и история заявки",
+        "description": "Требуется назначенное серверным оператором право canModerate; роль candidate/employer сама его не даёт. Изменения требуют X-Platform-Identity=auth:<account.id>. Собственную заявку нельзя модерировать.",
+        "tags": [
+          "AchievementClaims"
+        ],
+        "security": [
+          {
+            "accountSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Успешный ответ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModerationClaim"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "405": {
+            "$ref": "#/components/responses/Error405"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error413"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ]
+      }
+    },
+    "/api/moderation/claims/{id}/decision": {
+      "post": {
+        "operationId": "decideAchievementClaim",
+        "summary": "Решение модератора",
+        "description": "Требуется назначенное серверным оператором право canModerate; роль candidate/employer сама его не даёт. Изменения требуют X-Platform-Identity=auth:<account.id>. Собственную заявку нельзя модерировать. approve для pending/needs_info/approved (повторная проверка); revoke только approved. reject/request_information для pending/needs_info. Обязательны обоснование, явное подтверждение принадлежности и способ проверки. Изменённый/недоступный источник и уже одобренная чужая привязка блокируют одобрение. Срок проверки принадлежности — 90 дней; изменения имени/протокола могут сделать подтверждение неактивным раньше. Грейд не меняется.",
+        "tags": [
+          "AchievementClaims"
+        ],
+        "security": [
+          {
+            "accountSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Успешный ответ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModerationClaim"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "405": {
+            "$ref": "#/components/responses/Error405"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error413"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClaimDecision"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/achievement-claims/{id}/attachment": {
+      "get": {
+        "operationId": "downloadClaimAttachmentCandidate",
+        "summary": "Приватное вложение заявки",
+        "description": "Только владелец-кандидат. Изменения требуют X-Platform-Identity=auth:<account.id>. Заявка не подтверждает владение автоматически. После одобрения активное достижение доступно работодателю только по правилам публикации профиля.",
+        "tags": [
+          "AchievementClaims"
+        ],
+        "security": [
+          {
+            "accountSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Файл только владельцу или назначенному модератору; Content-Disposition: attachment, no-store, nosniff. Факт скачивания записывается в аудит.",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "405": {
+            "$ref": "#/components/responses/Error405"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error413"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ]
+      }
+    },
+    "/api/moderation/claims/{id}/attachment": {
+      "get": {
+        "operationId": "downloadClaimAttachmentModerator",
+        "summary": "Приватное вложение заявки",
+        "description": "Требуется назначенное серверным оператором право canModerate; роль candidate/employer сама его не даёт. Изменения требуют X-Platform-Identity=auth:<account.id>. Собственную заявку нельзя модерировать.",
+        "tags": [
+          "AchievementClaims"
+        ],
+        "security": [
+          {
+            "accountSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Файл только владельцу или назначенному модератору; Content-Disposition: attachment, no-store, nosniff. Факт скачивания записывается в аудит.",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "405": {
+            "$ref": "#/components/responses/Error405"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error413"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ]
+      }
+    },
+    "/api/moderation/sources/{sourceId}/check": {
+      "post": {
+        "operationId": "checkPublicFspSource",
+        "summary": "Проверить хеш официального PDF",
+        "description": "Требуется назначенное серверным оператором право canModerate; роль candidate/employer сама его не даёт. Изменения требуют X-Platform-Identity=auth:<account.id>. Собственную заявку нельзя модерировать. Только зарегистрированные HTTPS PDF на fsp-russia.ru/upload/iblock. URL кандидата не загружаются. До 10 МБ, 10 секунд, редиректы запрещены; до 5 проверок/10 минут. Изменение/удаление/недоступность источника делает связанные подтверждения неактивными до успешной проверки. Новые данные требуют нового OCR и проверки каталога; этот endpoint не публикует результаты распознавания.",
+        "tags": [
+          "AchievementClaims"
+        ],
+        "security": [
+          {
+            "accountSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Успешный ответ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicSourceCheck"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "405": {
+            "$ref": "#/components/responses/Error405"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error413"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sourceId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 100,
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {},
+                "required": []
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "accountSession": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "predel_account_session"
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "Provider": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "enum": [
+              "fsp",
+              "fsp-demo"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "live",
+              "demo"
+            ]
+          },
+          "auth": {
+            "type": "string",
+            "enum": [
+              "oidc",
+              "demo"
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "achievements"
+              ]
+            }
+          },
+          "contractVersion": {
+            "type": "string",
+            "enum": [
+              "fsp-resource-v1"
+            ]
+          },
+          "scenarios": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "achievements",
+                "empty",
+                "not-found",
+                "unavailable",
+                "revoked"
+              ]
+            }
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "mode",
+          "auth",
+          "enabled",
+          "capabilities",
+          "contractVersion"
+        ]
+      },
+      "Connection": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "fsp",
+              "fsp-demo"
+            ]
+          },
+          "externalId": {
+            "type": "string"
+          },
+          "identityVerified": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "connected",
+              "error",
+              "reauthorization_required"
+            ]
+          },
+          "consentAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastSyncedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastError": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evidenceCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "activeJob": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Job"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "provider",
+          "externalId",
+          "identityVerified",
+          "status",
+          "consentAt",
+          "createdAt",
+          "lastSyncedAt",
+          "lastError",
+          "evidenceCount",
+          "activeJob"
+        ]
+      },
+      "Job": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "fsp",
+              "fsp-demo"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "succeeded",
+              "failed",
+              "cancelled"
+            ]
+          },
+          "attempts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 3
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "source_unavailable",
+                  "identity_not_found",
+                  "reauthorization_required",
+                  "invalid_source_response",
+                  "rate_limited",
+                  "invalid_identity",
+                  "identity_mismatch",
+                  "identity_revoked",
+                  "consent_revoked",
+                  "disconnected",
+                  "retry_exhausted"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resultCount": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "provider",
+          "status",
+          "attempts",
+          "createdAt",
+          "updatedAt",
+          "error",
+          "resultCount"
+        ]
+      },
+      "SkillEvidence": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "skill": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "individual_result",
+              "team_result"
+            ]
+          },
+          "ruleVersion": {
+            "type": "string",
+            "enum": [
+              "fsp-discipline-v1"
+            ]
+          }
+        },
+        "required": [
+          "skill",
+          "scope",
+          "ruleVersion"
+        ]
+      },
+      "Evidence": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "fsp",
+              "fsp-demo",
+              "fsp-public"
+            ]
+          },
+          "externalRecordId": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 300
+          },
+          "discipline": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "result": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "place": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1000000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "participation": {
+            "type": "string",
+            "enum": [
+              "individual",
+              "team"
+            ]
+          },
+          "teamRole": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sourceUrl": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uri",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "verified",
+              "unverified",
+              "demo",
+              "stale",
+              "revoked"
+            ]
+          },
+          "identityVerified": {
+            "type": "boolean"
+          },
+          "checkedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "validUntil": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "skills": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SkillEvidence"
+            }
+          },
+          "snapshotHash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "mappingVersion": {
+            "type": "string",
+            "enum": [
+              "fsp-discipline-v1"
+            ]
+          },
+          "verificationMethod": {
+            "const": "manual_review",
+            "description": "У публичных протоколов принадлежность проверена модератором платформы; это не авторизация ФСП ID."
+          }
+        },
+        "required": [
+          "id",
+          "provider",
+          "title",
+          "discipline",
+          "occurredAt",
+          "result",
+          "place",
+          "participation",
+          "teamRole",
+          "sourceUrl",
+          "status",
+          "identityVerified",
+          "checkedAt",
+          "validUntil",
+          "skills",
+          "mappingVersion"
+        ]
+      },
+      "EvidenceList": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Evidence"
+            }
+          },
+          "mappingVersion": {
+            "type": "string",
+            "enum": [
+              "fsp-discipline-v1"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "mappingVersion"
+        ]
+      },
+      "ConnectRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "consent": {
+            "const": true
+          },
+          "scenario": {
+            "type": "string",
+            "enum": [
+              "achievements",
+              "empty",
+              "not-found",
+              "unavailable",
+              "revoked"
+            ]
+          }
+        },
+        "required": [
+          "consent"
+        ]
+      },
+      "ConnectResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "authorizationUrl": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uri"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "connection": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Connection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "job": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Job"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "authorizationUrl",
+          "expiresAt",
+          "connection",
+          "job"
+        ]
+      },
+      "CallbackRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "state": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "code": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "state"
+        ]
+      },
+      "CallbackResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "connection": {
+            "$ref": "#/components/schemas/Connection"
+          },
+          "job": {
+            "$ref": "#/components/schemas/Job"
+          }
+        },
+        "required": [
+          "connection",
+          "job"
+        ]
+      },
+      "WebhookEvent": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "achievements.changed",
+              "identity.revoked"
+            ]
+          },
+          "subject": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "fspId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "subject",
+          "fspId"
+        ]
+      },
+      "PublicFspRecord": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "sourceId": {
+            "type": "string"
+          },
+          "participantName": {
+            "type": "string"
+          },
+          "place": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "solvedTasks": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "completionTime": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Числовое значение столбца «Время выполнения задач». Единица в протоколе не указана; не переводим в минуты."
+          },
+          "region": {
+            "type": "string"
+          },
+          "participation": {
+            "const": "individual"
+          },
+          "role": {
+            "const": "athlete"
+          },
+          "sourcePage": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "extractionConfidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "extractionStatus": {
+            "const": "reviewed"
+          },
+          "identityVerified": {
+            "const": false
+          },
+          "status": {
+            "const": "unverified"
+          },
+          "title": {
+            "type": "string"
+          },
+          "discipline": {
+            "type": "string"
+          },
+          "occurredOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "sourceUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "documentHash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "sourceReviewedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "sourceId",
+          "participantName",
+          "place",
+          "solvedTasks",
+          "completionTime",
+          "region",
+          "participation",
+          "role",
+          "sourcePage",
+          "extractionConfidence",
+          "extractionStatus",
+          "identityVerified",
+          "status",
+          "title",
+          "discipline",
+          "occurredOn",
+          "sourceUrl",
+          "documentHash",
+          "sourceReviewedAt"
+        ]
+      },
+      "PublicFspSearchResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "provider": {
+            "const": "fsp-public"
+          },
+          "status": {
+            "const": "unverified"
+          },
+          "identityVerified": {
+            "const": false
+          },
+          "checkedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "coverage": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "sources": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "records": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "complete": {
+                "const": false
+              }
+            },
+            "required": [
+              "sources",
+              "records",
+              "complete"
+            ]
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicFspRecord"
+            }
+          }
+        },
+        "required": [
+          "provider",
+          "status",
+          "identityVerified",
+          "checkedAt",
+          "coverage",
+          "total",
+          "limit",
+          "offset",
+          "items"
+        ]
+      },
+      "ClaimRecord": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "sourceId": {
+            "type": "string"
+          },
+          "participantName": {
+            "type": "string"
+          },
+          "place": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "solvedTasks": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "completionTime": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Числовое значение столбца «Время выполнения задач». Единица в протоколе не указана; не переводим в минуты."
+          },
+          "region": {
+            "type": "string"
+          },
+          "participation": {
+            "const": "individual"
+          },
+          "role": {
+            "const": "athlete"
+          },
+          "sourcePage": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "extractionConfidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "extractionStatus": {
+            "const": "reviewed"
+          },
+          "identityVerified": {
+            "const": false
+          },
+          "title": {
+            "type": "string"
+          },
+          "discipline": {
+            "type": "string"
+          },
+          "occurredOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "sourceUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "documentHash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "sourceReviewedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "sourceId",
+          "participantName",
+          "place",
+          "solvedTasks",
+          "completionTime",
+          "region",
+          "participation",
+          "role",
+          "sourcePage",
+          "extractionConfidence",
+          "extractionStatus",
+          "identityVerified",
+          "title",
+          "discipline",
+          "occurredOn",
+          "sourceUrl",
+          "documentHash",
+          "sourceReviewedAt"
+        ]
+      },
+      "ClaimDocumentInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1
+          },
+          "mediaType": {
+            "type": "string",
+            "enum": [
+              "application/pdf",
+              "image/png",
+              "image/jpeg"
+            ]
+          },
+          "dataBase64": {
+            "type": "string",
+            "contentEncoding": "base64",
+            "maxLength": 2800000,
+            "minLength": 1
+          }
+        },
+        "required": [
+          "name",
+          "mediaType",
+          "dataBase64"
+        ]
+      },
+      "ClaimDocument": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1
+          },
+          "mediaType": {
+            "type": "string",
+            "enum": [
+              "application/pdf",
+              "image/png",
+              "image/jpeg"
+            ]
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2000000
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        },
+        "required": [
+          "name",
+          "mediaType",
+          "size",
+          "sha256"
+        ]
+      },
+      "ClaimChecks": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "const": "fsp-claim-checks-v1"
+          },
+          "sourceStatus": {
+            "type": "string",
+            "enum": [
+              "matched",
+              "changed",
+              "missing",
+              "unavailable"
+            ]
+          },
+          "nameMatch": {
+            "type": "boolean"
+          },
+          "duplicateApproved": {
+            "type": "boolean"
+          },
+          "documentProvided": {
+            "type": "boolean"
+          },
+          "recommendation": {
+            "type": "string",
+            "enum": [
+              "blocked",
+              "request_information",
+              "manual_review"
+            ]
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ownershipAutomaticallyConfirmed": {
+            "const": false
+          }
+        },
+        "required": [
+          "version",
+          "sourceStatus",
+          "nameMatch",
+          "duplicateApproved",
+          "documentProvided",
+          "recommendation",
+          "reasons",
+          "ownershipAutomaticallyConfirmed"
+        ]
+      },
+      "PublicSourceCheck": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "sourceId": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1
+          },
+          "reviewedHash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "fetchedHash": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "matched",
+              "changed",
+              "missing",
+              "unavailable"
+            ]
+          },
+          "checkedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "sourceId",
+          "reviewedHash",
+          "fetchedHash",
+          "status",
+          "checkedAt"
+        ]
+      },
+      "ClaimAuditEvent": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "actorId": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "detail": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "id",
+          "actorId",
+          "action",
+          "version",
+          "createdAt",
+          "detail"
+        ]
+      },
+      "AchievementClaim": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "recordId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "needs_info",
+              "approved",
+              "rejected",
+              "withdrawn",
+              "revoked"
+            ]
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "candidateName": {
+            "type": "string"
+          },
+          "record": {
+            "$ref": "#/components/schemas/ClaimRecord"
+          },
+          "statement": {
+            "type": "string",
+            "maxLength": 3000,
+            "minLength": 20
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uri",
+              "maxLength": 1000,
+              "minLength": 8
+            },
+            "maxItems": 5
+          },
+          "document": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClaimDocument"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reviewedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "validUntil": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "decisionNote": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1500,
+                "minLength": 10
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "verificationMethod": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "document_review",
+                  "organizer_confirmation",
+                  "account_ownership"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "checks": {
+            "$ref": "#/components/schemas/ClaimChecks"
+          },
+          "sourceCheck": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PublicSourceCheck"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "recordId",
+          "status",
+          "version",
+          "candidateName",
+          "record",
+          "statement",
+          "links",
+          "document",
+          "createdAt",
+          "updatedAt",
+          "reviewedAt",
+          "validUntil",
+          "decisionNote",
+          "verificationMethod",
+          "active",
+          "checks",
+          "sourceCheck"
+        ]
+      },
+      "ModerationClaim": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "recordId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "needs_info",
+              "approved",
+              "rejected",
+              "withdrawn",
+              "revoked"
+            ]
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "candidateName": {
+            "type": "string"
+          },
+          "record": {
+            "$ref": "#/components/schemas/ClaimRecord"
+          },
+          "statement": {
+            "type": "string",
+            "maxLength": 3000,
+            "minLength": 20
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uri",
+              "maxLength": 1000,
+              "minLength": 8
+            },
+            "maxItems": 5
+          },
+          "document": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClaimDocument"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reviewedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "validUntil": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "decisionNote": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1500,
+                "minLength": 10
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "verificationMethod": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "document_review",
+                  "organizer_confirmation",
+                  "account_ownership"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "checks": {
+            "$ref": "#/components/schemas/ClaimChecks"
+          },
+          "sourceCheck": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PublicSourceCheck"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "currentCandidateName": {
+            "type": "string"
+          },
+          "verificationReference": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000,
+                "minLength": 20
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "audit": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ClaimAuditEvent"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "recordId",
+          "status",
+          "version",
+          "candidateName",
+          "record",
+          "statement",
+          "links",
+          "document",
+          "createdAt",
+          "updatedAt",
+          "reviewedAt",
+          "validUntil",
+          "decisionNote",
+          "verificationMethod",
+          "active",
+          "checks",
+          "sourceCheck",
+          "currentCandidateName",
+          "verificationReference",
+          "audit"
+        ]
+      },
+      "ClaimCreate": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "recordId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "consent": {
+            "const": true
+          },
+          "statement": {
+            "type": "string",
+            "maxLength": 3000,
+            "minLength": 20
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uri",
+              "maxLength": 1000,
+              "minLength": 8
+            },
+            "maxItems": 5
+          },
+          "document": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClaimDocumentInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "recordId",
+          "consent",
+          "statement",
+          "links"
+        ]
+      },
+      "ClaimRevise": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "consent": {
+            "const": true
+          },
+          "statement": {
+            "type": "string",
+            "maxLength": 3000,
+            "minLength": 20
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uri",
+              "maxLength": 1000,
+              "minLength": 8
+            },
+            "maxItems": 5
+          },
+          "document": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClaimDocumentInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "retainDocument": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "version",
+          "consent",
+          "statement",
+          "links"
+        ]
+      },
+      "ClaimDecision": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "version": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "decision": {
+                "const": "approve"
+              },
+              "reason": {
+                "type": "string",
+                "maxLength": 1500,
+                "minLength": 10
+              },
+              "ownershipConfirmed": {
+                "const": true
+              },
+              "verificationMethod": {
+                "type": "string",
+                "enum": [
+                  "document_review",
+                  "organizer_confirmation",
+                  "account_ownership"
+                ]
+              },
+              "verificationReference": {
+                "type": "string",
+                "maxLength": 2000,
+                "minLength": 20
+              }
+            },
+            "required": [
+              "version",
+              "decision",
+              "reason",
+              "ownershipConfirmed",
+              "verificationMethod",
+              "verificationReference"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "version": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "decision": {
+                "type": "string",
+                "enum": [
+                  "reject",
+                  "request_information",
+                  "revoke"
+                ]
+              },
+              "reason": {
+                "type": "string",
+                "maxLength": 1500,
+                "minLength": 10
+              }
+            },
+            "required": [
+              "version",
+              "decision",
+              "reason"
+            ]
+          }
+        ]
+      }
+    },
+    "responses": {
+      "Error400": {
+        "description": "Некорректный запрос или истёкшее состояние авторизации",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": "сообщение"
+            }
+          }
+        }
+      },
+      "Error401": {
+        "description": "Нет аккаунта или неверная подпись webhook",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": "сообщение"
+            }
+          }
+        }
+      },
+      "Error403": {
+        "description": "Недостаточно прав или внешний аккаунт не подтверждён",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": "сообщение"
+            }
+          }
+        }
+      },
+      "Error404": {
+        "description": "Ресурс недоступен владельцу",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": "сообщение"
+            }
+          }
+        }
+      },
+      "Error405": {
+        "description": "Метод не поддерживается",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": "сообщение"
+            }
+          }
+        }
+      },
+      "Error409": {
+        "description": "Нет согласия, источник уже связан или аккаунт изменился",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": "сообщение"
+            }
+          }
+        }
+      },
+      "Error413": {
+        "description": "Превышен размер запроса",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": "сообщение"
+            }
+          }
+        }
+      },
+      "Error415": {
+        "description": "Ожидается application/json",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": "сообщение"
+            }
+          }
+        }
+      },
+      "Error429": {
+        "description": "Превышена частота запросов",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": "сообщение"
+            }
+          }
+        }
+      },
+      "Error500": {
+        "description": "Внутренняя ошибка",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": "сообщение"
+            }
+          }
+        }
+      },
+      "Error503": {
+        "description": "Источник или webhook не настроен / недоступен",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": "сообщение"
+            }
+          }
+        }
+      }
+    }
+  }
+}

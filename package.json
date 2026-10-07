@@ -2,7 +2,9 @@
   "name": "predel",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=24.0.0" },
+  "engines": {
+    "node": ">=24.0.0"
+  },
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "dev:fastapi": "node scripts/dev.mjs --fastapi",
@@ -11,6 +13,7 @@
     "export:fastapi-data": "node scripts/export-fastapi-data.mjs",
     "build": "npm --prefix frontend run build",
     "test:server": "node --test server/tests/*.test.mjs",
+    "test:integrations-browser": "node frontend/tests/integrations.mjs",
     "test:auth": "node frontend/tests/auth.mjs",
     "test:browser": "npm --prefix frontend run test:browser",
     "test:assessment": "npm --prefix frontend run test:assessment",
@@ -31,6 +34,9 @@
     "check:search-model": "node scripts/ml.mjs check",
     "activate:search-model": "node scripts/ml.mjs activate",
     "test:search-quality": "node ml/search-regression.mjs --run --strict",
-    "validate:assessment": "node server/validate.mjs"
+    "validate:assessment": "node server/validate.mjs",
+    "import:fsp-public": "node scripts/import-fsp-public.mjs",
+    "moderator": "node scripts/moderator.mjs",
+    "test:moderation-browser": "node frontend/tests/moderation.mjs"
   }
 }
