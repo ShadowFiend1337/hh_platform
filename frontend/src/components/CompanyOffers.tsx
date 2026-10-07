@@ -93,7 +93,6 @@ export function CompanyOffers({ company, syncStatus = 'saved', notify }: {
       <p className="offer-salary">{money(offer.salaryFrom)}–{money(offer.salaryTo)} ₽ в месяц</p>
       <p className="body-copy offer-description">{offer.description}</p>
       <div className="tags">{offer.stack.map(skill => <span className="tag" key={skill}>{skill}</span>)}</div>
-      {offer.synthetic && <p className="field-help">Вымышленное демонстрационное предложение</p>}
       {offer.status === 'open' && <div className="offer-actions"><button className="button secondary" disabled={!ready || busy} onClick={() => openEditor(offer)}>Редактировать</button>
         <button className="button secondary" disabled={busy} onClick={() => { setError(''); setClosing(offer); }}>Закрыть позицию</button></div>}
     </article>)}</div>

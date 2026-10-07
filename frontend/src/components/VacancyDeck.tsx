@@ -143,7 +143,6 @@ export function VacancyDeck({ items, applied, onApply }: Props) {
       </div>
       <div className="swipe-person-top vacancy-deck-company">
         <div className="vacancy-deck-company-name"><div className="company-avatar" aria-hidden="true">{initials(current.company)}</div><span>{current.company}</span></div>
-        {current.synthetic && <span className="demo-label" title="Вымышленное демонстрационное предложение">Демо</span>}
       </div>
       <h2 className="vacancy-deck-title">{current.title}</h2>
       <p className="candidate-specialization vacancy-deck-specialization">{specializationLabels[current.specialization]}<span className="dot-divider">·</span>{gradeLabels[current.grade]}</p>

@@ -365,10 +365,11 @@ export class DirectoryService {
       const semanticScore=match?.score??null;
       const person=JSON.parse(row.public_payload);
       if (owner&&row.owner===owner) person.id='candidate-anna';
-      const evidence=match?parseSemanticSegments(row.document)[match.index]:person.bio||person.workHistory||person.professionalRole||'';
+      const evidence=(match?parseSemanticSegments(row.document)[match.index]:person.bio||person.workHistory||person.professionalRole||'')
+        .replace(/^Вымышленный проект /u, 'Проект ');
       const reasons=[embeddingQuery?`Похожие задачи в профиле: ${evidence.slice(0,350)}`:'Соответствует выбранным фильтрам.'];
       if (filters.salaryMax!==null) reasons.push(`Ожидания от ${row.salary_from.toLocaleString('ru-RU')} ₽ в месяц укладываются в бюджет.`);
-      if (person.synthetic) reasons.push('Вымышленный профиль; результат теста демонстрационный.');
+      if (person.synthetic) reasons.push(`Баллы теста ${row.score}/100.`);
       else reasons.push(`Результат серверного теста ${row.score}/100.`);
       return {person,semanticScore,rank:semanticScore??row.score,reason:reasons.join(' '),testScore:row.score,fsp:row.fsp,
         sourceId:row.id,documentHash:row.document_hash,publicPayload:row.public_payload,
@@ -454,7 +455,7 @@ export class DirectoryService {
           if (!row || row.document_hash!==item.documentHash || row.public_payload!==item.publicPayload
             || !this.currentVector(row,vectors.get(row.id))) return [];
           return [{...item,rerankerScore:sectionScores[winning],rank:maximum,
-            reason:[`Похожие задачи в профиле: ${item.taskSections[winning].slice(0,350)}`,...item.reasonSuffix].join(' ')}];
+            reason:[`Похожие задачи в профиле: ${item.taskSections[winning].replace(/^Вымышленный проект /u, 'Проект ').slice(0,350)}`,...item.reasonSuffix].join(' ')}];
         });
         items=eligible.filter(item=>item.rank>=(fusion?.threshold??stage.threshold));
         // A DEV applicability floor can offer a small nearest list only when

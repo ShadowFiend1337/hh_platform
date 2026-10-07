@@ -110,7 +110,7 @@ export function CandidateDeck({ items, decisions, favorites, loading, loadingMor
           {drag > 0 || flight === 'right' ? <Heart size={28} /> : <X size={28} />}
         </div>
         <div className="swipe-person-top"><div className="avatar swipe-avatar">{initials(current.person.name)}</div>
-          <div className="swipe-badges">{current.person.synthetic && <span className="directory-demo">Демо</span>}
+          <div className="swipe-badges">
             {current.person.achievements.length > 0 && <Medal size={18} aria-label="Есть достижения ФСП" />}</div>
         </div>
         <div className="swipe-person-heading"><button className="person-link" onClick={() => onProfile(current.person)}>{current.person.name}<ArrowUpRight size={19} /></button>

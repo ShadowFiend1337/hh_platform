@@ -232,20 +232,19 @@ export function Employer({ state, update, onProfile, onInvite, notify, directory
           onDecision={decide} onReset={resetPassed} onProfile={onProfile} onInvite={onInvite} pendingIds={pendingIds} />}
         {mode === 'list' && response?.items.map(({ person, reason }, index) => {
           const pending = state.invitations.some(invitation => invitation.companyId === state.company.id && invitation.candidateId === person.id && (invitation.status === 'sent' || invitation.status === 'viewed'));
-          const demo = Boolean(person.synthetic);
           const category = person.confirmed;
           const salaryFrom = typeof person.salaryFrom === 'number' && Number.isFinite(person.salaryFrom) ? person.salaryFrom : null;
           const salaryTo = typeof person.salaryTo === 'number' && Number.isFinite(person.salaryTo) ? person.salaryTo : null;
           return <article className="candidate-row" key={person.id}>
             <button className={'avatar avatar-tone-' + (index % 4)} onClick={() => onProfile(person)} aria-label={'Открыть профиль ' + person.name}>{initials(person.name)}</button>
             <div className="candidate-main">
-              <button className="person-link" onClick={() => onProfile(person)}>{person.name}{category && <BadgeCheck size={17} className="confirmed-icon" aria-label={demo ? 'Демонстрационная категория' : 'Категория подтверждена'} />}</button>{demo && <span className="directory-demo">Демо</span>}
+              <button className="person-link" onClick={() => onProfile(person)}>{person.name}{category && <BadgeCheck size={17} className="confirmed-icon" aria-label={person.synthetic ? 'Грейд' : 'Категория подтверждена'} />}</button>
               <p className="candidate-specialization">{specializationLabels[category?.specialization || person.specialization]}<span className="dot-divider">·</span>{category ? gradeLabels[category.grade] : 'Грейд не подтверждён'}</p>
               <span className="metadata"><MapPin size={13} />{person.city || 'Город не указан'}<span className="dot-divider">·</span>{person.experience}<span className="dot-divider">·</span>{person.format}</span>
               {(salaryFrom !== null || salaryTo !== null) && <p className="directory-salary">{salaryFrom !== null && salaryTo !== null ? amount(salaryFrom) + '–' + amount(salaryTo) : salaryFrom !== null ? 'от ' + amount(salaryFrom) : 'до ' + amount(salaryTo!)} ₽/мес.</p>}
               <div className="tags">{person.stack.slice(0, 4).map(skill => <span className="tag" key={skill}>{skill}</span>)}{person.achievements.length > 0 && <span className="tag fsp-tag"><Medal size={12} />ФСП</span>}</div>
             </div>
-            <div className="candidate-action"><div className="score-with-context"><div className="test-score" title={category ? (demo ? 'Демонстрационный результат теста' : 'Результат теста') + ': ' + category.score + ' из 100' : 'Тест не пройден'}><strong>{category?.score ?? '—'}<span>/100</span></strong></div><details className="match-details" name="matching"><summary aria-label={'Почему подходит ' + person.name} title="Почему подходит"><Info size={15} /></summary><p>{reason}</p></details></div>
+            <div className="candidate-action"><div className="score-with-context"><div className="test-score" title={category ? 'Баллы теста: ' + category.score + ' из 100' : 'Тест не пройден'}><strong>{category?.score ?? '—'}<span>/100</span></strong></div><details className="match-details" name="matching"><summary aria-label={'Почему подходит ' + person.name} title="Почему подходит"><Info size={15} /></summary><p>{reason}</p></details></div>
               <button className="button secondary compact" disabled={pending} onClick={() => onInvite(person)}>{pending ? 'Отправлено' : 'Пригласить'}</button>
             </div>
           </article>;
@@ -256,6 +255,5 @@ export function Employer({ state, update, onProfile, onInvite, notify, directory
         {pageError && <div className="directory-error" role="alert"><p>{pageError}</p><button className="button secondary compact" disabled={loading || loadingMore} onClick={() => void loadMore()}>Повторить загрузку</button></div>}
       </section>
     </div>
-    <p className="directory-demo-note">Профили с отметкой «Демо» вымышлены. Их грейды, достижения и результаты тестов приведены для демонстрации.</p>
   </>;
 }

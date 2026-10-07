@@ -2,7 +2,6 @@
 .vacancy-deck-company { align-items: center; gap: 12px; }
 .vacancy-deck-company-name { display: flex; align-items: center; gap: 12px; min-width: 0; color: var(--muted); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
 .vacancy-deck-company-name .company-avatar { flex-shrink: 0; }
-.vacancy-deck-company .demo-label { flex-shrink: 0; }
 .vacancy-deck-title { font-size: 25px; font-weight: 600; line-height: 1.3; letter-spacing: -.035em; overflow-wrap: anywhere; }
 .vacancy-deck-specialization { margin-top: 8px; color: var(--muted); font-size: 13px; line-height: 1.7; }
 .vacancy-deck-description .swipe-bio { white-space: pre-wrap; }

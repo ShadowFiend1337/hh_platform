@@ -194,7 +194,7 @@ function build(grade, modules) {
 export const embeddedPrograms = { Embedded: Object.fromEntries(Object.entries(authored).map(([grade, modules]) => [grade, build(grade, modules)])) };
 export const embeddedExamples = Object.entries(embeddedPrograms.Embedded).map(([grade, program]) => ({
   id: `embedded-example-${grade.toLowerCase()}`, title: `Embedded ${grade}`, specialization: 'Embedded', grade,
-  description: `Демонстрационный пример вакансии встраиваемых систем. Компетенции для проверки: ${[...new Set(program.families.flatMap(item => item.skills))].join(', ')}. Проектировать, измерять и отлаживать низковольтное электронное устройство в заданных условиях.`,
+  description: `Пример вакансии встраиваемых систем. Компетенции для проверки: ${[...new Set(program.families.flatMap(item => item.skills))].join(', ')}. Проектировать, измерять и отлаживать низковольтное электронное устройство в заданных условиях.`,
 }));
 export const embeddedSkillAliases = [
   ['C', String.raw`c|си|язык c`],

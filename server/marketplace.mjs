@@ -120,8 +120,10 @@ export class MarketplaceService {
       salaryFrom: row.salary_from, salaryTo: row.salary_to, currency: 'RUB', status: row.status, date: row.created_at, synthetic: Boolean(row.synthetic) };
   }
   companyDTO(row) {
+    const description = row.synthetic && row.owner === null
+      ? row.description.replace(/^Вымышленная (.)/u, (_match, first) => first.toLocaleUpperCase('ru')) : row.description;
     return { id: row.id, name: row.name, industry: row.industry, website: row.website, contact: row.contact,
-      description: row.description, synthetic: Boolean(row.synthetic), vacancies: this.vacancies(null, { companyId: row.id }).items };
+      description, synthetic: Boolean(row.synthetic), vacancies: this.vacancies(null, { companyId: row.id }).items };
   }
   companies({ offset = 0, limit = 12, q = '' } = {}) {
     if (!Number.isSafeInteger(offset) || offset < 0 || offset > 1000000 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) fail('Проверьте параметры страницы компаний.');

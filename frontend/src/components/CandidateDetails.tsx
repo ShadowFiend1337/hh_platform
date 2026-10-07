@@ -4,6 +4,14 @@ import { dateLabel, gradeLabels, initials, specializationLabels, type Candidate 
 export function CandidateDetails({ person, contacts, onInvite, contactNote = 'Откроются после принятия приглашения' }: {
   person: Candidate; contacts: boolean; onInvite?: () => void; contactNote?: string;
 }) {
+  const sectionText = (value?: string) => person.synthetic ? (value || '').split(/\r?\n/u)
+    .filter(line => !/^(?:Вымышленный демонстрационный профиль\.|Демонстрационный профиль:|Демонстрационные данные:|Результат демонстрационного проекта:)/u.test(line.trimStart()))
+    .join('\n').replace(/^Вымышленный проект /u, 'Проект ') : value;
+  const workHistory = sectionText(person.workHistory);
+  const careerAchievements = sectionText(person.careerAchievements);
+  const education = sectionText(person.education);
+  const achievements = person.achievements.filter(achievement => !person.synthetic
+    || !/демонстрац|вымышлен/iu.test(achievement.title + ' ' + achievement.result));
   return <div className="candidate-details">
     <div className="detail-person">
       <div className="avatar avatar-large">{initials(person.name)}</div>
@@ -18,12 +26,12 @@ export function CandidateDetails({ person, contacts, onInvite, contactNote = 'О
     </div>
     <section><h4>О себе</h4><p className="body-copy">{person.bio || 'Пока не заполнено'}</p></section>
     <section><h4>Стек</h4><div className="tags">{person.stack.map(skill => <span className="tag" key={skill}>{skill}</span>)}</div></section>
-    {person.workHistory && <section><h4>Места работы и проекты</h4><p className="body-copy resume-copy">{person.workHistory}</p></section>}
-    {person.careerAchievements && <section><h4>Достижения</h4><p className="body-copy resume-copy">{person.careerAchievements}</p></section>}
-    {person.education && <section><h4>Образование</h4><p className="body-copy resume-copy">{person.education}</p></section>}
+    {workHistory && <section><h4>Места работы и проекты</h4><p className="body-copy resume-copy">{workHistory}</p></section>}
+    {careerAchievements && <section><h4>Достижения</h4><p className="body-copy resume-copy">{careerAchievements}</p></section>}
+    {education && <section><h4>Образование</h4><p className="body-copy resume-copy">{education}</p></section>}
     {person.languages && <section><h4>Языки</h4><p className="body-copy resume-copy">{person.languages}</p></section>}
     <section><h4 className="inline-icon"><Medal size={17} />Достижения ФСП</h4>
-      {person.achievements.length ? person.achievements.map((achievement, index) => <div key={index} className="achievement"><strong>{achievement.title}</strong><span>{achievement.result} · {achievement.year}</span></div>)
+      {achievements.length ? achievements.map((achievement, index) => <div key={index} className="achievement"><strong>{achievement.title}</strong><span>{achievement.result} · {achievement.year}</span></div>)
         : <p className="muted">Истории ФСП пока нет</p>}
     </section>
     <section className="contact-section"><h4>Контакты</h4>

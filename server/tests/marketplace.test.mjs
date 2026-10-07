@@ -38,12 +38,12 @@ function fixture(t, { seeds = false } = {}) {
   return { store, assessments, platform, marketplace, setTime: value => { clock = value; } };
 }
 
-test('demo companies are marked fictional, cover every catalog role and keep legal salary ranges', t => {
+test('seed companies keep internal provenance, cover every catalog role and show concise descriptions', t => {
   const { store, marketplace } = fixture(t, { seeds: true });
   const companies = marketplace.companies().items;
   assert(companies.length >= 5);
   const vacancies = companies.flatMap(company => company.vacancies);
-  assert(companies.every(company => company.synthetic && company.description.includes('Вымышлен')));
+  assert(companies.every(company => company.synthetic && company.description && !/Вымышлен|демонстрац/iu.test(company.description)));
   assert(vacancies.every(vacancy => vacancy.synthetic && vacancy.currency === 'RUB' && vacancy.status === 'open'
     && vacancy.salaryFrom > 0 && vacancy.salaryFrom <= vacancy.salaryTo && isSpecialization(vacancy.specialization) && isGrade(vacancy.grade)));
   assert.deepEqual([...new Set(vacancies.map(vacancy => vacancy.specialization))].sort(), specializationOptions.map(item => item.value).sort());

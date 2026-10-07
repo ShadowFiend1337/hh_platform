@@ -59,7 +59,7 @@ export function Landing({ onStart }: { onStart: (role?: Role, query?: string) =>
       </section>
       <motion.section {...reveal} id="possibilities" className="showcase section-pad" aria-labelledby="showcaseTitle">
         <div className="section-heading"><h2 id="showcaseTitle">Сначала навыки.<br /><span className="text-muted">Затем знакомство.</span></h2></div>
-        <div className="showcase-browser"><div className="showcase-toolbar"><div className="browser-dots" aria-hidden="true"><i /><i /><i /></div><span className="mini-brand" aria-hidden="true">p</span><span className="showcase-label">Демо</span></div>
+        <div className="showcase-browser"><div className="showcase-toolbar"><div className="browser-dots" aria-hidden="true"><i /><i /><i /></div><span className="mini-brand" aria-hidden="true">p</span></div>
           <div className="showcase-body"><aside className="showcase-rail" aria-label="Примеры кабинетов">
             {variants.map((label, index) => <button key={label} className={variant === index ? 'selected' : ''} aria-label={label} aria-pressed={variant === index} onClick={() => setVariant(index)}><span>0{index + 1}</span><PlatformPreview variant={index} compact /></button>)}
           </aside><div className="showcase-main"><div className="demo-stage"><motion.div key={variant} initial={reduced ? false : { opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .3 }}><PlatformPreview variant={variant} onStart={onStart} /></motion.div></div><div className="showcase-status" aria-hidden="true"><span>0{variant + 1} / 03</span></div></div></div>

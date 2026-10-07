@@ -114,7 +114,7 @@ export function CompanyDirectory({ notify, onApplied, syncStatus }: {
           : <div className="empty-state"><Building2 size={32} /><h2>Предложения не найдены</h2>{query && <button className="text-button" onClick={() => setQuery('')}>Сбросить поиск</button>}</div>
         : filtered.length ? <div className="company-directory">
           {filtered.slice(0, limit).map(company => <article className="company-card" key={company.id}>
-            <div className="company-card-top"><div className="company-avatar">{initials(company.name)}</div>{company.synthetic && <span className="demo-label" title="Вымышленная компания и демонстрационные предложения">Демо</span>}</div>
+            <div className="company-card-top"><div className="company-avatar">{initials(company.name)}</div></div>
             <h2>{company.name}</h2><p className="company-industry">{company.industry}</p>
             <p className="company-description">{company.description}</p>
             <div className="company-card-bottom"><span className="muted">Предложений: {company.vacancies.length}</span>
@@ -128,13 +128,11 @@ export function CompanyDirectory({ notify, onApplied, syncStatus }: {
         <h3>{vacancy.title}</h3><Salary vacancy={vacancy} />
         <label className="field"><span>Сообщение</span><textarea name="message" rows={4} maxLength={2000} placeholder="Необязательно" disabled={sending} /></label>
         <p className="privacy-note">Компания получит ваш профиль и контакты.</p>
-        {vacancy.synthetic && <p className="muted">Демонстрационный отклик: предложение вымышленное.</p>}
         {applyError && <p className="offer-error" role="alert">{applyError}</p>}
         {syncStatus !== 'saved' && <p className="muted" role="status">{syncStatus === 'error' ? 'Сначала сохраните профиль.' : 'Сохраняем профиль…'}</p>}
         <div className="form-actions"><button className="button primary" type="submit" disabled={sending || syncStatus !== 'saved'}><Send size={16} />{sending ? 'Отправляем…' : 'Отправить отклик'}</button></div>
       </form> : selected && <div className="company-detail">
         <p className="muted">{selected.industry}</p><p className="company-detail-description">{selected.description}</p>
-        {selected.synthetic && <p className="muted company-demo-note">Вымышленная компания. Предложения для демонстрации.</p>}
         <div className="vacancy-list">{selected.vacancies.map(item => <article className="vacancy-card" key={item.id}>
           <h2>{item.title}</h2><Salary vacancy={item} />
           <div className="offer-meta"><span>{specializationLabels[item.specialization]}</span><span>{gradeLabels[item.grade]}</span>{item.city && <span className="inline-icon"><MapPin size={14} />{item.city}</span>}{item.format && <span>{item.format}</span>}</div>

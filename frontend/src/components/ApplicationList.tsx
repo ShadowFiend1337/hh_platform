@@ -104,7 +104,6 @@ export function ApplicationList({ role, revision = 0, notify, showEmpty = true, 
         <p className="field-help">Сохранённые условия предложения не меняются после отправки отклика.</p>
       </details>
       {application.message && <div className="application-message"><h4>Сообщение кандидата</h4><p className="body-copy">{application.message}</p></div>}
-      {application.synthetic && <p className="field-help">Вымышленный демонстрационный отклик</p>}
       <p className="field-caption">Отклик от <time dateTime={application.date}>{dateLabel(application.date)}</time>{application.respondedAt && <> · Ответ от <time dateTime={application.respondedAt}>{dateLabel(application.respondedAt)}</time></>}</p>
       {role === 'employer' && <div className="application-actions">
         {application.candidate && <><button className="button secondary" onClick={() => { void openProfile(application); }}>Профиль</button>

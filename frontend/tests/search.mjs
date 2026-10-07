@@ -126,9 +126,9 @@ try {
   assert.ok((await page.locator('.person-link').allTextContents()).some(name =>
     exampleResults.items.some(item => name.includes(item.person.name))));
   assert.match(await page.locator('.directory-interpretation').textContent(), /Зарплата до 200\s000 ₽/u);
-  assert.equal(await page.locator('.directory-demo').count(), exampleResults.items.length);
+  assert.equal(await page.locator('.directory-demo').count(), 0);
   await page.locator('.match-details').first().locator('summary').click();
-  assert.match(await page.locator('.match-details').first().locator('p').textContent(), /Вымышленный профиль/u);
+  assert.doesNotMatch(await page.locator('.match-details').first().locator('p').textContent(), /вымышлен|демонстрац/iu);
   await page.locator('.match-details').first().locator('summary').click();
   await page.getByRole('button', { name: 'Очистить поиск', exact: true }).click();
   await page.getByRole('combobox', { name: 'Специализация', exact: true }).selectOption('Embedded');
