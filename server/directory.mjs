@@ -252,13 +252,25 @@ export function interpretQuery(query, options) {
 }
 
 export class DirectoryService {
-  constructor(path, { seeds=[...directoryCandidates,...legacySeeds], encoder=new SemanticWorker() }={}) {
+  constructor(path, { seeds=[...directoryCandidates,...legacySeeds], encoder=new SemanticWorker(), accountForOwner }={}) {
     this.store=new DirectoryStore(path,seeds);
     this.encoder=encoder;
     this.indexing=null;
     this.queryCache=new Map();
+    this.accountForOwner=accountForOwner;
   }
-  options() { return {...this.store.options(),languages:languageOptions,employmentTypes}; }
+  accessible(owner, row) {
+    if (!this.accountForOwner) return true;
+    const account=this.accountForOwner(owner);
+    if (!account) return row.synthetic===1 && row.owner===null;
+    return account.role==='employer' && !row.synthetic && this.accountForOwner(row.owner)?.role==='candidate';
+  }
+  options(owner) {
+    if (!this.accountForOwner) return {...this.store.options(),languages:languageOptions,employmentTypes};
+    const rows=this.store.all().filter(row=>this.accessible(owner,row));
+    const unique=key=>[...new Set(rows.map(row=>row[key]).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'ru'));
+    return {cities:unique('city'),industries:unique('industry'),languages:languageOptions,employmentTypes};
+  }
   indexVersion() { return this.encoder.info.version + ':' + PROFILE_INDEX_POLICY; }
   currentVector(row, cached) {
     const dimension = parseSemanticSegments(row.document).length * this.encoder.info.dimension;
@@ -306,7 +318,7 @@ export class DirectoryService {
     if (typeof query!=='string'||query.length>1200 || !Number.isInteger(offset)||offset<0||offset>100000 || !Number.isInteger(limit)||limit<1||limit>50) throw new RequestError(400,'Некорректный запрос подбора.');
     query=query.trim();
     const filters=validateFilters(inputFilters);
-    const interpreted=interpretQuery(query,this.options());
+    const interpreted=interpretQuery(query,this.options(owner));
     const embeddingQuery=semanticQuery(query,interpreted);
     const rerankerQuery=semanticQuery(query,interpreted,{stripWrapper:false});
     for (const key of ['specialization','grade','format','city','language']) if (interpreted[key]&&!filters[key]) filters[key]=interpreted[key];
@@ -320,7 +332,8 @@ export class DirectoryService {
     // similarity, the model's availability or approximate admission scores.
     if (interpreted.unsupportedRole?.length) return {items:[],total:0,offset,limit,query,interpreted,effectiveFilters:filters,
       model:{...this.encoder.info,indexPolicy:PROFILE_INDEX_POLICY},warnings:[]};
-    let rows=this.store.matching(filters,interpreted.queryConstraints);
+    const matching=()=>this.store.matching(filters,interpreted.queryConstraints).filter(row=>this.accessible(owner,row));
+    let rows=matching();
     let vector=null, vectors=null;
     if (embeddingQuery) {
       try {
@@ -335,7 +348,7 @@ export class DirectoryService {
           this.queryCache.set(version+'\n'+embeddingQuery,vector);
         }
         // Visibility or profile contents may change while the encoder is busy.
-        rows=this.store.matching(filters,interpreted.queryConstraints);
+        rows=matching();
         if (rows.some(row => {
           const old=vectors.get(row.id);
           return !this.currentVector(row,old);
@@ -344,13 +357,13 @@ export class DirectoryService {
           // query inference without ranking obsolete document embeddings.
           await this.ensureIndex();
           vectors=this.store.vectors();
-          rows=this.store.matching(filters,interpreted.queryConstraints);
+          rows=matching();
         }
         if (version!==this.indexVersion()) {
           [vector]=await this.encodeStable([embeddingQuery]);
           if (this.queryCache.size>=128) this.queryCache.delete(this.queryCache.keys().next().value);
           this.queryCache.set(this.indexVersion()+'\n'+embeddingQuery,vector);
-          rows=this.store.matching(filters,interpreted.queryConstraints);
+          rows=matching();
           vectors=this.store.vectors();
         }
       } catch { throw new RequestError(503,'Поиск по смыслу недоступен. Повторите запрос или используйте фильтры без текста.'); }
@@ -444,7 +457,7 @@ export class DirectoryService {
         if (ranks.some(score=>!Number.isFinite(score))) throw new Error('Некорректная совместная оценка поиска.');
         // Never return an obsolete passage or a profile withdrawn while the
         // second neural stage was running. No mixed-model retry/fallback.
-        const fresh=new Map(this.store.matching(filters,interpreted.queryConstraints).map(row=>[row.id,row]));
+        const fresh=new Map(matching().map(row=>[row.id,row]));
         let offset=0;
         const eligible=shortlist.flatMap(item=>{
           const sectionScores=scores.slice(offset,offset+item.taskSections.length);

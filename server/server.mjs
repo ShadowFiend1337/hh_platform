@@ -23,10 +23,11 @@ const mime = {
 
 export function createAssessmentServer({ dbPath = resolve(root, 'server/data/assessment.sqlite'), now = Date.now, webOrigin = process.env.WEB_ORIGIN, secureCookie = process.env.COOKIE_SECURE === '1', distPath = resolve(root, 'frontend/dist'), authEnv = process.env, authMailer, authCodeTtlMinutes, authSessionDays } = {}) {
   const store = openStore(dbPath);
-  const directory = new DirectoryService(dbPath);
-  const platform = new PlatformService(directory.store, store, { now });
-  const marketplace = new MarketplaceService(directory.store, { now });
   const auth = new AuthService(dbPath, { now, env: authEnv, mailer: authMailer, codeTtlMinutes: authCodeTtlMinutes, sessionDays: authSessionDays });
+  const accountForOwner = owner => typeof owner === 'string' ? auth.accountForPlatformOwner(owner) : null;
+  const directory = new DirectoryService(dbPath, { accountForOwner });
+  const platform = new PlatformService(directory.store, store, { now, accountForOwner });
+  const marketplace = new MarketplaceService(directory.store, { now, accountForOwner });
   const limits = new Map();
   function send(response, status, value) {
     response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
@@ -160,7 +161,10 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
         }
         const contacts = /^\/api\/directory\/([^/]+)\/contacts$/.exec(url.pathname);
         if (request.method === 'GET' && contacts) return send(response, 200, platform.contacts(session, decodeURIComponent(contacts[1])));
-        if (request.method === 'GET' && url.pathname === '/api/directory/options') return send(response, 200, directory.options());
+        if (request.method === 'GET' && url.pathname === '/api/directory/options') {
+          if (identity.account?.role === 'candidate') throw new RequestError(403, 'Поиск кандидатов доступен работодателю.');
+          return send(response, 200, directory.options(session));
+        }
         if (request.method === 'GET' && url.pathname === '/api/directory/search') {
           if (identity.account?.role === 'candidate') throw new RequestError(403, 'Поиск кандидатов доступен работодателю.');
           let filters;
@@ -169,10 +173,10 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
           return send(response, 200, await directory.search(url.searchParams.get('q') || '', filters,
             { owner: session, limit: Number(url.searchParams.get('limit') || 30), offset: Number(url.searchParams.get('offset') || 0) }));
         }
-        if (request.method === 'GET' && url.pathname === '/api/companies') return send(response, 200, marketplace.companies({
+        if (request.method === 'GET' && url.pathname === '/api/companies') return send(response, 200, marketplace.companies({ owner: session,
           offset: Number(url.searchParams.get('offset') || 0), limit: Number(url.searchParams.get('limit') || 12), q: url.searchParams.get('q') || '' }));
         const company = /^\/api\/companies\/([^/]+)$/.exec(url.pathname);
-        if (request.method === 'GET' && company) return send(response, 200, marketplace.company(decodeURIComponent(company[1])));
+        if (request.method === 'GET' && company) return send(response, 200, marketplace.company(decodeURIComponent(company[1]), session));
         if (url.pathname === '/api/vacancies') {
           if (request.method === 'GET') {
             if (url.searchParams.get('own') === '1') allowRole(identity, 'employer', 'Вакансии компании доступны работодателю.');

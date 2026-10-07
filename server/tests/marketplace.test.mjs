@@ -254,20 +254,39 @@ test('vacancies, skills and immutable applications survive database reopen', t =
 });
 
 test('HTTP marketplace flow is session-owned, no-store and keeps contact access scoped to the applied company', async t => {
-  const service = createAssessmentServer({ dbPath: ':memory:' });
+  const codes = new Map();
+  const service = createAssessmentServer({ dbPath: ':memory:', authEnv: {}, authMailer: async ({ email, code }) => { codes.set(email, code); } });
   await new Promise(resolve => service.server.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise(resolve => { service.server.close(resolve); service.server.closeAllConnections(); }));
   const base = `http://127.0.0.1:${service.server.address().port}`;
   function session() {
-    let cookie;
+    const cookies = new Map();
+    let identity;
     return async (path, method = 'GET', input) => {
-      const response = await fetch(base + path, { method, headers: { ...(cookie ? { Cookie: cookie } : {}),
+      const response = await fetch(base + path, { method, headers: { Cookie: [...cookies].map(([key, token]) => `${key}=${token}`).join('; '),
+        ...(identity ? { 'X-Platform-Identity': identity } : {}),
         ...(input !== undefined ? { 'Content-Type': 'application/json' } : {}) }, body: input === undefined ? undefined : JSON.stringify(input) });
-      if (response.headers.get('set-cookie')) cookie = response.headers.get('set-cookie').split(';')[0];
+      for (const value of response.headers.getSetCookie()) {
+        const [key, token] = value.split(';')[0].split('=');
+        if (token) cookies.set(key, token); else cookies.delete(key);
+      }
+      identity = response.headers.get('x-platform-identity') || identity;
       return { status: response.status, data: await response.json(), cache: response.headers.get('cache-control') };
     };
   }
+  async function register(client, role, login) {
+    const email = `${login}@example.test`;
+    assert.equal((await client('/api/auth/register/request-code', 'POST', {
+      role, email, login, password: 'marketplace fixture password', consent: true,
+      ...(role === 'candidate' ? { name: 'Вымышленный кандидат' } : { companyName: 'Вымышленная компания' }),
+    })).status, 202);
+    assert.equal((await client('/api/auth/register/verify', 'POST', { email, code: codes.get(email) })).status, 201);
+    assert.equal((await client('/api/platform/state')).status, 200);
+  }
   const employerSession = session(), candidateSession = session(), outsiderSession = session();
+  await register(employerSession, 'employer', 'marketplace-owner');
+  await register(candidateSession, 'candidate', 'marketplace-candidate');
+  await register(outsiderSession, 'employer', 'marketplace-outsider');
   assert.equal((await employerSession('/api/vacancies', 'POST', valid())).status, 409);
   await employerSession('/api/platform/state', 'PUT', { state: state(), baseRevision: 0 });
   await candidateSession('/api/platform/state', 'PUT', { state: state(true), baseRevision: 0 });
@@ -282,7 +301,7 @@ test('HTTP marketplace flow is session-owned, no-store and keeps contact access 
   const personId = incoming.data.items[0].candidateId;
   assert.equal((await employerSession(`/api/directory/${personId}/contacts`)).status, 200);
   assert.equal((await outsiderSession(`/api/directory/${personId}/contacts`)).status, 403);
-  assert.equal((await candidateSession(`/api/applications/${applied.data.id}`, 'PATCH', { status: 'accepted' })).status, 404);
+  assert.equal((await candidateSession(`/api/applications/${applied.data.id}`, 'PATCH', { status: 'accepted' })).status, 403);
   assert.equal((await employerSession(`/api/applications/${applied.data.id}`, 'PATCH', { status: 'accepted' })).status, 200);
   assert.equal((await candidateSession('/api/applications?role=candidate')).data.items[0].status, 'accepted');
   const saved = (await candidateSession('/api/platform/state')).data;

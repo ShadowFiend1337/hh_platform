@@ -75,15 +75,29 @@ const demoCompanies = [
 ];
 
 export class MarketplaceService {
-  constructor(store, { now = () => Date.now(), seeds = true } = {}) {
+  constructor(store, { now = () => Date.now(), seeds = true, accountForOwner } = {}) {
     this.store = store; this.now = now;
+    this.accountForOwner = accountForOwner;
     store.db.function('marketplace_lower', { deterministic: true }, value => String(value || '').normalize('NFKC').toLocaleLowerCase('ru'));
     this.store.transaction(() => {
       for (const account of store.db.prepare('SELECT owner,company,public_id FROM platform_accounts').all()) {
-        syncMarketplaceCompany(store, account.owner, JSON.parse(account.company), account.public_id);
+        if (!accountForOwner || accountForOwner(account.owner)?.role === 'employer') {
+          syncMarketplaceCompany(store, account.owner, JSON.parse(account.company), account.public_id);
+        }
       }
       if (seeds) this.seed();
     });
+  }
+  companyAccessible(owner, company) {
+    if (!this.accountForOwner) return true;
+    if (!this.accountForOwner(owner)) return company.synthetic === 1 && company.owner === null;
+    return !company.synthetic && this.accountForOwner(company.owner)?.role === 'employer';
+  }
+  employer(owner) {
+    if (!this.accountForOwner) return;
+    const account = this.accountForOwner(owner);
+    if (!account) throw new RequestError(401, 'Войдите в аккаунт работодателя.');
+    if (account.role !== 'employer') throw new RequestError(403, 'Действие доступно работодателю.');
   }
   seed() {
     const created = '2026-10-01T09:00:00.000Z';
@@ -119,13 +133,13 @@ export class MarketplaceService {
       stack: this.store.db.prepare('SELECT skill FROM marketplace_vacancy_skills WHERE vacancy_id=? ORDER BY position').all(row.id).map(item => item.skill),
       salaryFrom: row.salary_from, salaryTo: row.salary_to, currency: 'RUB', status: row.status, date: row.created_at, synthetic: Boolean(row.synthetic) };
   }
-  companyDTO(row) {
+  companyDTO(row, owner) {
     const description = row.synthetic && row.owner === null
       ? row.description.replace(/^Вымышленная (.)/u, (_match, first) => first.toLocaleUpperCase('ru')) : row.description;
     return { id: row.id, name: row.name, industry: row.industry, website: row.website, contact: row.contact,
-      description, synthetic: Boolean(row.synthetic), vacancies: this.vacancies(null, { companyId: row.id }).items };
+      description, synthetic: Boolean(row.synthetic), vacancies: this.vacancies(owner, { companyId: row.id }).items };
   }
-  companies({ offset = 0, limit = 12, q = '' } = {}) {
+  companies({ offset = 0, limit = 12, q = '', owner } = {}) {
     if (!Number.isSafeInteger(offset) || offset < 0 || offset > 1000000 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) fail('Проверьте параметры страницы компаний.');
     const query = text(q, 400).normalize('NFKC').toLocaleLowerCase('ru');
     const args = [];
@@ -137,16 +151,16 @@ export class MarketplaceService {
             SELECT 1 FROM marketplace_vacancy_skills s WHERE s.vacancy_id=v.id AND instr(marketplace_lower(s.skill),?)>0))))`;
       args.push(query, query, query);
     }
-    const total = this.store.db.prepare(`SELECT COUNT(*) AS n FROM marketplace_companies c WHERE ${condition}`).get(...args).n;
     const rows = this.store.db.prepare(`SELECT c.* FROM marketplace_companies c WHERE ${condition}
-      ORDER BY c.synthetic,c.name,c.id LIMIT ? OFFSET ?`).all(...args, limit, offset);
-    return { items: rows.map(row => this.companyDTO(row)), total, offset, limit,
-      nextOffset: offset + rows.length < total ? offset + rows.length : null };
+      ORDER BY c.synthetic,c.name,c.id`).all(...args).filter(row => this.companyAccessible(owner, row));
+    const page = rows.slice(offset, offset + limit), total = rows.length;
+    return { items: page.map(row => this.companyDTO(row, owner)), total, offset, limit,
+      nextOffset: offset + page.length < total ? offset + page.length : null };
   }
-  company(companyId) {
+  company(companyId, owner) {
     const row = this.store.db.prepare('SELECT * FROM marketplace_companies WHERE id=?').get(id(companyId));
-    if (!row) throw new RequestError(404, 'Компания не найдена.');
-    return this.companyDTO(row);
+    if (!row || !this.companyAccessible(owner, row)) throw new RequestError(404, 'Компания не найдена.');
+    return this.companyDTO(row, owner);
   }
   vacancies(owner, { own = false, companyId = null } = {}) {
     if (own) this.account(owner, { required: false });
@@ -156,14 +170,15 @@ export class MarketplaceService {
     if (companyId) { extra = ' AND v.company_id=?'; args.push(id(companyId)); }
     const rows = this.store.db.prepare(`SELECT v.*,c.owner,c.name AS company_name,c.synthetic FROM marketplace_vacancies v
       JOIN marketplace_companies c ON c.id=v.company_id WHERE ${condition}${extra} ORDER BY v.created_at DESC,v.id LIMIT 1000`).all(...args);
-    return { items: rows.map(row => this.vacancyDTO(row)) };
+    return { items: rows.filter(row => this.companyAccessible(owner, row)).map(row => this.vacancyDTO(row)) };
   }
   vacancy(owner, vacancyId) {
     const row = this.row(vacancyId);
-    if (!row || row.status !== 'open' && row.owner !== owner) throw new RequestError(404, 'Вакансия недоступна.');
+    if (!row || !this.companyAccessible(owner, row) || row.status !== 'open' && row.owner !== owner) throw new RequestError(404, 'Вакансия недоступна.');
     return this.vacancyDTO(row);
   }
   publish(owner, input) {
+    this.employer(owner);
     const value = validateVacancy(input);
     return this.store.transaction(() => {
       const account = this.account(owner), company = JSON.parse(account.company);
@@ -184,6 +199,7 @@ export class MarketplaceService {
     stack.forEach((skill, position) => insert.run(vacancyId, position, skill));
   }
   edit(owner, vacancyId, input) {
+    this.employer(owner);
     object(input, [...vacancyFields, 'status']);
     const close = Object.keys(input).length === 1 && input.status === 'closed';
     const value = close ? null : validateVacancy(input);
@@ -213,12 +229,13 @@ export class MarketplaceService {
       status: row.status, date: row.created_at, respondedAt: row.responded_at, message: row.message, synthetic: Boolean(snapshot.synthetic) };
   }
   apply(owner, vacancyId, input = {}) {
+    if (this.accountForOwner?.(owner)?.role === 'employer') throw new RequestError(403, 'Откликаться может только соискатель.');
     const value = object(input, ['message']), message = text(value.message, 2000);
     return this.store.transaction(() => {
       const account = this.account(owner), person = JSON.parse(account.profile);
       if (!person.consent || !person.name || !person.email) fail('Заполните имя, email и согласие в профиле перед откликом.');
       const vacancy = this.row(vacancyId);
-      if (!vacancy) throw new RequestError(404, 'Вакансия не найдена.');
+      if (!vacancy || !this.companyAccessible(owner, vacancy)) throw new RequestError(404, 'Вакансия не найдена.');
       if (vacancy.owner === owner) throw new RequestError(403, 'Нельзя откликнуться на собственную вакансию.');
       if (vacancy.status !== 'open') throw new RequestError(409, 'Вакансия уже закрыта.');
       if (this.store.db.prepare('SELECT 1 FROM marketplace_applications WHERE vacancy_id=? AND candidate_owner=?').get(vacancy.id, owner)) throw new RequestError(409, 'Вы уже откликнулись на эту вакансию.');
@@ -233,18 +250,21 @@ export class MarketplaceService {
     this.account(owner, { required: false });
     if (!['candidate', 'employer'].includes(role)) fail('Выберите роль для просмотра откликов.');
     const condition = role === 'candidate' ? 'a.candidate_owner=?' : 'c.owner=?';
-    const rows = this.store.db.prepare(`SELECT a.* FROM marketplace_applications a JOIN marketplace_companies c ON c.id=a.company_id
+    const rows = this.store.db.prepare(`SELECT a.*,c.owner AS company_owner,c.synthetic AS company_synthetic FROM marketplace_applications a JOIN marketplace_companies c ON c.id=a.company_id
       WHERE ${condition} ORDER BY a.created_at DESC,a.id LIMIT 1000`).all(owner);
-    return { items: rows.map(row => this.applicationDTO(row, owner)) };
+    return { items: rows.filter(row => this.companyAccessible(owner, { owner: row.company_owner, synthetic: row.company_synthetic })
+      && (!this.accountForOwner || role === 'candidate' && row.candidate_owner === owner
+        || this.accountForOwner(row.candidate_owner)?.role === 'candidate')).map(row => this.applicationDTO(row, owner)) };
   }
   respond(owner, applicationId, input) {
+    this.employer(owner);
     const value = object(input, ['status']);
     if (!['accepted', 'rejected'].includes(value.status)) fail('Выберите принять или отклонить.');
     return this.store.transaction(() => {
       this.account(owner);
       const row = this.store.db.prepare(`SELECT a.*,c.owner FROM marketplace_applications a
         JOIN marketplace_companies c ON c.id=a.company_id WHERE a.id=?`).get(id(applicationId));
-      if (!row || row.owner !== owner) throw new RequestError(404, 'Отклик не найден.');
+      if (!row || row.owner !== owner || this.accountForOwner && this.accountForOwner(row.candidate_owner)?.role !== 'candidate') throw new RequestError(404, 'Отклик не найден.');
       if (row.status !== 'sent' && row.status !== value.status) throw new RequestError(409, 'Ответ на отклик уже сохранён.');
       if (row.status === 'sent') {
         const date = new Date(this.now()).toISOString();

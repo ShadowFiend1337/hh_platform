@@ -244,19 +244,36 @@ function proposal(input) {
 }
 
 export class PlatformService {
-  constructor(directoryStore, assessmentStore, { now = () => Date.now() } = {}) {
+  constructor(directoryStore, assessmentStore, { now = () => Date.now(), accountForOwner } = {}) {
     this.store = directoryStore; this.assessments = assessmentStore; this.now = now;
+    this.accountForOwner = accountForOwner;
+  }
+  candidateAccessible(owner, candidate) {
+    if (!candidate) return false;
+    if (!this.accountForOwner || candidate.owner === owner) return true;
+    const account = this.accountForOwner(owner);
+    if (!account) return candidate.synthetic === 1 && candidate.owner === null;
+    return account.role === 'employer' && !candidate.synthetic && this.accountForOwner(candidate.owner)?.role === 'candidate';
+  }
+  invitationAccessible(owner, invitation) {
+    if (!this.accountForOwner) return true;
+    const candidate = this.store.get(invitation.candidate_id);
+    if (invitation.sender === owner) return candidate?.owner !== owner && this.candidateAccessible(owner, candidate);
+    return candidate?.owner === owner && this.accountForOwner(owner)?.role === 'candidate'
+      && this.accountForOwner(invitation.sender)?.role === 'employer';
   }
   history(owner) {
     return this.assessments.completed(owner).filter(row => row.owner === owner && row.result).map(row => publicResult(row.result));
   }
   invitations(owner, id) {
     return this.store.db.prepare('SELECT * FROM platform_invitations WHERE sender=? OR candidate_id=? ORDER BY created_at,id').all(owner, id)
+      .filter(row => this.invitationAccessible(owner, row))
       .map(row => ({ ...JSON.parse(row.payload), candidateId: row.candidate_id === id ? ownCandidateId : row.candidate_id,
         companyId: row.sender === owner ? ownCompanyId : companyId(row.sender), status: row.status }));
   }
   candidateDecisions(owner) {
     return this.store.db.prepare('SELECT candidate_id,decision,created_at FROM platform_candidate_decisions WHERE owner=? ORDER BY created_at,candidate_id').all(owner)
+      .filter(row => this.candidateAccessible(owner, this.store.get(row.candidate_id)))
       .map(row => ({ candidateId: row.candidate_id, decision: row.decision, date: row.created_at }));
   }
   read(owner) {
@@ -278,7 +295,7 @@ export class PlatformService {
       ...state.candidateDecisions.filter(item => item.decision === 'liked').map(item => item.candidateId), ...applicants])];
     const directoryPeople = ids.flatMap(id => {
       const row = this.store.get(id);
-      if (!row || row.owner !== owner && (!row.consent || !applicantIds.has(id) && (!row.eligible || !row.visible))) return [];
+      if (!row || !this.candidateAccessible(owner, row) || row.owner !== owner && (!row.consent || !applicantIds.has(id) && (!row.eligible || !row.visible))) return [];
       return [publicCandidate(JSON.parse(row.public_payload), row.owner === owner ? ownCandidateId : row.id)];
     });
     const contactCandidateIds = directoryPeople.filter(person => applicantIds.has(person.id)
@@ -287,6 +304,7 @@ export class PlatformService {
   }
   save(owner, input, baseRevision, role = null) {
     ownerKey(owner);
+    if (this.accountForOwner) role = this.accountForOwner(owner)?.role || null;
     if (role !== null && role !== 'candidate' && role !== 'employer') throw new RequestError(403, 'Роль аккаунта недоступна.');
     if (!Number.isSafeInteger(baseRevision) || baseRevision < 0) fail('Некорректная версия данных.');
     const value = object(input, 'состояние');
@@ -356,7 +374,7 @@ export class PlatformService {
         const target = this.store.get(item.candidateId);
         if (item.candidateId === ownCandidateId || item.candidateId === id || target?.owner === owner) fail('Нельзя оценить собственный профиль.');
         const existing = storedDecisions.get(item.candidateId);
-        if (!target || (!existing || existing.decision !== item.decision) && (!target.eligible || !target.visible || !target.consent)) {
+        if (!target || !this.candidateAccessible(owner, target) || (!existing || existing.decision !== item.decision) && (!target.eligible || !target.visible || !target.consent)) {
           throw new RequestError(404, 'Кандидат недоступен для оценки.');
         }
         return { ...item, date: existing?.decision === item.decision ? existing.date : timestamp };
@@ -364,7 +382,7 @@ export class PlatformService {
       this.store.db.prepare(`INSERT INTO platform_accounts(owner,public_id,revision,profile,company,updated_at) VALUES(?,?,?,?,?,?)
         ON CONFLICT(owner) DO UPDATE SET revision=excluded.revision,profile=excluded.profile,company=excluded.company,updated_at=excluded.updated_at`)
         .run(owner, id, revision, JSON.stringify({ ...person, ...(selectedProof ? { _proofId: selectedProof.id } : {}) }), JSON.stringify(employer), timestamp);
-      if (role !== 'candidate') syncMarketplaceCompany(this.store, owner, employer, id);
+      if (this.accountForOwner ? role === 'employer' : role !== 'candidate') syncMarketplaceCompany(this.store, owner, employer, id);
       const eligible = Boolean(selectedProof && person.name && person.email && person.professionalRole && person.stack.length);
       this.store.upsert({ ...person, id }, owner, eligible);
       this.store.db.prepare('DELETE FROM platform_surveys WHERE owner=?').run(owner);
@@ -386,7 +404,8 @@ export class PlatformService {
         if (!existing) {
           if (role === 'candidate') throw new RequestError(403, 'Отправлять приглашения может только работодатель.');
           const candidate = this.store.get(target);
-          if (!candidate || !candidate.eligible || !candidate.visible || !candidate.consent) throw new RequestError(404, 'Кандидат недоступен для приглашения.');
+          if (!candidate || !this.candidateAccessible(owner, candidate) || this.accountForOwner && candidate.owner === owner
+            || !candidate.eligible || !candidate.visible || !candidate.consent) throw new RequestError(404, 'Кандидат недоступен для приглашения.');
           if (item.status !== 'sent') throw new RequestError(403, 'Работодатель может только отправить приглашение.');
           if (!employer.name) fail('Укажите название компании.');
           const payload = { ...item, candidateId: target, companyId: companyId(owner), company: employer.name, date: timestamp };
@@ -394,6 +413,7 @@ export class PlatformService {
           if (candidate.owner && candidate.owner !== owner) changedOwners.add(candidate.owner);
           continue;
         }
+        if (!this.invitationAccessible(owner, existing)) throw new RequestError(403, 'Приглашение недоступно этому аккаунту.');
         const candidate = this.store.get(existing.candidate_id);
         const recipient = candidate?.owner === owner;
         if (existing.sender !== owner && !recipient) throw new RequestError(403, 'Приглашение принадлежит другой сессии.');
@@ -417,6 +437,7 @@ export class PlatformService {
     const target = id === ownCandidateId ? own?.public_id : id;
     const candidate = target ? this.store.get(target) : null;
     if (!candidate?.owner) throw new RequestError(404, 'Контакты недоступны.');
+    if (!this.candidateAccessible(owner, candidate)) throw new RequestError(404, 'Контакты недоступны.');
     const account = this.store.db.prepare('SELECT * FROM platform_accounts WHERE owner=?').get(candidate.owner);
     if (!account) throw new RequestError(404, 'Контакты недоступны.');
     const person = JSON.parse(account.profile);
