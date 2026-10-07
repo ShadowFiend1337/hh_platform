@@ -23,6 +23,68 @@ export function isSpecialization(value: string): value is Specialization {
   return specializationOptions.some(item => item.value === value);
 }
 
+/** Supported IT team roles; shared by import and both profile forms. */
+export const professionalRoleOptions: string[] = [
+  'Frontend-разработчик', 'Backend-разработчик', 'Fullstack-разработчик', 'Разработчик ПО',
+  'Мобильный разработчик', 'Android-разработчик', 'iOS-разработчик', 'Разработчик Flutter',
+  'ML-инженер', 'Специалист по машинному обучению', 'Data Scientist', 'AI-инженер', 'Инженер компьютерного зрения', 'NLP-инженер',
+  'Аналитик данных', 'BI-аналитик', 'Продуктовый аналитик', 'Инженер данных', 'Архитектор данных',
+  'DevOps-инженер', 'SRE-инженер', 'Облачный инженер', 'Системный администратор',
+  'Инженер по тестированию', 'Инженер по автоматизации тестирования', 'Тестировщик',
+  'Специалист по информационной безопасности', 'Аналитик SOC', 'Пентестер', 'AppSec-инженер',
+  'UX/UI-дизайнер', 'UX-исследователь', 'Продуктовый дизайнер',
+  'Бизнес-аналитик', 'Системный аналитик', 'Бизнес и системный аналитик',
+  'Менеджер продукта', 'Владелец продукта', 'Менеджер ИТ-проектов', 'Scrum-мастер',
+  'Инженер встраиваемых систем и электроники', 'Разработчик прошивок', 'Инженер-схемотехник',
+  'Архитектор ПО', 'Технический руководитель', 'Руководитель команды разработки', 'Другая ИТ-роль',
+];
+
+export function normalizeProfessionalRole(role: string, specialization?: Specialization): string {
+  const normalized = role.normalize('NFKC').trim().replace(/[–—]/g, '-');
+  const exact = professionalRoleOptions.find(item => item.toLocaleLowerCase() === normalized.toLocaleLowerCase());
+  if (exact) return exact;
+  const statedRoles = specializationPatterns.filter(([, pattern]) => pattern.test(normalized));
+  if (statedRoles.length > 1 && !detectSpecialization(normalized)) return '';
+  const aliases: Array<[string, RegExp]> = [
+    ['ML-инженер', /ml[- ]?(?:engineer|инженер)/iu],
+    ['Разработчик прошивок', /firmware|прошив/iu], ['Инженер-схемотехник', /схемотехник/iu],
+    ['Android-разработчик', /android.*(?:developer|разработ)|(?:developer|разработ).*android/iu],
+    ['iOS-разработчик', /ios.*(?:developer|разработ)|(?:developer|разработ).*ios/iu],
+    ['Разработчик Flutter', /flutter.*(?:developer|разработ)|(?:developer|разработ).*flutter/iu],
+    ['Data Scientist', /data scientist|data science|дата[- ]сайентист/iu],
+    ['AI-инженер', /\bai[- ]?(?:engineer|инженер)/iu], ['NLP-инженер', /\bnlp[- ]?(?:engineer|инженер)/iu],
+    ['Инженер компьютерного зрения', /computer vision|компьютерн.*зрени/iu],
+    ['BI-аналитик', /bi[- ]?(?:analyst|аналитик)/iu], ['Продуктовый аналитик', /product analyst|продуктов.*аналитик/iu],
+    ['Архитектор данных', /data architect|архитектор данных/iu], ['SRE-инженер', /\bsre\b|site reliability/iu],
+    ['Облачный инженер', /cloud engineer|облачн.*инженер/iu], ['Системный администратор', /sysadmin|system administrator|системн.*администратор/iu],
+    ['Инженер по автоматизации тестирования', /automation.*(?:test|qa)|автоматизаци.*тест/iu],
+    ['Аналитик SOC', /soc.*(?:analyst|аналитик)/iu], ['Пентестер', /pentest|пентест/iu], ['AppSec-инженер', /appsec/iu],
+    ['UX-исследователь', /ux researcher|ux[- ]исследовател/iu], ['Продуктовый дизайнер', /product designer|продуктов.*дизайнер/iu],
+    ['Бизнес-аналитик', /business analyst|бизнес[- ]аналитик/iu], ['Системный аналитик', /systems? analyst|системн.*аналитик/iu],
+    ['Владелец продукта', /product owner|владелец продукта/iu], ['Менеджер ИТ-проектов', /project manager|менеджер.*проект|руководитель.*проект/iu],
+    ['Scrum-мастер', /scrum[- ]?master|скрам[- ]?мастер/iu], ['Архитектор ПО', /software architect|архитектор (?:по|программного)/iu],
+    ['Руководитель команды разработки', /team lead|тимлид|руководитель команды/iu], ['Технический руководитель', /tech lead|technical lead|технический руководитель/iu],
+  ];
+  const matched = aliases.filter(([, expression]) => expression.test(normalized));
+  if (matched.length === 1) return matched[0][0];
+  if (matched.length > 1) return '';
+  const stated = detectSpecialization(normalized);
+  if (stated) return specializationLabels[stated];
+  if (/^(?:разработчик|developer|software (?:engineer|developer|разработчик)|программист)$/iu.test(normalized)) {
+    return specialization ? specializationLabels[specialization] : 'Разработчик ПО';
+  }
+  return '';
+}
+
+export const softSkillOptions: string[] = [
+  'Коммуникация', 'Работа в команде', 'Самоорганизация', 'Решение задач', 'Лидерство',
+  'Критическое мышление', 'Аналитическое мышление', 'Креативность', 'Адаптивность',
+  'Ответственность', 'Внимание к деталям', 'Управление временем', 'Приоритизация',
+  'Проактивность', 'Обучаемость', 'Эмоциональный интеллект', 'Эмпатия', 'Переговоры',
+  'Публичные выступления', 'Обратная связь', 'Разрешение конфликтов', 'Наставничество',
+  'Принятие решений', 'Планирование', 'Стрессоустойчивость',
+];
+
 export const industryOptions: string[] = [
   'ИТ', 'Финансы', 'Страхование', 'Образование', 'Наука', 'Здравоохранение', 'Фармацевтика',
   'Промышленность', 'Энергетика', 'Нефть и газ', 'Телекоммуникации', 'Ритейл', 'Электронная коммерция',

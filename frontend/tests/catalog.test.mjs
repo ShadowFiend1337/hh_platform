@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { specializationOptions, specializationNames, industryOptions, detectSpecialization } from '../../shared/catalog.ts';
+import { specializationOptions, specializationNames, industryOptions, detectSpecialization, professionalRoleOptions, normalizeProfessionalRole, softSkillOptions } from '../../shared/catalog.ts';
 import { createInitialState, currentSurvey, emptyFilters } from '../src/model.ts';
 import { DirectoryStore } from '../../server/directory-store.mjs';
 
@@ -35,6 +35,27 @@ test('every displayed direction has a stable ID and matching professional label'
   assert.equal(detectSpecialization('Firmware engineer'), 'Embedded');
   assert.equal(detectSpecialization('Frontend для магазина электроники'), 'Frontend');
   assert.equal(detectSpecialization('C++ STM32'), undefined);
+});
+
+test('selectable IT roles cover each supported direction and preserve ambiguous input for review', () => {
+  assert.equal(professionalRoleOptions.length, 47);
+  assert.equal(new Set(professionalRoleOptions).size, 47);
+  for (const { role } of specializationOptions) assert.ok(professionalRoleOptions.includes(role), role);
+  assert.equal(normalizeProfessionalRole('Python Backend-разработчик'), 'Backend-разработчик');
+  assert.equal(normalizeProfessionalRole('Разработчик интерфейсов'), 'Frontend-разработчик');
+  assert.equal(normalizeProfessionalRole('SRE Engineer'), 'SRE-инженер');
+  assert.equal(normalizeProfessionalRole('Firmware engineer'), 'Разработчик прошивок');
+  assert.equal(normalizeProfessionalRole('Разработчик', 'Frontend'), 'Frontend-разработчик');
+  assert.equal(normalizeProfessionalRole('UX Designer / Backend Developer'), '');
+  assert.equal(normalizeProfessionalRole('Неизвестная должность'), '');
+});
+
+test('expanded optional self-assessment keeps the original skills and distinct new competencies', () => {
+  assert.equal(softSkillOptions.length, 25);
+  assert.equal(new Set(softSkillOptions).size, 25);
+  for (const skill of ['Коммуникация', 'Работа в команде', 'Самоорганизация', 'Решение задач', 'Лидерство',
+    'Критическое мышление', 'Наставничество', 'Разрешение конфликтов']) assert.ok(softSkillOptions.includes(skill), skill);
+  assert.deepEqual(createInitialState().profile.softSkills, [], 'The larger pool does not force self-assessment');
 });
 
 test('ML survey and matching keep category, technology and publication constraints', () => {

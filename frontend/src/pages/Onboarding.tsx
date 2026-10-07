@@ -22,6 +22,7 @@ const fieldLabels: Record<keyof ResumeFields, string> = {
   industry: 'Отрасль', professionalRole: 'Роль в команде', specialization: 'Специализация',
   desiredGrade: 'Предполагаемый грейд', experience: 'Общий стаж', softSkills: 'Софт-скиллы',
   workHistory: 'Места работы и проекты', careerAchievements: 'Достижения',
+  workExperiences: 'Опыт работы', petProjects: 'Pet-проекты', achievementItems: 'Достижения', interests: 'Интересы / дополнительно',
   education: 'Образование', stack: 'Стек', portfolio: 'Портфолио', languages: 'Языки', format: 'Формат работы',
 };
 
