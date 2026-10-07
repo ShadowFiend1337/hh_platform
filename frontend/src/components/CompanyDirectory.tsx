@@ -99,7 +99,6 @@ export function CompanyDirectory({ notify, onApplied, syncStatus }: {
   return <>
     <div className="page-heading company-directory-heading"><h1>{mode === 'deck' ? 'Найти предложения' : 'Найти компании'}</h1>
       <div className="directory-view-controls">
-        {!busy && !loadError && <span className="muted">{mode === 'deck' ? filteredOffers.length : filtered.length}</span>}
         <div className="directory-view-switch" role="group" aria-label="Вид предложений">
           <button aria-pressed={mode === 'list'} onClick={() => setMode('list')}>Обычный режим</button>
           <button aria-pressed={mode === 'deck'} onClick={() => setMode('deck')}>Предельный режим</button>
