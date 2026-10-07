@@ -339,7 +339,7 @@ fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
 .application-status { flex-shrink: 0; }
 .application-snapshot { color: var(--muted); font-size: 13px; margin-top: 14px; }
 .application-message { font-size: 14px; white-space: pre-wrap; margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--border); }
-.invitation-list { display: grid; grid-template-columns: minmax(0,1fr); gap: 22px; max-width: 940px; }
+.invitation-list { display: grid; grid-template-columns: minmax(0,1fr); gap: 22px; }
 .invitation-card { min-width: 0; padding: 28px 30px; background: #fff; border: 1px solid var(--border); border-radius: 11px; overflow-wrap: anywhere; }
 .invitation-top { display: flex; align-items: center; justify-content: space-between; gap: 15px; margin-bottom: 25px; }
 .invitation-top .invite-person { min-width: 0; }

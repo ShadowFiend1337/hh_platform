@@ -11,31 +11,49 @@ type Props = {
 };
 
 export function VacancyDeck({ items, applied, onApply }: Props) {
-  const [visited, setVisited] = useState<Set<string>>(() => new Set());
+  const [visited, setVisited] = useState<Set<string>>(() => new Set(applied));
   const [history, setHistory] = useState<string[]>([]);
   const [drag, setDrag] = useState(0);
   const [leaving, setLeaving] = useState(false);
   const [announcement, setAnnouncement] = useState('');
   const cardElement = useRef<HTMLElement | null>(null);
+  const replayElement = useRef<HTMLButtonElement | null>(null);
   const pointer = useRef<{ id: number; x: number; y: number; time: number; dx: number; horizontal: boolean } | null>(null);
   const timer = useRef<number | undefined>(undefined);
   const acting = useRef(false);
   const focusNext = useRef(false);
+  const previousApplied = useRef(applied);
   const helpId = useId();
   const current = items.find(item => !visited.has(item.id));
   const currentId = useRef(current?.id);
   currentId.current = current?.id;
   const position = current ? items.findIndex(item => item.id === current.id) + 1 : items.length;
   const sent = Boolean(current && applied.has(current.id));
-  const lastSkipped = [...history].reverse().find(id => items.some(item => item.id === id));
+  const lastVisited = [...history].reverse().find(id => items.some(item => item.id === id));
 
   useEffect(() => () => { window.clearTimeout(timer.current); }, []);
   useEffect(() => {
-    if (current && focusNext.current) {
-      cardElement.current?.focus({ preventScroll: true });
+    if (focusNext.current) {
+      const target = current ? cardElement.current : replayElement.current;
+      target?.focus({ preventScroll: true });
       focusNext.current = false;
     }
   }, [current?.id]);
+  useEffect(() => {
+    const previous = previousApplied.current;
+    previousApplied.current = applied;
+    if (!current || !applied.has(current.id) || previous.has(current.id)) return;
+    // Advance after the server accepted the application, keeping failed or
+    // cancelled forms on the same proposal and preserving review with undo.
+    window.clearTimeout(timer.current);
+    pointer.current = null;
+    acting.current = false;
+    focusNext.current = true;
+    setVisited(value => new Set(value).add(current.id));
+    setHistory(value => [...value, current.id]);
+    setDrag(0); setLeaving(false);
+    setAnnouncement('Отклик отправлен');
+  }, [applied, current?.id]);
 
   function skip() {
     if (!current || acting.current) return;
@@ -58,13 +76,13 @@ export function VacancyDeck({ items, applied, onApply }: Props) {
   }
 
   function undo() {
-    if (!lastSkipped || acting.current) return;
+    if (!lastVisited || acting.current) return;
     setVisited(previous => {
       const next = new Set(previous);
-      next.delete(lastSkipped);
+      next.delete(lastVisited);
       return next;
     });
-    setHistory(previous => previous.slice(0, previous.lastIndexOf(lastSkipped)));
+    setHistory(previous => previous.slice(0, previous.lastIndexOf(lastVisited)));
     setDrag(0);
     setAnnouncement('Последнее предложение возвращено');
   }
@@ -74,7 +92,7 @@ export function VacancyDeck({ items, applied, onApply }: Props) {
     pointer.current = null;
     setDrag(0);
     if (applied.has(current.id)) {
-      setAnnouncement('Отклик на это предложение уже отправлен');
+      skip();
       return;
     }
     cardElement.current?.focus({ preventScroll: true });
@@ -160,13 +178,13 @@ export function VacancyDeck({ items, applied, onApply }: Props) {
       </div>
     </article></div> : <div className="empty-state swipe-empty">
       <Send size={30} /><h3>{items.length ? 'Все предложения просмотрены' : 'Предложения не найдены'}</h3>
-      {items.length > 0 && <button className="button secondary" onClick={() => {
+      {items.length > 0 && <button ref={replayElement} className="button secondary" onClick={() => {
         setVisited(new Set()); setHistory([]); setDrag(0);
         setAnnouncement('Предложения доступны для повторного просмотра');
       }}>Посмотреть снова</button>}
     </div>}
     <div className="swipe-actions vacancy-deck-actions">
-      <button className="swipe-action swipe-undo" aria-label="Вернуть карточку" title="Вернуть карточку" disabled={!lastSkipped || leaving} onClick={undo}><RotateCcw size={19} /></button>
+      <button className="swipe-action swipe-undo" aria-label="Вернуть карточку" title="Вернуть карточку" disabled={!lastVisited || leaving} onClick={undo}><RotateCcw size={19} /></button>
       <button className="swipe-action swipe-pass" aria-label="Пропустить" title="Пропустить" disabled={!current || leaving} onClick={skip}><X size={27} /></button>
     </div>
   </div>;

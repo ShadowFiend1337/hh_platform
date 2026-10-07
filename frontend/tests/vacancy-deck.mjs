@@ -54,11 +54,11 @@ function application(vacancy, message = '') {
     vacancy: clone(vacancy), candidate: null, status: 'sent', date, respondedAt: null, message, synthetic: true };
 }
 
-async function session({ applied = [], ...options } = {}) {
+async function session({ applied = [], failNextApply = false, ...options } = {}) {
   const context = await browser.newContext({ viewport: { width: 1440, height: 1050 }, reducedMotion: 'reduce', ...options });
   contexts.push(context);
   const backend = { state: fixtureState(), revision: 1,
-    applications: applied.map(index => application(vacancyFixtures[index])), posts: [], companyGets: [], vacancyGets: 0 };
+    applications: applied.map(index => application(vacancyFixtures[index])), posts: [], companyGets: [], vacancyGets: 0, failNextApply };
   await context.route('**/api/**', async route => {
     const request = route.request(), url = new URL(request.url());
     if (url.pathname === '/api/auth/me') { await route.fulfill({ status: 401, json: { error: 'Гостевой кабинет.' } }); return; }
@@ -87,6 +87,10 @@ async function session({ applied = [], ...options } = {}) {
       const vacancy = vacancyFixtures.find(item => item.id === decodeURIComponent(url.pathname.split('/')[3]));
       assert.ok(vacancy, 'Only fixture jobs may receive a test application');
       backend.posts.push({ vacancyId: vacancy.id, body: clone(request.postDataJSON()) });
+      if (backend.failNextApply) {
+        backend.failNextApply = false;
+        await route.fulfill({ status: 503, json: { error: 'Не удалось отправить отклик.' } }); return;
+      }
       if (backend.applications.some(item => item.vacancyId === vacancy.id)) {
         await route.fulfill({ status: 409, json: { error: 'Отклик уже отправлен.' } }); return;
       }
@@ -206,10 +210,14 @@ try {
   await dialog.getByRole('button', { name: 'Отправить отклик', exact: true }).click();
   assert.equal((await sent).status(), 200);
   await dialog.waitFor({ state: 'hidden' });
+  await card(page, 2);
+  await counter(page, 3, 15);
   assert.equal(await page.locator('.swipe-card.vacancy-deck-card').evaluate(element => element === document.activeElement), true,
-    'After submitting, keyboard browsing can continue from the proposal card');
+    'After submitting, keyboard browsing can continue from the next proposal card');
+  await page.getByRole('button', { name: 'Вернуть карточку', exact: true }).click(); await card(page, 1);
   assert.equal(await page.getByRole('button', { name: 'Отклик отправлен', exact: true }).isDisabled(), true,
-    'A newly submitted proposal is immediately protected against duplicate applications');
+    'Returning to a submitted proposal does not allow a duplicate application');
+  await (await card(page, 1)).press('ArrowRight'); await card(page, 2);
   assert.deepEqual(backend.posts, [{ vacancyId: vacancyFixtures[1].id, body: { message: 'Тестовый отклик на отдельное предложение.' } }]);
   await mode(page, 'Обычный режим');
   assert.equal(await page.locator('.company-card').count(), 12);
@@ -219,6 +227,10 @@ try {
   await page.getByRole('button', { name: 'Найти компании', exact: true }).click();
   await page.locator('.swipe-card.vacancy-deck-card').waitFor();
   assert.equal(await page.getByRole('button', { name: 'Предельный режим', exact: true }).getAttribute('aria-pressed'), 'true', 'Refresh preserves proposal mode');
+  await card(page, 0);
+  await page.getByRole('button', { name: 'Пропустить', exact: true }).click(); await card(page, 2);
+  assert.deepEqual(backend.posts, [{ vacancyId: vacancyFixtures[1].id, body: { message: 'Тестовый отклик на отдельное предложение.' } }],
+    'Refresh resumes the feed without showing submitted proposals or sending another application');
   console.log('PASS Individual proposals, full descriptions, mouse and keyboard navigation, undo, explicit application and persisted mode');
 
   const pagination = await session();
@@ -252,13 +264,34 @@ try {
 
   const duplicate = await session({ applied: [0] });
   await mode(duplicate.page, 'Предельный режим');
-  const appliedCard = await card(duplicate.page, 0);
-  assert.equal(await appliedCard.getByRole('button', { name: 'Отклик отправлен', exact: true }).isDisabled(), true);
-  await appliedCard.press('ArrowRight'); await card(duplicate.page, 0);
-  assert.equal(await duplicate.page.getByRole('dialog').count(), 0, 'An applied proposal cannot open a duplicate application');
+  await card(duplicate.page, 1);
+  assert.equal(await duplicate.page.locator(`[data-vacancy-id="${vacancyFixtures[0].id}"]`).count(), 0,
+    'An existing application is omitted from the initial queue');
   assert.deepEqual(duplicate.backend.posts, []);
-  await duplicate.page.getByRole('button', { name: 'Пропустить', exact: true }).click(); await card(duplicate.page, 1);
-  console.log('PASS Existing applications stay visible and cannot be submitted twice');
+  console.log('PASS Existing applications do not block the queue or create duplicates');
+
+  const recovery = await session({ failNextApply: true });
+  await mode(recovery.page, 'Предельный режим'); await card(recovery.page, 0);
+  await recovery.page.getByRole('button', { name: 'Откликнуться', exact: true }).click();
+  const retryDialog = await applyForm(recovery.page, 0);
+  await retryDialog.getByRole('button', { name: 'Отправить отклик', exact: true }).click();
+  await retryDialog.getByRole('alert').waitFor();
+  await card(recovery.page, 0);
+  assert.deepEqual(recovery.backend.applications, [], 'An error must not mark a proposal as submitted');
+  await retryDialog.getByRole('button', { name: 'Отправить отклик', exact: true }).click();
+  await retryDialog.waitFor({ state: 'hidden' }); await card(recovery.page, 1);
+  assert.equal(recovery.backend.applications.length, 1, 'Retry creates exactly one application');
+  await recovery.page.getByRole('textbox', { name: 'Компания или направление', exact: true }).fill(vacancyFixtures[14].title);
+  await card(recovery.page, 14);
+  await recovery.page.getByRole('button', { name: 'Откликнуться', exact: true }).click();
+  const lastDialog = await applyForm(recovery.page, 14);
+  await lastDialog.getByRole('button', { name: 'Отправить отклик', exact: true }).click();
+  await lastDialog.waitFor({ state: 'hidden' });
+  await recovery.page.getByText('Все предложения просмотрены', { exact: true }).waitFor();
+  assert.equal(await recovery.page.getByRole('button', { name: 'Посмотреть снова', exact: true })
+    .evaluate(element => element === document.activeElement), true, 'The end of the selection keeps keyboard focus');
+  assert.equal(recovery.backend.applications.length, 2);
+  console.log('PASS Failed submission retains the card, retry advances, and the last successful application ends the selection');
 
   const mobile = await session({ viewport: { width: 390, height: 900 }, isMobile: true, hasTouch: true });
   await mode(mobile.page, 'Предельный режим'); await card(mobile.page, 0);
