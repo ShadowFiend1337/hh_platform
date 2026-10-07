@@ -94,6 +94,12 @@ export interface Invitation {
 
 export type Filters = SearchFilters;
 
+export interface CandidateDecision {
+  candidateId: string;
+  decision: 'liked' | 'passed';
+  date: string;
+}
+
 export interface PlatformState {
   version: 2;
   profile: Candidate;
@@ -102,6 +108,7 @@ export interface PlatformState {
   history: TestResult[];
   surveys: CandidateSurvey[];
   savedSearches: { id: string; title: string; query: string; filters: Filters }[];
+  candidateDecisions?: CandidateDecision[];
 }
 
 export const emptyFilters: Filters = defaultSearchFilters;
@@ -159,6 +166,7 @@ export function createInitialState(): PlatformState {
     company: { id: 'company-line', name: 'Линия', industry: 'Продуктовая разработка', website: 'https://example.com', contact: 'team@example.com', description: 'Разрабатываем цифровые продукты для бизнеса.' },
     invitations: [], history: [], surveys: [],
     savedSearches: [],
+    candidateDecisions: [],
   };
 }
 
@@ -194,6 +202,9 @@ export function readState(): PlatformState {
         ...stored, version: 2, profile, history,
         invitations: legacy ? stored.invitations.filter((item: Invitation) => item.id !== 'invitation-initial') : stored.invitations,
         surveys: !legacy && Array.isArray(stored.surveys) ? stored.surveys : [],
+        candidateDecisions: Array.isArray(stored.candidateDecisions) ? stored.candidateDecisions.filter((item: CandidateDecision) =>
+          item && typeof item.candidateId === 'string' && item.candidateId.length > 0 && item.candidateId.length <= 100
+          && ['liked', 'passed'].includes(item.decision) && typeof item.date === 'string' && Number.isFinite(Date.parse(item.date))).slice(0, 2000) : [],
       };
       if (!currentSurvey(state)) state.profile.surveyCompletedAt = null;
       return state;

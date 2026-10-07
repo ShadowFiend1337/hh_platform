@@ -1,5 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
+import { existsSync, unlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { DirectoryStore } from '../directory-store.mjs';
 import { PlatformService } from '../platform.mjs';
 import { openStore } from '../store.mjs';
@@ -314,4 +318,137 @@ test('bounded validation rejects malformed values without losing a long permitte
     assert.throws(() => platform.save(ownerA, invalid, saved.revision), errorStatus(400));
   }
   assert.equal(platform.read(ownerA).revision, saved.revision);
+});
+
+test('candidate decisions survive SQLite reopen and do not send invitations or disclose contacts', t => {
+  const path = join(tmpdir(), `predel-decisions-${randomUUID()}.sqlite`);
+  let store = new DirectoryStore(path);
+  const assessments = openStore(':memory:');
+  t.after(() => {
+    assessments.close(); store.close();
+    for (const suffix of ['', '-wal', '-shm']) if (existsSync(path + suffix)) unlinkSync(path + suffix);
+  });
+  let platform = new PlatformService(store, assessments, { now: () => time });
+  const proof = completed(assessments, ownerB);
+  platform.save(ownerB, candidateState(proof, { email: 'private@example.com' }), 0);
+  const employer = initial();
+  employer.candidateDecisions = [{ candidateId: idB, decision: 'liked', date: '1900-01-01' }];
+  const saved = platform.save(ownerA, employer, 0);
+  assert.deepEqual(saved.state.candidateDecisions, [{ candidateId: idB, decision: 'liked', date }]);
+  assert.deepEqual(saved.state.invitations, []);
+  assert.equal(saved.directoryPeople[0].email, '');
+  assert.equal(saved.directoryPeople[0].phone, '');
+  assert(!JSON.stringify(saved.directoryPeople).includes('private@example.com'));
+  assert.throws(() => platform.contacts(ownerA, idB), errorStatus(403));
+  store.close(); store = new DirectoryStore(path);
+  platform = new PlatformService(store, assessments);
+  assert.deepEqual(platform.read(ownerA).state.candidateDecisions, saved.state.candidateDecisions);
+  assert.deepEqual(platform.read(ownerB).state.candidateDecisions, []);
+  assert.equal(store.forOwner(ownerB).eligible, 1, 'Decisions do not alter candidate qualification');
+});
+
+test('candidate decisions are owned separately; undo and a replacement keep unrelated collections', t => {
+  const { platform, assessments, setTime } = fixture(t);
+  platform.save(ownerB, candidateState(completed(assessments, ownerB)), 0);
+  const employer = initial();
+  employer.savedSearches = [{ id: 'kept-search', title: 'Поиск', query: '', filters: defaultSearchFilters }];
+  employer.candidateDecisions = [{ candidateId: idB, decision: 'liked', date }];
+  let saved = platform.save(ownerA, employer, 0);
+  const other = initial(); other.candidateDecisions = [{ candidateId: idB, decision: 'passed', date }];
+  platform.save(ownerC, other, 0);
+  setTime(time + 1000);
+  saved.state.candidateDecisions[0].date = '1900-01-01';
+  saved = platform.save(ownerA, saved.state, saved.revision);
+  assert.equal(saved.state.candidateDecisions[0].date, date, 'Replaying an unchanged decision keeps its original date');
+  saved.state.candidateDecisions[0].decision = 'passed';
+  saved = platform.save(ownerA, saved.state, saved.revision);
+  assert.equal(saved.state.candidateDecisions[0].date, new Date(time + 1000).toISOString());
+  assert.equal(saved.directoryPeople.length, 0, 'Passed profiles do not populate favourites');
+  saved.state.candidateDecisions = [];
+  saved = platform.save(ownerA, saved.state, saved.revision);
+  assert.deepEqual(saved.state.candidateDecisions, []);
+  assert.equal(saved.state.savedSearches[0].id, 'kept-search');
+  assert.equal(platform.read(ownerC).state.candidateDecisions[0].decision, 'passed');
+});
+
+test('older snapshots preserve candidate decisions and empty legacy accounts start without decisions', t => {
+  const { platform, assessments } = fixture(t);
+  platform.save(ownerB, candidateState(completed(assessments, ownerB)), 0);
+  const employer = initial(); employer.candidateDecisions = [{ candidateId: idB, decision: 'liked', date }];
+  const saved = platform.save(ownerA, employer, 0);
+  const legacy = structuredClone(saved.state); delete legacy.candidateDecisions;
+  legacy.company.name = 'Изменённая компания';
+  const next = platform.save(ownerA, legacy, saved.revision);
+  assert.deepEqual(next.state.candidateDecisions, saved.state.candidateDecisions);
+  assert.equal(next.state.company.name, 'Изменённая компания');
+  assert.deepEqual(platform.save(ownerC, initial(), 0).state.candidateDecisions, []);
+});
+
+test('decision validation rejects own profiles, unavailable candidates, forged fields and unbounded lists atomically', t => {
+  const { platform, store, assessments } = fixture(t);
+  platform.save(ownerB, candidateState(completed(assessments, ownerB)), 0);
+  const saved = platform.save(ownerA, initial(), 0);
+  for (const [decision, status] of [
+    [{ candidateId: 'candidate-anna', decision: 'liked', date }, 400],
+    [{ candidateId: idA, decision: 'passed', date }, 400],
+    [{ candidateId: 'missing-person', decision: 'liked', date }, 404],
+    [{ candidateId: idB, decision: 'accepted', date }, 400],
+    [{ candidateId: idB, decision: 'liked', date: 'broken-date' }, 400],
+    [{ candidateId: idB, decision: 'liked', date, owner: ownerC }, 400],
+    [{ candidateId: '', decision: 'liked', date }, 400],
+  ]) {
+    const input = structuredClone(saved.state); input.company.name = 'Не должно сохраниться'; input.candidateDecisions = [decision];
+    assert.throws(() => platform.save(ownerA, input, saved.revision), errorStatus(status));
+  }
+  for (const items of [[{ candidateId: idB, decision: 'liked', date }, { candidateId: idB, decision: 'passed', date }],
+    Array.from({ length: 2001 }, (_, index) => ({ candidateId: `person-${index}`, decision: 'liked', date })), null]) {
+    assert.throws(() => platform.save(ownerA, { ...saved.state, candidateDecisions: items }, saved.revision), errorStatus(400));
+  }
+  const hidden = platform.read(ownerB); hidden.state.profile.visible = false;
+  platform.save(ownerB, hidden.state, hidden.revision);
+  assert.throws(() => platform.save(ownerA, { ...saved.state, candidateDecisions: [{ candidateId: idB, decision: 'liked', date }] }, saved.revision), errorStatus(404));
+  assert.equal(platform.read(ownerA).revision, saved.revision);
+  assert.equal(platform.read(ownerA).state.company.name, saved.state.company.name);
+  assert.equal(store.db.prepare('SELECT COUNT(*) AS n FROM platform_candidate_decisions').get().n, 0);
+});
+
+test('revoked candidate publication hides liked profile but permits unrelated saves and undo', t => {
+  const { platform, assessments } = fixture(t);
+  platform.save(ownerB, candidateState(completed(assessments, ownerB)), 0);
+  const employer = initial(); employer.candidateDecisions = [{ candidateId: idB, decision: 'liked', date }];
+  platform.save(ownerA, employer, 0);
+  const recipient = platform.read(ownerB); recipient.state.profile.consent = false;
+  platform.save(ownerB, recipient.state, recipient.revision);
+  let saved = platform.read(ownerA);
+  assert.equal(saved.directoryPeople.length, 0);
+  saved.state.company.name = 'Другое название';
+  saved = platform.save(ownerA, saved.state, saved.revision);
+  assert.equal(saved.state.candidateDecisions.length, 1);
+  saved.state.candidateDecisions = [];
+  assert.deepEqual(platform.save(ownerA, saved.state, saved.revision).state.candidateDecisions, []);
+});
+
+test('candidate deletion cascades decisions and invalidates deciding accounts before a stale snapshot can resurrect them', t => {
+  const { platform, store, assessments } = fixture(t);
+  platform.save(ownerB, candidateState(completed(assessments, ownerB)), 0);
+  const employer = initial(); employer.candidateDecisions = [{ candidateId: idB, decision: 'liked', date }];
+  const saved = platform.save(ownerA, employer, 0);
+  platform.delete(ownerB);
+  const refreshed = platform.read(ownerA);
+  assert.equal(refreshed.revision, saved.revision + 1);
+  assert.deepEqual(refreshed.state.candidateDecisions, []);
+  assert.deepEqual(refreshed.directoryPeople, []);
+  assert.throws(() => platform.save(ownerA, saved.state, saved.revision), errorStatus(409));
+  assert.equal(store.db.prepare('SELECT COUNT(*) AS n FROM platform_candidate_decisions').get().n, 0);
+});
+
+test('deleting an employer removes only its decisions and keeps the candidate and other employers', t => {
+  const { platform, store, assessments } = fixture(t);
+  platform.save(ownerB, candidateState(completed(assessments, ownerB)), 0);
+  const employer = initial(); employer.candidateDecisions = [{ candidateId: idB, decision: 'liked', date }];
+  platform.save(ownerA, employer, 0); platform.save(ownerC, employer, 0);
+  platform.delete(ownerA);
+  assert(store.get(idB));
+  assert.deepEqual(platform.read(ownerC).state.candidateDecisions, [{ candidateId: idB, decision: 'liked', date }]);
+  assert.equal(store.db.prepare('SELECT COUNT(*) AS n FROM platform_candidate_decisions WHERE owner=?').get(ownerA).n, 0);
 });

@@ -25,6 +25,10 @@ async function auditMobile() {
   const issues = await page.evaluate(async () => (await window.axe.run(document, { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21aa'] } })).violations.map(item => item.id));
   assert.deepEqual(issues, []);
 }
+async function waitForSaved(target = page) {
+  await target.waitForFunction(() => ['saved', 'error'].includes(document.querySelector('.main-content')?.getAttribute('data-sync-status')));
+  assert.equal(await target.locator('.main-content').getAttribute('data-sync-status'), 'saved', 'Server persistence failed');
+}
 
 try {
   await page.goto(base + '/app?role=candidate');
@@ -103,7 +107,7 @@ try {
   await page.getByRole('button', { name: 'К профилю', exact: true }).click();
   await page.getByRole('heading', { name: 'Мой профиль', exact: true }).waitFor();
   assert.equal(await page.getByRole('combobox', { name: 'Специализация', exact: true }).inputValue(), 'ML');
-  await page.locator('.data-status').getByText('Изменения сохранены', { exact: true }).waitFor();
+  await waitForSaved();
   await page.reload();
   assert.equal(await page.getByRole('combobox', { name: 'Отрасль', exact: true }).inputValue(), 'Наука');
   await page.goto(base + '/app?role=employer');

@@ -14,6 +14,13 @@ function readSyncCache(): SyncCache | null {
   } catch { return null; }
 }
 
+function directoryFingerprint(result: PlatformResponse) {
+  const invited = new Set(result.state?.invitations.map(item => item.candidateId) || []);
+  const people = (result.directoryPeople || []).filter(person => invited.has(person.id))
+    .sort((a, b) => a.id.localeCompare(b.id));
+  return hash([result.state?.profile || null, people]);
+}
+
 async function request(method = 'GET', value?: unknown): Promise<PlatformResponse> {
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), 15000);
@@ -42,6 +49,12 @@ export function rebaseState(local: PlatformState, base: PlatformState | null, re
     if (key !== 'invitations') for (const id of old.keys()) if (!current.has(id)) combined.delete(id);
     Object.assign(result, { [key]: [...combined.values()] });
   }
+  const oldDecisions = new Map((base?.candidateDecisions || []).map(item => [item.candidateId, item]));
+  const currentDecisions = new Map((local.candidateDecisions ?? base?.candidateDecisions ?? []).map(item => [item.candidateId, item]));
+  const combinedDecisions = new Map((remote.candidateDecisions || []).map(item => [item.candidateId, item]));
+  for (const [id, item] of currentDecisions) if (hash(item) !== hash(oldDecisions.get(id))) combinedDecisions.set(id, item);
+  for (const id of oldDecisions.keys()) if (!currentDecisions.has(id)) combinedDecisions.delete(id);
+  result.candidateDecisions = [...combinedDecisions.values()];
   return result;
 }
 
@@ -49,6 +62,7 @@ export function rebaseState(local: PlatformState, base: PlatformState | null, re
 export function usePlatformPersistence(state: PlatformState, update: Dispatch<SetStateAction<PlatformState>>) {
   const [ready, setReady] = useState(false);
   const [revision, setRevision] = useState(0);
+  const [directoryRevision, setDirectoryRevision] = useState(0);
   const [people, setPeople] = useState<Candidate[]>([]);
   const [status, setStatus] = useState<'loading' | 'saving' | 'saved' | 'error'>('loading');
   const [error, setError] = useState('');
@@ -58,13 +72,25 @@ export function usePlatformPersistence(state: PlatformState, update: Dispatch<Se
   const persisted = useRef('');
   const failedWriteHash = useRef<string | null>(null);
   const serverRevision = useRef(0);
+  const directoryHash = useRef<string | null>(null);
+  const likedPeople = useRef(new Map<string, string | null>());
   const writing = useRef<Promise<void> | null>(null);
   const blocked = useRef(false);
   const mounted = useRef(true);
   const [recoveryCache] = useState(readSyncCache);
   const recovery = useRef(recoveryCache);
 
-  function receive(result: PlatformResponse) {
+  function receive(result: PlatformResponse, isWrite = false) {
+    const nextDirectoryHash = directoryFingerprint(result);
+    let directoryChanged = nextDirectoryHash !== directoryHash.current;
+    const publicPeople = new Map((result.directoryPeople || []).map(person => [person.id, hash(person)]));
+    const nextLikedPeople = new Map((result.state?.candidateDecisions || []).filter(item => item.decision === 'liked')
+      .map(item => [item.candidateId, publicPeople.get(item.candidateId) ?? null] as const));
+    for (const [id, previousPerson] of likedPeople.current) {
+      if (nextLikedPeople.has(id) ? nextLikedPeople.get(id) !== previousPerson : !isWrite) directoryChanged = true;
+    }
+    directoryHash.current = nextDirectoryHash; likedPeople.current = nextLikedPeople;
+    if (directoryChanged) setDirectoryRevision(value => value + 1);
     serverRevision.current = result.revision;
     baseline.current = result.state;
     persisted.current = result.state ? hash(result.state) : '';
@@ -133,7 +159,7 @@ export function usePlatformPersistence(state: PlatformState, update: Dispatch<Se
               continue;
             }
             if (blocked.current || !mounted.current) return;
-            receive(result);
+            receive(result, true);
             if (hash(current.current) === snapshotHash && result.state) { current.current = result.state; update(result.state); }
           }
           if (mounted.current && !blocked.current) { failedWriteHash.current = null; setStatus('saved'); setError(''); }
@@ -167,7 +193,7 @@ export function usePlatformPersistence(state: PlatformState, update: Dispatch<Se
     return () => { active = false; window.clearInterval(timer); window.removeEventListener('focus', refresh); };
   }, [ready, update]);
 
-  return { ready, revision, people, status, error,
+  return { ready, revision, directoryRevision, people, status, error,
     retry: () => {
       setError('');
       if (ready) setStatus('saving');
@@ -180,6 +206,7 @@ export function usePlatformPersistence(state: PlatformState, update: Dispatch<Se
         await request('DELETE');
         const empty = createInitialState();
         current.current = empty; baseline.current = null; persisted.current = hash(empty); serverRevision.current = 0;
+        directoryHash.current = null; likedPeople.current = new Map(); setDirectoryRevision(0);
         localStorage.removeItem(syncCacheKey);
         update(empty); setRevision(0); setPeople([]); setError(''); setStatus('saved'); setReady(true);
       } finally { blocked.current = false; }

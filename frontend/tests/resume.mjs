@@ -165,7 +165,11 @@ async function resetForm() {
   await page.evaluate(key => { localStorage.removeItem(key); sessionStorage.clear(); }, storageKey);
   await page.reload();
   await page.getByRole('heading', { name: 'Анкета', exact: true }).waitFor();
-  await page.locator('.data-status').getByText('Изменения сохранены', { exact: true }).waitFor();
+  await waitForSaved();
+}
+async function waitForSaved(target = page) {
+  await target.waitForFunction(() => ['saved', 'error'].includes(document.querySelector('.main-content')?.getAttribute('data-sync-status')));
+  assert.equal(await target.locator('.main-content').getAttribute('data-sync-status'), 'saved', 'Server persistence failed');
 }
 async function attach(file, duringRead) {
   importing = true;
@@ -373,7 +377,7 @@ try {
   assert.equal(saved.profile.visible, false);
   assert.equal(saved.profile.confirmed, null);
   assert.ok(!JSON.stringify(saved).includes('scan.png'), 'Raw resume file must not be persisted');
-  await page.locator('.data-status').getByText('Изменения сохранены', { exact: true }).waitFor();
+  await waitForSaved();
   await page.reload();
   await page.getByRole('button', { name: 'Начать тест', exact: true }).waitFor();
   saved = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), storageKey);
@@ -410,7 +414,7 @@ try {
   await page.locator('[name="workHistory"]').fill(editedHistory);
   await page.getByRole('button', { name: 'Сохранить изменения', exact: true }).click();
   await page.getByText('Профиль сохранён', { exact: true }).waitFor();
-  await page.locator('.data-status').getByText('Изменения сохранены', { exact: true }).waitFor();
+  await waitForSaved();
   await page.reload();
   await page.getByRole('heading', { name: 'Мой профиль', exact: true }).waitFor();
   saved = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), storageKey);

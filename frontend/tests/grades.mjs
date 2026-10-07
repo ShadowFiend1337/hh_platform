@@ -12,6 +12,11 @@ const browser = await chromium.launch();
 const errors = [];
 await mkdir(resolve('test-results'), { recursive: true });
 
+async function waitForSaved(page) {
+  await page.waitForFunction(() => ['saved', 'error'].includes(document.querySelector('.main-content')?.getAttribute('data-sync-status')));
+  assert.equal(await page.locator('.main-content').getAttribute('data-sync-status'), 'saved', 'Server persistence failed');
+}
+
 try {
   for (const { value: grade, label } of gradeOptions) {
     const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, timezoneId: 'Europe/Moscow', reducedMotion: 'reduce' });
@@ -56,7 +61,7 @@ try {
       await page.getByRole('heading', { name: 'Грейд подтверждён', exact: true }).waitFor();
       await page.getByRole('button', { name: 'К профилю', exact: true }).click();
       await page.getByRole('heading', { name: 'Мой профиль', exact: true }).waitFor();
-      await page.locator('.data-status').getByText('Изменения сохранены', { exact: true }).waitFor();
+      await waitForSaved(page);
       await page.reload();
       assert.equal(await page.getByLabel('Предполагаемый грейд').inputValue(), grade);
       assert.equal(await page.getByLabel('Общий стаж').inputValue(), '3 года 10 месяцев');

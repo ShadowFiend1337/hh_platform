@@ -146,10 +146,10 @@ export function App() {
         </div></>}
       </div></div>
     </div></header>
-    <main id="main-content" className="main-content" key={route.role + ':' + page}>
+    <main id="main-content" className="main-content" data-sync-status={persistence.status} key={route.role + ':' + page}>
       {!persistence.ready ? <div className="panel empty-state"><p role="status">Загружаем ваши данные…</p>{persistence.error && <><p role="alert">{persistence.error}</p><button className="button secondary" onClick={persistence.retry}>Повторить загрузку</button></>}</div> : <>
-      <div className="data-status" role="status">{persistence.status === 'saving' ? 'Сохраняем изменения…' : persistence.status === 'error' ? persistence.error : 'Изменения сохранены'}{persistence.status === 'error' && <button className="text-button" onClick={persistence.retry}>Повторить сохранение</button>}</div>
-      {page === 'candidates' && <Employer directoryRevision={persistence.revision} state={state} candidates={candidates} update={setState} onProfile={onProfile} onInvite={onInvite} notify={setToast} />}
+      {persistence.status === 'error' && <div className="data-error" role="alert"><span>{persistence.error}</span><button className="text-button" onClick={persistence.retry}>Повторить сохранение</button></div>}
+      {page === 'candidates' && <Employer directoryRevision={persistence.directoryRevision} state={state} candidates={candidates} update={setState} onProfile={onProfile} onInvite={onInvite} notify={setToast} />}
       {page === 'invitations' && <Invitations state={state} candidates={candidates} role={route.role} update={setState} notify={setToast} onProfile={onProfile} />}
       {page === 'company' && <Company state={state} update={setState} notify={setToast} />}
       {page === 'profile' && <Profile state={state} update={setState} notify={setToast} onTest={() => navigate('candidate', 'assessment')} onPreview={() => onProfile(state.profile)} />}

@@ -121,6 +121,13 @@ export class DirectoryStore {
         owner TEXT NOT NULL REFERENCES platform_accounts(owner) ON DELETE CASCADE, id TEXT NOT NULL,
         position INTEGER NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(owner,id)
       ) STRICT;
+      CREATE TABLE IF NOT EXISTS platform_candidate_decisions (
+        owner TEXT NOT NULL REFERENCES platform_accounts(owner) ON DELETE CASCADE,
+        candidate_id TEXT NOT NULL REFERENCES directory_candidates(id) ON DELETE CASCADE,
+        decision TEXT NOT NULL CHECK(decision IN ('liked','passed')), created_at TEXT NOT NULL,
+        PRIMARY KEY(owner,candidate_id)
+      ) STRICT;
+      CREATE INDEX IF NOT EXISTS platform_decision_candidate ON platform_candidate_decisions(candidate_id);
       CREATE TABLE IF NOT EXISTS platform_invitations (
         id TEXT PRIMARY KEY, sender TEXT NOT NULL REFERENCES platform_accounts(owner),
         candidate_id TEXT NOT NULL REFERENCES directory_candidates(id), status TEXT NOT NULL,

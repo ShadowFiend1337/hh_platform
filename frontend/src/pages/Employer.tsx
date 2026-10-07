@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { ArrowUpRight, BadgeCheck, Bookmark, Check, ChevronDown, Info, MapPin, Medal, Search, SlidersHorizontal, X } from 'lucide-react';
+import { ArrowUpRight, BadgeCheck, Bookmark, Check, ChevronDown, Heart, Info, MapPin, Medal, Search, SlidersHorizontal, X } from 'lucide-react';
+import { CandidateDeck } from '../components/CandidateDeck';
 import { defaultStackOptions, gradeLabels, gradeOptions, initials, isSpecialization, specializationLabels, specializationNames, specializationOptions, specializationStacks, type Candidate, type PlatformState } from '../model';
 import { defaultSearchFilters, employmentTypes, languageOptions, normalizeSearchFilters, type SearchFilters } from '../../../shared/search.ts';
 import { directoryOptions, searchDirectory, type DirectoryOptions, type DirectorySearch } from '../directory-api';
@@ -19,6 +20,10 @@ function readSearch(): { draft: string; query: string; filters: SearchFilters } 
 }
 const amount = (value: number) => new Intl.NumberFormat('ru-RU').format(value);
 const years = (months: number | null) => months === null ? '' : Number((months / 12).toFixed(2));
+function readMode(): 'list' | 'deck' {
+  try { return sessionStorage.getItem('predel:directory-mode') === 'deck' ? 'deck' : 'list'; }
+  catch { return 'list'; }
+}
 function countLabel(count: number) {
   const last = count % 10, ending = count % 100;
   return count + ' ' + (last === 1 && ending !== 11 ? 'специалист' : last >= 2 && last <= 4 && !(ending >= 12 && ending <= 14) ? 'специалиста' : 'специалистов');
@@ -40,6 +45,12 @@ export function Employer({ state, update, onProfile, onInvite, notify, directory
   const [pageNotice, setPageNotice] = useState('');
   const [exhausted, setExhausted] = useState(false);
   const [retry, setRetry] = useState(0);
+  const [mode, setMode] = useState(readMode);
+  const [favorites, setFavorites] = useState(false);
+  const decisions = state.candidateDecisions || [];
+  const likedCount = decisions.filter(item => item.decision === 'liked').length;
+  const pendingIds = new Set(state.invitations.filter(item => item.companyId === state.company.id
+    && (item.status === 'sent' || item.status === 'viewed')).map(item => item.candidateId));
   const generation = useRef(0);
   const pageRequest = useRef<AbortController | null>(null);
   const pageOffset = useRef(0);
@@ -52,6 +63,10 @@ export function Employer({ state, update, onProfile, onInvite, notify, directory
     try { sessionStorage.setItem('predel:search', JSON.stringify({ draft, query, filters })); }
     catch { /* Search remains usable without persistence. */ }
   }, [draft, query, filters]);
+  useEffect(() => {
+    try { sessionStorage.setItem('predel:directory-mode', mode); }
+    catch { /* The selected view remains usable without browser storage. */ }
+  }, [mode]);
   useEffect(() => {
     const controller = new AbortController();
     void directoryOptions(controller.signal).then(setOptions).catch(() => { /* Search reports its own availability. */ });
@@ -93,6 +108,17 @@ export function Employer({ state, update, onProfile, onInvite, notify, directory
       { id: crypto.randomUUID(), title, query, filters: normalizeSearchFilters(filters) }, ...previous.savedSearches,
     ].slice(0, 10) }));
     notify('Подборка сохранена');
+  }
+  function decide(candidateId: string, decision: 'liked' | 'passed' | null) {
+    update(previous => ({ ...previous, candidateDecisions: [
+      ...(previous.candidateDecisions || []).filter(item => item.candidateId !== candidateId),
+      ...(decision ? [{ candidateId, decision, date: new Date().toISOString() }] : []),
+    ] }));
+  }
+  function resetPassed() {
+    const ids = new Set(response?.items.map(item => item.person.id));
+    update(previous => ({ ...previous, candidateDecisions: (previous.candidateDecisions || [])
+      .filter(item => item.decision !== 'passed' || !ids.has(item.candidateId)) }));
   }
   async function loadMore() {
     if (!response || loading || loadingMore || error || exhausted || pageRequest.current) return;
@@ -187,12 +213,24 @@ export function Employer({ state, update, onProfile, onInvite, notify, directory
         </div></details>
       </aside>
       <section className="candidate-list" aria-label="Результаты подбора" aria-busy={loading || loadingMore}>
-        <div className="list-heading"><span>{response ? countLabel(response.total) : 'Загружаем каталог…'}</span><span className="muted">{response?.query ? 'По смыслу запроса' : 'По профилю'}</span></div>
+        <div className="list-heading"><span>{response ? countLabel(response.total) : 'Загружаем каталог…'}</span><div className="directory-view-controls">
+          {mode === 'deck' && <button className={'directory-favorites' + (favorites ? ' selected' : '')} aria-label="Избранные кандидаты" title="Избранные кандидаты"
+            aria-pressed={favorites} onClick={() => setFavorites(!favorites)}><Heart size={17} fill={favorites ? 'currentColor' : 'none'} />{likedCount > 0 && <span>{likedCount}</span>}</button>}
+          <div className="directory-view-switch" role="group" aria-label="Режим подбора">
+            <button aria-pressed={mode === 'list'} onClick={() => setMode('list')}>Обычный режим</button>
+            <button aria-pressed={mode === 'deck'} onClick={() => setMode('deck')}>Предельный режим</button>
+          </div>
+        </div></div>
         <div className={loading ? 'directory-feedback' : 'sr-only'} role="status" aria-live="polite">{loading ? 'Подбираем кандидатов…' : !error && response ? 'Найдено: ' + countLabel(response.total) : ''}</div>
         {error && <div className="directory-error" role="alert"><p>{error}</p>{response && <p className="muted">Показаны предыдущие результаты.</p>}<button className="button secondary compact" onClick={() => setRetry(value => value + 1)}>Повторить поиск</button></div>}
         {!loading && !error && unavailable && <div className="directory-error" role="alert"><p>Поиск по смыслу сейчас недоступен.</p><button className="button secondary compact" onClick={() => setRetry(value => value + 1)}>Повторить поиск</button></div>}
         {!loading && !error && response?.warnings?.length ? <div className="directory-warnings">{response.warnings.map(warning => <p key={warning}>{warning}</p>)}</div> : null}
-        {response?.items.map(({ person, reason }, index) => {
+        {mode === 'deck' && <CandidateDeck key={JSON.stringify([query, filters, favorites])}
+          items={(response?.items || []).filter(item => item.person.id !== state.profile.id)} decisions={decisions} favorites={favorites}
+          loading={loading} loadingMore={loadingMore} failed={Boolean(error || pageError || unavailable)}
+          hasMore={Boolean(response && !exhausted && response.items.length < response.total)} onLoadMore={() => void loadMore()}
+          onDecision={decide} onReset={resetPassed} onProfile={onProfile} onInvite={onInvite} pendingIds={pendingIds} />}
+        {mode === 'list' && response?.items.map(({ person, reason }, index) => {
           const pending = state.invitations.some(invitation => invitation.companyId === state.company.id && invitation.candidateId === person.id && (invitation.status === 'sent' || invitation.status === 'viewed'));
           const demo = Boolean(person.synthetic);
           const category = person.confirmed;
@@ -212,8 +250,8 @@ export function Employer({ state, update, onProfile, onInvite, notify, directory
             </div>
           </article>;
         })}
-        {!loading && !error && !unavailable && response?.items.length === 0 && <div className="empty-state"><Search size={30} /><h3>Кандидатов пока нет</h3><p>Попробуйте изменить запрос или фильтры.</p><button className="button secondary" onClick={reset}>Сбросить поиск</button></div>}
-        {response && !exhausted && response.items.length < response.total && <div className="directory-pagination"><span className="muted">Показано {response.items.length} из {response.total}</span><button className="button secondary" disabled={loading || loadingMore || Boolean(error)} onClick={() => void loadMore()}>{loadingMore ? 'Загружаем…' : 'Показать ещё'}</button></div>}
+        {mode === 'list' && !loading && !error && !unavailable && response?.items.length === 0 && <div className="empty-state"><Search size={30} /><h3>Кандидатов пока нет</h3><p>Попробуйте изменить запрос или фильтры.</p><button className="button secondary" onClick={reset}>Сбросить поиск</button></div>}
+        {mode === 'list' && response && !exhausted && response.items.length < response.total && <div className="directory-pagination"><span className="muted">Показано {response.items.length} из {response.total}</span><button className="button secondary" disabled={loading || loadingMore || Boolean(error)} onClick={() => void loadMore()}>{loadingMore ? 'Загружаем…' : 'Показать ещё'}</button></div>}
         {pageNotice && <div className="directory-warnings"><p>{pageNotice}</p><button className="text-button" disabled={loading || loadingMore} onClick={() => setRetry(value => value + 1)}>Обновить подборку</button></div>}
         {pageError && <div className="directory-error" role="alert"><p>{pageError}</p><button className="button secondary compact" disabled={loading || loadingMore} onClick={() => void loadMore()}>Повторить загрузку</button></div>}
       </section>

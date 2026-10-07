@@ -190,6 +190,21 @@ function unique(items, description) {
   return items;
 }
 
+function candidateDecisions(input) {
+  const items = list(input, 2000, 'решения по кандидатам').map(item => {
+    const value = object(item, 'решение по кандидату');
+    if (Object.keys(value).some(key => !['candidateId', 'decision', 'date'].includes(key))) fail('Неизвестное поле решения по кандидату.');
+    const candidateId = text(value.candidateId, 100, 'Кандидат');
+    const decision = choice(value.decision, ['liked', 'passed'], 'Решение по кандидату');
+    if (!candidateId) fail('Укажите кандидата.');
+    // The supplied time is checked for malformed drafts; the server records its own time.
+    date(value.date, 'Дата решения');
+    return { candidateId, decision };
+  });
+  if (new Set(items.map(item => item.candidateId)).size !== items.length) fail('Повторяющийся кандидат в решениях.');
+  return items;
+}
+
 function publicResult(value) {
   const result = { id: value.id, date: value.date, specialization: value.specialization, grade: value.grade,
     score: value.score, passed: value.passed, surveyId: value.surveyId || null };
@@ -236,6 +251,10 @@ export class PlatformService {
       .map(row => ({ ...JSON.parse(row.payload), candidateId: row.candidate_id === id ? ownCandidateId : row.candidate_id,
         companyId: row.sender === owner ? ownCompanyId : companyId(row.sender), status: row.status }));
   }
+  candidateDecisions(owner) {
+    return this.store.db.prepare('SELECT candidate_id,decision,created_at FROM platform_candidate_decisions WHERE owner=? ORDER BY created_at,candidate_id').all(owner)
+      .map(row => ({ candidateId: row.candidate_id, decision: row.decision, date: row.created_at }));
+  }
   read(owner) {
     ownerKey(owner);
     const account = this.store.db.prepare('SELECT * FROM platform_accounts WHERE owner=?').get(owner);
@@ -246,8 +265,10 @@ export class PlatformService {
     const state = { version: 2, profile: privateProfile, company: JSON.parse(account.company), invitations,
       history: this.history(owner),
       surveys: this.store.db.prepare('SELECT payload FROM platform_surveys WHERE owner=? ORDER BY created_at DESC,id').all(owner).map(row => JSON.parse(row.payload)),
-      savedSearches: this.store.db.prepare('SELECT payload FROM platform_searches WHERE owner=? ORDER BY position').all(owner).map(row => JSON.parse(row.payload)) };
-    const ids = [...new Set(invitations.map(item => item.candidateId === ownCandidateId ? account.public_id : item.candidateId))];
+      savedSearches: this.store.db.prepare('SELECT payload FROM platform_searches WHERE owner=? ORDER BY position').all(owner).map(row => JSON.parse(row.payload)),
+      candidateDecisions: this.candidateDecisions(owner) };
+    const ids = [...new Set([...invitations.map(item => item.candidateId === ownCandidateId ? account.public_id : item.candidateId),
+      ...state.candidateDecisions.filter(item => item.decision === 'liked').map(item => item.candidateId)])];
     const directoryPeople = ids.flatMap(id => {
       const row = this.store.get(id);
       if (!row || row.owner !== owner && (!row.eligible || !row.visible || !row.consent)) return [];
@@ -259,13 +280,14 @@ export class PlatformService {
     ownerKey(owner);
     if (!Number.isSafeInteger(baseRevision) || baseRevision < 0) fail('Некорректная версия данных.');
     const value = object(input, 'состояние');
-    if (value.version !== 2 || Object.keys(value).some(key => !['version', 'profile', 'company', 'invitations', 'history', 'surveys', 'savedSearches'].includes(key))) fail('Неподдерживаемый формат состояния.');
+    if (value.version !== 2 || Object.keys(value).some(key => !['version', 'profile', 'company', 'invitations', 'history', 'surveys', 'savedSearches', 'candidateDecisions'].includes(key))) fail('Неподдерживаемый формат состояния.');
     if (Buffer.byteLength(JSON.stringify(value), 'utf8') > 1000000) throw new RequestError(413, 'Данные профиля слишком велики.');
     // History is validated as a collection but its values never grant authority.
     const incomingHistory = list(value.history, 500, 'история тестов');
     const incomingInvites = unique(list(value.invitations, 500, 'приглашения').map(proposal), 'приглашения');
     const savedSearches = unique(list(value.savedSearches, 100, 'поиски').map(search), 'поиски');
     const incomingSurveys = unique(list(value.surveys, 100, 'анкеты').map(survey), 'анкеты');
+    const incomingDecisions = value.candidateDecisions === undefined ? null : candidateDecisions(value.candidateDecisions);
     const employer = company(value.company);
     return this.store.transaction(() => {
       const account = this.store.db.prepare('SELECT * FROM platform_accounts WHERE owner=?').get(owner);
@@ -314,6 +336,16 @@ export class PlatformService {
       if (occupied && occupied.owner !== owner) throw new RequestError(409, 'Идентификатор профиля занят.');
       const revision = baseRevision + 1;
       const timestamp = new Date(this.now()).toISOString();
+      const storedDecisions = new Map(this.candidateDecisions(owner).map(item => [item.candidateId, item]));
+      const decisions = incomingDecisions === null ? [...storedDecisions.values()] : incomingDecisions.map(item => {
+        const target = this.store.get(item.candidateId);
+        if (item.candidateId === ownCandidateId || item.candidateId === id || target?.owner === owner) fail('Нельзя оценить собственный профиль.');
+        const existing = storedDecisions.get(item.candidateId);
+        if (!target || (!existing || existing.decision !== item.decision) && (!target.eligible || !target.visible || !target.consent)) {
+          throw new RequestError(404, 'Кандидат недоступен для оценки.');
+        }
+        return { ...item, date: existing?.decision === item.decision ? existing.date : timestamp };
+      });
       this.store.db.prepare(`INSERT INTO platform_accounts(owner,public_id,revision,profile,company,updated_at) VALUES(?,?,?,?,?,?)
         ON CONFLICT(owner) DO UPDATE SET revision=excluded.revision,profile=excluded.profile,company=excluded.company,updated_at=excluded.updated_at`)
         .run(owner, id, revision, JSON.stringify({ ...person, ...(selectedProof ? { _proofId: selectedProof.id } : {}) }), JSON.stringify(employer), timestamp);
@@ -323,6 +355,14 @@ export class PlatformService {
       for (const item of incomingSurveys) this.store.db.prepare('INSERT INTO platform_surveys VALUES(?,?,?,?)').run(owner, item.id, item.date, JSON.stringify(item));
       this.store.db.prepare('DELETE FROM platform_searches WHERE owner=?').run(owner);
       savedSearches.forEach((item, position) => this.store.db.prepare('INSERT INTO platform_searches VALUES(?,?,?,?)').run(owner, item.id, position, JSON.stringify(item)));
+      const keptDecisions = new Set(decisions.map(item => item.candidateId));
+      const removeDecision = this.store.db.prepare('DELETE FROM platform_candidate_decisions WHERE owner=? AND candidate_id=?');
+      for (const candidateId of storedDecisions.keys()) if (!keptDecisions.has(candidateId)) removeDecision.run(owner, candidateId);
+      const saveDecision = this.store.db.prepare(`INSERT INTO platform_candidate_decisions VALUES(?,?,?,?)
+        ON CONFLICT(owner,candidate_id) DO UPDATE SET decision=excluded.decision,created_at=excluded.created_at`);
+      for (const item of decisions) if (storedDecisions.get(item.candidateId)?.decision !== item.decision) {
+        saveDecision.run(owner, item.candidateId, item.decision, item.date);
+      }
       const changedOwners = new Set();
       for (const item of incomingInvites) {
         const target = item.candidateId === ownCandidateId ? id : item.candidateId;
@@ -372,6 +412,9 @@ export class PlatformService {
       if (!account) return;
       const affected = this.store.db.prepare('SELECT sender,candidate_id FROM platform_invitations WHERE sender=? OR candidate_id=?').all(owner, account.public_id);
       const others = new Set();
+      for (const row of this.store.db.prepare('SELECT owner FROM platform_candidate_decisions WHERE candidate_id=?').all(account.public_id)) {
+        if (row.owner !== owner) others.add(row.owner);
+      }
       for (const row of affected) {
         if (row.sender !== owner) others.add(row.sender);
         const recipient = this.store.get(row.candidate_id)?.owner;

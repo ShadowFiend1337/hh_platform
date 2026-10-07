@@ -26,10 +26,13 @@ async function rows(expected) {
 }
 async function saved(target = page) {
   await target.waitForFunction(() => {
-    const status = document.querySelector('.data-status');
-    return status?.textContent === 'Изменения сохранены' || Boolean(status?.querySelector('button'));
+    const status = document.querySelector('.main-content')?.getAttribute('data-sync-status');
+    return status === 'saved' || status === 'error';
   });
-  assert.equal(await target.locator('.data-status').textContent(), 'Изменения сохранены', 'Server persistence failed');
+  assert.equal(await target.locator('.main-content').getAttribute('data-sync-status'), 'saved', 'Server persistence failed');
+  assert.equal(await target.locator('.data-status').count(), 0, 'Successful saves must not leave a status banner');
+  assert.equal(await target.getByText('Изменения сохранены', { exact: true }).count(), 0, 'Successful saves must stay visually silent');
+  assert.equal(await target.locator('.data-error').count(), 0, 'Successful saves must clear persistence errors');
 }
 async function persist(action, target = page) {
   const response = target.waitForResponse(value => new URL(value.url()).pathname === '/api/platform/state' && value.request().method() === 'PUT');
@@ -420,8 +423,10 @@ try {
   const migration = await migrationContext.newPage();
   await migration.goto(base + '/app?role=candidate&tab=profile');
   await migration.getByRole('heading', { name: 'Анкета', exact: true }).waitFor();
-  await migration.getByRole('button', { name: 'Повторить сохранение', exact: true }).waitFor();
-  assert.match(await migration.locator('.data-status').textContent(), /Для сохранения личной анкеты необходимо согласие/u);
+  await migration.locator('.main-content[data-sync-status="error"]').waitFor();
+  await migration.locator('.data-error').getByRole('button', { name: 'Повторить сохранение', exact: true }).waitFor();
+  assert.equal(await migration.locator('.data-error').getAttribute('role'), 'alert');
+  assert.match(await migration.locator('.data-error').textContent(), /Для сохранения личной анкеты необходимо согласие/u);
   assert.equal(await migration.getByLabel('Email', { exact: true }).inputValue(), 'edited@example.com', 'An unconsented legacy draft stays editable locally');
   assert.equal(await migration.getByLabel('Согласен на обработку персональных данных', { exact: true }).isChecked(), false, 'Synthetic legacy consent is never accepted automatically');
   assert.equal((await (await migrationContext.request.get(base + '/api/platform/state')).json()).state, null, 'The server rejects private legacy contacts before explicit consent');

@@ -24,9 +24,13 @@ async function mobileAudit() {
   const issues = await page.evaluate(async () => (await window.axe.run(document, { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21aa'] } })).violations.map(item => item.id));
   assert.deepEqual(issues, []);
 }
+async function waitForSaved(target = page) {
+  await target.waitForFunction(() => ['saved', 'error'].includes(document.querySelector('.main-content')?.getAttribute('data-sync-status')));
+  assert.equal(await target.locator('.main-content').getAttribute('data-sync-status'), 'saved', 'Server persistence failed');
+}
 try {
   await page.goto(base + '/app?role=employer');
-  await page.locator('.data-status').getByText('Изменения сохранены', { exact: true }).waitFor();
+  await waitForSaved();
   await page.evaluate(async storageKey => {
     const state = JSON.parse(localStorage.getItem(storageKey));
     const survey = { id: crypto.randomUUID(), date: new Date().toISOString(), industry: 'ИТ', professionalRole: 'Разработчик', specialization: 'Frontend', desiredGrade: 'Middle', stack: ['React'], experience: '3 года', softSkills: ['Коммуникация'] };

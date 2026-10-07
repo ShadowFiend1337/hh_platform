@@ -190,7 +190,73 @@ fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
 .directory-salary { margin-top: 7px; color: #535865; font-size: 12px; line-height: 1.7; }
 .directory-pagination { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 20px 24px; font-size: 12px; border-top: 1px solid var(--border); }
 .directory-demo-note { margin-top: 18px; font-size: 12px; color: var(--muted); line-height: 1.7; }
-.data-status { margin-bottom: 18px; padding: 10px 14px; border: 1px solid var(--border); border-radius: 7px; font-size: 12px; line-height: 1.7; color: var(--muted); }
+.data-error { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 18px; font-size: 12px; line-height: 1.7; color: #98434c; }
+.data-error .text-button { flex-shrink: 0; }
+.directory-view-controls { display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
+.directory-view-switch { display: flex; gap: 3px; padding: 3px; background: #f4f5f8; border-radius: 7px; }
+.directory-view-switch button { padding: 7px 10px; font-size: 11px; font-weight: 500; color: var(--muted); border-radius: 5px; white-space: nowrap; }
+.directory-view-switch button[aria-pressed="true"] { background: white; color: var(--ink); box-shadow: 0 1px 4px #20212610; }
+.directory-view-switch button:focus-visible, .directory-favorites:focus-visible, .swipe-action:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.directory-favorites { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); padding: 7px 2px; font-size: 12px; }
+.directory-favorites.selected { color: var(--accent); }
+.candidate-deck { background: #fafbfc; padding: 0 0 28px; }
+.swipe-stage { position: relative; overflow: hidden; padding: 30px 24px 24px; }
+.swipe-card { position: relative; z-index: 1; max-width: 510px; min-height: 455px; margin: 0 auto; padding: 30px; background: #fff; border: 1px solid var(--border); border-radius: 17px; box-shadow: 0 8px 30px #20212606; touch-action: pan-y; transition: transform .2s ease, opacity .18s ease; }
+.swipe-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.swipe-card.is-dragging { transition: none; cursor: grabbing; user-select: none; }
+.swipe-card.is-leaving { pointer-events: none; }
+.swipe-person-top { display: flex; justify-content: space-between; align-items: start; margin-bottom: 25px; }
+.swipe-avatar { width: 76px; height: 76px; border-radius: 19px; background: #f0f2f7; font-size: 26px; font-weight: 500; color: #596172; }
+.swipe-badges { display: flex; gap: 12px; align-items: center; color: var(--muted); padding-top: 4px; }
+.swipe-person-heading .person-link { font-size: 25px; letter-spacing: -.035em; max-width: 100%; overflow-wrap: anywhere; }
+.swipe-person-heading .person-link svg { flex-shrink: 0; color: #a0a5af; }
+.swipe-person-heading .candidate-specialization { margin-top: 8px; font-size: 14px; line-height: 1.6; }
+.swipe-metadata { display: flex; flex-wrap: wrap; gap: 5px 14px; margin-top: 12px; font-size: 12px; line-height: 1.6; color: var(--muted); }
+.swipe-metadata > span { display: inline-flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.swipe-salary { margin-top: 21px; font-size: 20px; font-weight: 600; letter-spacing: -.025em; }
+.swipe-salary > span { font-size: 12px; font-weight: 400; color: var(--muted); letter-spacing: normal; }
+.swipe-bio { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; margin-top: 18px; font-size: 13px; line-height: 1.75; color: #535865; overflow-wrap: anywhere; }
+.swipe-stack { margin-top: 18px; gap: 6px; }
+.swipe-card-footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 26px; padding-top: 21px; border-top: 1px solid var(--border); }
+.swipe-test { display: flex; align-items: center; gap: 8px; color: var(--muted); }
+.swipe-test strong { font-size: 17px; font-weight: 500; color: var(--ink); }
+.swipe-test strong > span { font-size: 11px; margin-left: 3px; color: var(--muted); font-weight: 400; }
+.swipe-reason { margin-top: 16px; font-size: 11px; line-height: 1.7; color: var(--muted); }
+.swipe-reason summary { cursor: pointer; width: fit-content; }
+.swipe-reason summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.swipe-reason p { padding-top: 8px; overflow-wrap: anywhere; }
+.swipe-mark { position: absolute; right: 28px; top: 28px; display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%; background: #fff; opacity: 0; transition: opacity .1s; }
+.swipe-mark.is-like { opacity: 1; color: var(--accent); }
+.swipe-mark.is-pass { opacity: 1; color: #737988; }
+.swipe-actions { display: flex; align-items: center; justify-content: center; gap: 20px; padding: 0 24px; }
+.swipe-action { display: grid; place-items: center; width: 58px; height: 58px; border: 1px solid var(--border); border-radius: 50%; background: white; color: #737988; transition: transform .15s, background .15s; }
+.swipe-action:enabled:hover { transform: translateY(-2px); background: #f4f5f8; }
+.swipe-action:disabled { opacity: .35; cursor: default; }
+.swipe-undo { width: 40px; height: 40px; margin-right: 5px; }
+.swipe-like { border-color: var(--accent); background: var(--accent); color: #fff; }
+.swipe-like:enabled:hover { background: #3565d8; }
+.swipe-empty { min-height: 400px; }
+.swipe-loader { width: 26px; height: 26px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: swipe-spin .8s linear infinite; }
+@keyframes swipe-spin { to { transform: rotate(360deg); } }
+@media (max-width: 640px) {
+  .list-heading:has(.directory-view-controls) { flex-wrap: wrap; gap: 14px; padding: 15px; }
+  .directory-view-controls { width: 100%; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+  .directory-view-switch { margin-left: auto; }
+  .directory-view-switch button { padding: 8px 9px; font-size: 10px; }
+  .swipe-stage { padding: 20px 12px; }
+  .swipe-card { padding: 22px; min-height: 440px; border-radius: 13px; }
+  .swipe-avatar { width: 62px; height: 62px; font-size: 23px; border-radius: 15px; }
+  .swipe-person-heading .person-link { font-size: 22px; }
+  .swipe-person-heading .candidate-specialization { font-size: 12px; }
+  .swipe-salary { font-size: 18px; }
+  .swipe-bio { font-size: 12px; }
+  .swipe-card-footer .button { padding: 9px 13px; }
+  .swipe-actions { gap: 16px; padding: 0 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .swipe-card, .swipe-action, .swipe-mark { transition: none; }
+  .swipe-loader { animation: none; }
+}
 .candidate-main { min-width: 0; }
 .candidate-main .person-link { max-width: 100%; overflow-wrap: anywhere; }
 .candidate-main .confirmed-icon { flex-shrink: 0; }
