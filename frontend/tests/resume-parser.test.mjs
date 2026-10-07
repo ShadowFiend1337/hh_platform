@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { parseResumeText } from '../src/resume-parser.ts';
 import { MAX_STACK_SKILLS, resumeTextLimits } from '../../shared/resume-limits.ts';
+import { professionalRoleOptions, softSkillOptions } from '../../shared/catalog.ts';
+import { resumeSections, workHistoryText, careerAchievementsText, petProjectsText, MAX_WORK_EXPERIENCES, MAX_PET_PROJECTS, MAX_RESUME_ITEMS } from '../../shared/resume-structure.ts';
 
 const fixedAsOf = new Date(2026, 9, 6);
 
@@ -55,7 +57,7 @@ Skills: Python, FastAPI, SQL
 Education
 Example college`);
   assert.equal(fields.name, 'John Smith');
-  assert.equal(fields.professionalRole, 'Software developer');
+  assert.equal(fields.professionalRole, 'Backend-разработчик');
   assert.equal(fields.specialization, 'Backend');
   assert.equal(fields.desiredGrade, 'Junior');
   assert.equal(fields.experience, '8 months');
@@ -63,9 +65,9 @@ Example college`);
 });
 
 test('BA, PM and ML retain their stated direction instead of inferring frontend from React', () => {
-  for (const [role, specialization] of [['Бизнес-аналитик / Аналитик данных', undefined], ['AI Product Manager / Product Manager', 'ProductManagement'], ['ML Engineer', 'ML']]) {
+  for (const [role, specialization, canonicalRole] of [['Бизнес-аналитик / Аналитик данных', undefined, undefined], ['AI Product Manager / Product Manager', 'ProductManagement', 'Менеджер продукта'], ['ML Engineer', 'ML', 'ML-инженер']]) {
     const fields = parseResumeText(`Иван Соколов\n${role}\nСтек: Python, React, SQL\nОпыт работы: 5 лет`);
-    assert.equal(fields.professionalRole, role);
+    assert.equal(fields.professionalRole, canonicalRole);
     assert.equal(fields.specialization, specialization);
     assert.equal(fields.desiredGrade, undefined);
     assert.equal(fields.industry, undefined);
@@ -486,10 +488,339 @@ test('truncation callbacks identify only fields exceeding the shared limits', ()
   assert.equal(fields.workHistory.length, resumeTextLimits.workHistory);
   assert.equal(fields.education.length, resumeTextLimits.education);
   assert.equal(fields.careerAchievements.length, resumeTextLimits.careerAchievements);
-  assert.deepEqual(truncated, ['workHistory', 'careerAchievements']);
+  assert.deepEqual(truncated, ['workHistory', 'careerAchievements', 'workExperiences']);
 
   const tooMany = Array.from({ length: MAX_STACK_SKILLS + 1 }, (_, index) => `Tool${index}`).join(', ');
   const skillTruncation = [];
   assert.equal(parseResumeText(`Навыки: ${tooMany}`, { onTruncate: field => skillTruncation.push(field) }).stack.length, MAX_STACK_SKILLS);
   assert.deepEqual(skillTruncation, ['stack']);
+});
+
+test('structured employment separates several company-first positions and keeps every task', () => {
+  const fields = parseResumeText(`Иван Соколов
+Опыт работы
+Acme
+Январь 2023 - Декабрь 2023
+Backend developer
+Разработал API.
+Beta Labs
+Backend developer
+Январь 2024 - present
+Поддерживал сервис.
+ООО Вектор
+03.2022 - 12.2022
+Реализовал поиск.`, { asOf: fixedAsOf });
+  assert.deepEqual(fields.workExperiences, [
+    { period: 'Январь 2023 - Декабрь 2023', company: 'Acme', tasks: 'Backend developer\nРазработал API.' },
+    { period: 'Январь 2024 - present', company: 'Beta Labs', tasks: 'Backend developer\nПоддерживал сервис.' },
+    { period: '03.2022 - 12.2022', company: 'ООО Вектор', tasks: 'Реализовал поиск.' },
+  ]);
+  assert.equal(fields.professionalRole, undefined, 'past positions do not become the desired role');
+  assert.match(fields.workHistory, /Acme\nЯнварь 2023/);
+});
+
+test('date-first employment does not move the previous employer into the next record', () => {
+  const fields = parseResumeText(`Опыт работы
+Январь 2024 — Март 2025
+Компания Первая
+Разработчик
+Разработал сервис.
+Апрель 2025 — настоящее время
+Компания Вторая
+Разработчик
+Поддерживал сервис.`, { asOf: fixedAsOf });
+  assert.deepEqual(fields.workExperiences.map(({ company, period }) => ({ company, period })), [
+    { company: 'Компания Первая', period: 'Январь 2024 — Март 2025' },
+    { company: 'Компания Вторая', period: 'Апрель 2025 — настоящее время' },
+  ]);
+  assert.match(fields.workExperiences[0].tasks, /Разработал сервис/);
+  assert.match(fields.workExperiences[1].tasks, /Поддерживал сервис/);
+  assert.equal(fields.name, undefined, 'an employer is not a candidate name');
+});
+
+test('split PDF dates and inline employers produce one complete structured period per employer', () => {
+  const fields = parseResumeText(`Опыт работы
+gesti.tech Январь
+2024
+—
+Март
+2024
+Разработал тестовый сервис.
+ООО Север Апрель 2024
+-
+Июнь 2024
+Поддерживал тестовый сервис.`, { asOf: fixedAsOf });
+  assert.deepEqual(fields.workExperiences, [
+    { period: 'Январь 2024 — Март 2024', company: 'gesti.tech', tasks: 'Разработал тестовый сервис.' },
+    { period: 'Апрель 2024 - Июнь 2024', company: 'ООО Север', tasks: 'Поддерживал тестовый сервис.' },
+  ]);
+});
+
+test('achievements and additional interests are separate editable items including wrapped PDF bullets', () => {
+  const fields = parseResumeText(`Достижения
+• Победитель конкурса
+  по программированию (2025)
+• Патент RU123
+Дополнительно
+• Алгоритмическое программирование
+• Архитектура сетей
+Образование
+Тестовый университет`);
+  assert.deepEqual(fields.achievementItems, ['Победитель конкурса\nпо программированию (2025)', 'Патент RU123']);
+  assert.deepEqual(fields.interests, ['Алгоритмическое программирование', 'Архитектура сетей']);
+  assert.doesNotMatch(fields.careerAchievements, /Дополнительно|Алгоритмическое|Архитектура|университет/);
+});
+
+test('nested job achievements exclude both later employers and an additional interests section', () => {
+  const fields = parseResumeText(`Опыт работы
+First Company
+January 2023 - December 2023
+Backend developer
+Achievements
+Launched a service.
+Second Company
+Backend developer
+January 2024 - present
+Maintained the service.
+Достижения
+Финалист хакатона.
+Интересы / дополнительно
+Робототехника`, { asOf: fixedAsOf });
+  assert.deepEqual(fields.workExperiences.map(entry => entry.company), ['First Company', 'Second Company']);
+  assert.deepEqual(fields.achievementItems, ['Launched a service.', 'Финалист хакатона.']);
+  assert.deepEqual(fields.interests, ['Робототехника']);
+  assert.doesNotMatch(fields.careerAchievements, /Company|Backend|Робототехника/);
+});
+
+test('pet projects retain independent names descriptions and explicitly stated stacks', () => {
+  const fields = parseResumeText(`Иван Соколов
+Pet проекты
+Название: Task Board
+Описание: Канбан для небольшой команды.
+Реализовал приглашения и уведомления.
+Стек: TypeScript, React, Rust
+Название: Reminder Bot
+Описание: Бот напоминаний.
+Стек: Python, FastAPI
+Достижения
+Финалист конкурса.`);
+  assert.deepEqual(fields.petProjects, [
+    { name: 'Task Board', description: 'Канбан для небольшой команды.\nРеализовал приглашения и уведомления.', stack: ['React', 'TypeScript', 'Rust'] },
+    { name: 'Reminder Bot', description: 'Бот напоминаний.', stack: ['Python', 'FastAPI'] },
+  ]);
+  assert.ok(fields.stack.includes('Rust'), 'explicit project tools also appear among overall competencies');
+  assert.deepEqual(fields.achievementItems, ['Финалист конкурса.']);
+  assert.match(fields.workHistory, /^Pet-проекты\nНазвание: Task Board/);
+  assert.match(fields.workHistory, /Название: Reminder Bot/);
+  assert.equal(fields.workExperiences, undefined);
+  assert.equal(fields.experience, undefined);
+});
+
+test('unlabeled project headings and descriptions survive without inventing missing metadata', () => {
+  const fields = parseResumeText(`Проекты
+TaskBoard
+Создал доску задач для команды.
+Технологии: React, TypeScript
+ReminderBot
+Разработал бота уведомлений.
+Стек: Python`);
+  assert.deepEqual(fields.petProjects.map(project => project.name), ['TaskBoard', 'ReminderBot']);
+  assert.match(fields.petProjects[1].description, /бота уведомлений/);
+  const incomplete = parseResumeText('Опыт работы\nСтажировка в учебной команде.\nСоздал сервис.\nPet проекты\nРазработал приложение для заметок.');
+  assert.deepEqual(incomplete.workExperiences, [{ period: '', company: '', tasks: 'Стажировка в учебной команде.\nСоздал сервис.' }]);
+  assert.deepEqual(incomplete.petProjects, [{ name: '', description: 'Разработал приложение для заметок.', stack: [] }]);
+});
+
+test('legacy migration preserves unidentified lines and separates mixed achievement text', () => {
+  const workHistory = 'Нестандартный заголовок\n2020?\nВыполнял учебный проект.\nНеизвестная строка';
+  const sections = resumeSections({ workHistory, careerAchievements: '• Финалист конкурса\nДополнительно\n• Алгоритмы\n• Сети' });
+  assert.equal(workHistoryText(sections.workExperiences), workHistory);
+  assert.deepEqual(sections.achievementItems, ['Финалист конкурса']);
+  assert.deepEqual(sections.interests, ['Алгоритмы', 'Сети']);
+  const longHistory = 'Неопознанная строка опыта.\n'.repeat(250).trim();
+  const migrated = resumeSections({ workHistory: longHistory });
+  assert.equal(migrated.workExperiences.map(entry => entry.tasks).join('\n'), longHistory);
+  assert.ok(migrated.workExperiences.every(entry => entry.tasks.length <= 4000));
+});
+
+test('explicit empty structured arrays do not resurrect removed legacy fields', () => {
+  assert.deepEqual(resumeSections({ workHistory: 'Старый опыт', careerAchievements: 'Старое достижение\nДополнительно\nСтарый интерес', workExperiences: [], petProjects: [], achievementItems: [], interests: [] }), {
+    workExperiences: [], petProjects: [], achievementItems: [], interests: [],
+  });
+  assert.equal(workHistoryText([]), '');
+  assert.equal(careerAchievementsText([]), '');
+  assert.equal(petProjectsText([]), '');
+});
+
+test('shared structured limits constrain individual fields counts and total projections', () => {
+  const sections = resumeSections({
+    workExperiences: Array.from({ length: 40 }, () => ({ period: 'П'.repeat(150), company: 'К'.repeat(250), tasks: 'Т'.repeat(5000) })),
+    petProjects: Array.from({ length: 40 }, () => ({ name: 'Н'.repeat(250), description: 'О'.repeat(5000), stack: ['С'.repeat(100), 'TypeScript', 'TypeScript'] })),
+    achievementItems: Array.from({ length: 70 }, () => 'Д'.repeat(200)),
+    interests: Array.from({ length: 70 }, () => 'И'.repeat(200)),
+  });
+  assert.ok(sections.workExperiences.length <= MAX_WORK_EXPERIENCES);
+  assert.ok(sections.petProjects.length <= MAX_PET_PROJECTS);
+  assert.ok(sections.achievementItems.length <= MAX_RESUME_ITEMS);
+  assert.ok(sections.interests.length <= MAX_RESUME_ITEMS);
+  for (const entry of sections.workExperiences) {
+    assert.ok(entry.period.length <= 100);
+    assert.ok(entry.company.length <= 200);
+    assert.ok(entry.tasks.length <= 4000);
+  }
+  for (const entry of sections.petProjects) {
+    assert.ok(entry.name.length <= 200);
+    assert.ok(entry.description.length <= 4000);
+    assert.ok(entry.stack.every(skill => skill.length <= 80));
+    assert.equal(new Set(entry.stack).size, entry.stack.length);
+  }
+  assert.ok(workHistoryText(sections.workExperiences).length <= 20_000);
+  assert.ok(petProjectsText(sections.petProjects).length <= 20_000);
+  assert.ok(careerAchievementsText(sections.achievementItems).length <= 4000);
+  assert.ok(careerAchievementsText(sections.interests).length <= 4000);
+});
+
+test('expanded soft skills import only stated positive competencies from the shared options', () => {
+  const fields = parseResumeText('Софт-скиллы: Критическое мышление, Эмпатия, Наставничество, Внимание к деталям\nНет стрессоустойчивости.');
+  assert.deepEqual(fields.softSkills, ['Критическое мышление', 'Внимание к деталям', 'Эмпатия', 'Наставничество']);
+  assert.ok(fields.softSkills.every(skill => softSkillOptions.includes(skill)));
+  const role = parseResumeText('Иван Соколов\nPython Backend-разработчик');
+  assert.equal(role.professionalRole, 'Backend-разработчик');
+  assert.ok(professionalRoleOptions.includes(role.professionalRole));
+});
+
+test('a singular pet-project header and PDF stack line break stay in the same project', () => {
+  const fields = parseResumeText(`Pet-проект: Data Tracker
+Описание: Сбор статистики приложения.
+Стек:
+Python, Rust, PostgreSQL
+Достижения: Финалист хакатона.`);
+  assert.deepEqual(fields.petProjects, [{ name: 'Data Tracker', description: 'Сбор статистики приложения.', stack: ['Python', 'PostgreSQL', 'Rust'] }]);
+  assert.ok(fields.stack.includes('Rust'));
+  assert.deepEqual(fields.achievementItems, ['Финалист хакатона.']);
+});
+
+test('long explicitly supplied project stacks are retained within the total project budget', () => {
+  const stack = Array.from({ length: 75 }, (_, index) => `${index} ${'К'.repeat(75)}`);
+  const result = resumeSections({ petProjects: [{ name: 'Проект', description: 'Описание', stack }] });
+  assert.equal(result.petProjects[0].stack.length, 75);
+  assert.deepEqual(result.petProjects[0].stack, stack);
+  assert.ok(petProjectsText(result.petProjects).length < 20_000);
+});
+
+test('embedded competencies import from explicit resume skills without confusing C with C++', () => {
+  const fields = parseResumeText('Иван Соколов\nEmbedded developer\nСтек: C, C++, STM32, FreeRTOS, UART, SPI, I2C, KiCad, PCB, Осциллограф');
+  assert.equal(fields.specialization, 'Embedded');
+  assert.ok(fields.stack.includes('C'));
+  assert.ok(fields.stack.includes('C++'));
+  for (const skill of ['STM32', 'FreeRTOS', 'UART', 'SPI', 'I2C', 'KiCad', 'PCB', 'Осциллограф']) assert.ok(fields.stack.includes(skill), skill);
+  assert.deepEqual(parseResumeText('Стек: C++').stack, ['C++']);
+});
+
+test('structured collection caps report truncation while legacy source text stays available', () => {
+  const warnings = [];
+  const jobs = Array.from({ length: 31 }, (_, index) => `Компания ${index + 1}\nЯнварь 2024 - Март 2024\nРазработал API ${index + 1}.`).join('\n');
+  const achievementRows = Array.from({ length: 51 }, (_, index) => `• Результат ${index + 1}`).join('\n');
+  const fields = parseResumeText(`Опыт работы\n${jobs}\nДостижения\n${achievementRows}`, { onTruncate: field => warnings.push(field), asOf: fixedAsOf });
+  assert.equal(fields.workExperiences.length, MAX_WORK_EXPERIENCES);
+  assert.equal(fields.achievementItems.length, MAX_RESUME_ITEMS);
+  assert.match(fields.workHistory, /Компания 31/);
+  assert.match(fields.careerAchievements, /Результат 51/);
+  assert.deepEqual(warnings, ['workExperiences', 'achievementItems']);
+});
+
+test('the letter C in an employer name does not infer a programming competency', () => {
+  const fields = parseResumeText('Опыт работы\nCompany C\n2023 - 2024\nРазработал сервис.\nPet проекты\nНазвание: Project C\nОписание: Собрал прототип.');
+  assert.equal(fields.stack, undefined);
+  assert.deepEqual(fields.petProjects[0].stack, []);
+});
+
+test('maximum-length legacy history preserves its final characters despite projected entry separators', () => {
+  const suffix = 'ПОСЛЕДНЯЯ-СТРОКА!';
+  const legacy = 'x'.repeat(20_000 - suffix.length) + suffix;
+  const result = resumeSections({ workHistory: legacy });
+  assert.equal(result.workExperiences.map(entry => entry.tasks).join(''), legacy);
+  assert.ok(result.workExperiences.every(entry => entry.tasks.length <= 4000));
+  assert.ok(workHistoryText(result.workExperiences).endsWith(suffix));
+  assert.equal(workHistoryText(result.workExperiences).replace(/\n\n/g, ''), legacy);
+  assert.ok(workHistoryText(result.workExperiences).length > 20_000, 'the editable migrated draft exposes its budget instead of silently clipping data');
+  const bounded = resumeSections({ workExperiences: result.workExperiences });
+  assert.ok(workHistoryText(bounded.workExperiences).length <= 20_000, 'explicit structured normalization still enforces its existing total limit');
+});
+
+test('unknown and ambiguous imported roles retain their original wording in an actionable warning', () => {
+  for (const role of ['Архитектор вселенной', 'Бизнес-аналитик / Аналитик данных']) {
+    const warnings = [];
+    const fields = parseResumeText(`Иван Соколов\nРоль в команде: ${role}`, { onWarning: message => warnings.push(message) });
+    assert.equal(fields.professionalRole, undefined);
+    assert.equal(warnings.length, 1);
+    assert.ok(warnings[0].includes(role));
+    assert.match(warnings[0], /Выберите.*из списка/);
+  }
+});
+
+test('contact and summary headings before the candidate header do not hide identity or desired role', () => {
+  const fields = parseResumeText(`Contacts
+Иван Соколов
+candidate@example.test
+About Me
+Frontend developer Junior
+Skills: React, TypeScript
+Work Experience
+Example Company
+2024 - 2025
+Backend developer`);
+  assert.equal(fields.name, 'Иван Соколов');
+  assert.equal(fields.professionalRole, 'Frontend-разработчик');
+  assert.equal(fields.specialization, 'Frontend');
+  assert.equal(fields.desiredGrade, 'Junior');
+  assert.equal(parseResumeText('About Me\nРазработал учебный проект.\nОпыт работы\n2024 - 2025\nBackend developer').name, undefined);
+});
+
+test('project stacks split into bullet lines retain tools instead of creating artificial projects', () => {
+  const fields = parseResumeText(`Pet проекты
+Название: Task Board
+Описание: Доска задач.
+Технологии:
+• React
+• TypeScript
+• Rust
+Название: Reminder Bot
+Описание: Бот уведомлений.
+Стек:
+Python
+FastAPI
+PostgreSQL`);
+  assert.deepEqual(fields.petProjects, [
+    { name: 'Task Board', description: 'Доска задач.', stack: ['React', 'TypeScript', 'Rust'] },
+    { name: 'Reminder Bot', description: 'Бот уведомлений.', stack: ['Python', 'FastAPI', 'PostgreSQL'] },
+  ]);
+  assert.ok(fields.stack.includes('Rust'));
+});
+
+test('project text survives the current saved-profile field while its dates stay outside employment duration', () => {
+  const fields = parseResumeText(`Опыт работы
+Example Company
+January 2024 - June 2024
+Разработал сервис.
+Pet проекты
+Название: Task Board
+Описание: 2020 - 2023
+Создал учебное приложение.
+Стек: React, TypeScript
+Достижения
+Финалист конкурса.`, { asOf: fixedAsOf });
+  assert.equal(fields.experience, '6 месяцев');
+  assert.match(fields.workHistory, /Example Company/);
+  assert.match(fields.workHistory, /Pet-проекты\nНазвание: Task Board/);
+  assert.match(fields.workHistory, /Создал учебное приложение/);
+  assert.equal(fields.workExperiences.length, 1);
+  assert.doesNotMatch(fields.workExperiences[0].tasks, /Task Board|учебное приложение/);
+  assert.equal(fields.careerAchievements, 'Финалист конкурса.');
+  assert.doesNotMatch(fields.careerAchievements, /Task Board/);
+  const warnings = [];
+  parseResumeText(`Опыт работы\n${'Задача.\n'.repeat(2700)}\nPet проекты\nНазвание: Task Board\nОписание: ${'Проект. '.repeat(300)}`, {
+    onTruncate: field => warnings.push(field), asOf: fixedAsOf,
+  });
+  assert.ok(warnings.includes('workHistory'), 'the combined stored field reports clipping');
 });

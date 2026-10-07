@@ -364,7 +364,8 @@ try {
   await page.getByText('Подробнее о себе', { exact: true }).click();
   for (const [name, value] of Object.entries({ education: 'Тестовый университет', languages: 'Английский B2', phone: '+79990001122', portfolio: 'https://github.com/ivan-test' })) await page.locator(`[name="${name}"]`).fill(value);
   await page.locator('[name="format"]').selectOption('Гибрид');
-  assert.equal(await page.locator('[name="softSkills"]').count(), 5, 'The questionnaire offers optional self-reported skills');
+  assert.equal(await page.locator('[name="softSkills"]:visible').count(), 5, 'Common self-reported skills stay visible while additional choices are collapsed');
+  assert.equal(await page.locator('[name="softSkills"][value="Критическое мышление"]').count(), 1, 'Extended skills remain available');
   for (const skill of ['Коммуникация', 'Работа в команде']) await page.getByLabel(skill, { exact: true }).check();
   for (const skill of ['Самоорганизация', 'Решение задач', 'Лидерство']) await page.getByLabel(skill, { exact: true }).uncheck();
   await page.locator('[name="consent"]').check();
@@ -413,7 +414,7 @@ try {
   await page.getByRole('button', { name: 'К профилю', exact: true }).click();
   await page.getByRole('heading', { name: 'Мой профиль', exact: true }).waitFor();
   assert.equal(await page.locator('[name="workHistory"]').inputValue(), longHistory);
-  assert.equal(await page.locator('[name="softSkills"]').count(), 5, 'Self-reported skills can be edited in the profile');
+  assert.equal(await page.locator('[name="softSkills"]:visible').count(), 5, 'Common self-reported skills can be edited in the profile');
   const editedHistory = longHistory + '\nПоследний проект: обновил систему уведомлений.';
   await page.locator('[name="workHistory"]').fill(editedHistory);
   await page.getByRole('button', { name: 'Сохранить изменения', exact: true }).click();
@@ -492,5 +493,5 @@ try {
   assert.deepEqual(importsRequests, []);
   assert.deepEqual(externalRequests, [], 'All parser and OCR assets must be loaded from this site');
   assert.deepEqual(errors, []);
-  console.log('PASS PDF/DOCX text, actual Russian/English OCR, complete multi-job history across scan/mixed/partial/Form PDFs, automatic total from OCR dates and invalid-period warning, small-image native text, visible truncation, errors and cancellation, edit preservation, long-history persistence, assessment and profile without soft skills, private API payload, consent and deletion across tabs, mobile accessibility');
+  console.log('PASS PDF/DOCX text, actual Russian/English OCR, complete multi-job history across scan/mixed/partial/Form PDFs, automatic total from OCR dates and invalid-period warning, small-image native text, visible truncation, errors and cancellation, edit preservation, long-history persistence, optional self-reported skills, private API payload, consent and deletion across tabs, mobile accessibility');
 } finally { await context.request.delete(base + '/api/platform/state'); await context.close(); await browser.close(); }

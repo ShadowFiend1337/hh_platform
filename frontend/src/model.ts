@@ -1,10 +1,10 @@
-import { industryOptions, isSpecialization, type Specialization } from '../../shared/catalog.ts';
+import { industryOptions, isSpecialization, softSkillOptions, type Specialization } from '../../shared/catalog.ts';
 import { resumeTextLimits } from '../../shared/resume-limits.ts';
 import type { Grade } from '../../shared/grading.ts';
 import { defaultSearchFilters, type SearchFilters } from '../../shared/search.ts';
 export { gradeOptions, gradeLabels, isGrade } from '../../shared/grading.ts';
 export type { Grade } from '../../shared/grading.ts';
-export { defaultStackOptions, industryOptions, isSpecialization, specializationLabels, specializationNames, specializationOptions, specializationStacks } from '../../shared/catalog.ts';
+export { defaultStackOptions, industryOptions, isSpecialization, professionalRoleOptions, softSkillOptions, specializationLabels, specializationNames, specializationOptions, specializationStacks } from '../../shared/catalog.ts';
 export { stackOptions } from '../../shared/catalog.ts';
 export type { Specialization } from '../../shared/catalog.ts';
 export type Role = 'employer' | 'candidate';
@@ -115,7 +115,6 @@ export const emptyFilters: Filters = defaultSearchFilters;
 export const statusLabels: Record<InvitationStatus, string> = {
   sent: 'Отправлено', viewed: 'Просмотрено', accepted: 'Принято', rejected: 'Отклонено',
 };
-export const softSkillOptions = ['Коммуникация', 'Работа в команде', 'Самоорганизация', 'Решение задач', 'Лидерство'];
 export const ownCandidateId = 'candidate-anna';
 export const storageKey = 'predel:platform:v2';
 

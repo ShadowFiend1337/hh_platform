@@ -28,23 +28,30 @@ try {
   await page.getByLabel('Лидерство', { exact: true }).check();
   await page.getByLabel('Файл резюме').setInputFiles({ name: 'synthetic-skills.txt', mimeType: 'text/plain',
     buffer: Buffer.from(['Алексей Тестовый', 'Frontend developer Junior', 'synthetic-skills@example.com', 'Отрасль: ИТ',
-      'Опыт работы: 1 год', 'Навыки: React, TypeScript', 'Софт-скиллы: Коммуникация, Работа в команде'].join('\n')) });
+      'Опыт работы: 1 год', 'Навыки: React, TypeScript', 'Софт-скиллы: Коммуникация, Работа в команде, Критическое мышление',
+      'Pet-проекты', 'Название: Сервис расписания', 'Описание: Формы планирования встреч.', 'Стек: React, TypeScript',
+      'Интересы', 'Обучаю начинающих разработчиков.'].join('\n')) });
   await page.locator('.resume-import[aria-busy="false"]').waitFor();
   assert.equal(await page.locator('.resume-import [role="alert"]').count(), 0);
-  for (const skill of ['Коммуникация', 'Работа в команде', 'Лидерство']) {
+  for (const skill of ['Коммуникация', 'Работа в команде', 'Лидерство', 'Критическое мышление']) {
     assert.equal(await page.getByLabel(skill, { exact: true }).isChecked(), true, 'Import merges parsed and manually selected skills');
   }
   assert.equal(await page.getByLabel('Самоорганизация', { exact: true }).isChecked(), false);
   assert.equal(await page.getByLabel('Согласен на обработку персональных данных', { exact: true }).isChecked(), false);
+  assert.match(await page.locator('textarea[name="workHistory"]').inputValue(), /Сервис расписания/);
+  assert.match(await page.locator('textarea[name="bio"]').inputValue(), /Обучаю начинающих разработчиков/);
+  assert.equal(await page.locator('#onboarding-team-roles option[value="ML-инженер"]').count(), 1);
   await page.getByLabel('Роль в команде', { exact: true }).fill('Разработчик интерфейсов');
   await page.getByLabel('Согласен на обработку персональных данных', { exact: true }).check();
   await page.getByRole('button', { name: 'К тесту', exact: true }).click();
   await page.getByRole('button', { name: 'Начать тест', exact: true }).waitFor();
   await saved();
-  const expected = ['Коммуникация', 'Лидерство', 'Работа в команде'];
+  const expected = ['Коммуникация', 'Лидерство', 'Работа в команде', 'Критическое мышление'].sort();
   let current = await state();
   assert.deepEqual([...current.profile.softSkills].sort(), expected);
   assert.deepEqual([...current.surveys[0].softSkills].sort(), expected);
+  assert.match(current.profile.workHistory, /Сервис расписания/);
+  assert.match(current.profile.bio, /Обучаю начинающих разработчиков/);
   await page.reload();
   await page.getByRole('button', { name: 'Начать тест', exact: true }).waitFor();
   const responsePromise = page.waitForResponse(response => response.url().endsWith('/api/assessment/attempts') && response.request().method() === 'POST');
@@ -81,7 +88,7 @@ try {
   await page.getByText('Профиль сохранён', { exact: true }).waitFor();
   await saved();
   current = await state();
-  assert.deepEqual([...current.profile.softSkills].sort(), ['Коммуникация', 'Работа в команде']);
+  assert.deepEqual([...current.profile.softSkills].sort(), expected.filter(skill => skill !== 'Лидерство'));
   assert.deepEqual([...current.surveys[0].softSkills].sort(), expected, 'Editing the profile preserves the completed questionnaire snapshot');
   assert.equal(current.profile.surveyCompletedAt, null, 'New self-assessment requires a new questionnaire before a new test');
   assert.equal(current.profile.confirmed.grade, 'Junior', 'Editing self-reported skills does not confer or clear a verified grade');

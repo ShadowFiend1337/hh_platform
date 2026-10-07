@@ -7,3 +7,4 @@ export const resumeTextLimits = {
 } as const;
 
 export const MAX_STACK_SKILLS = 100;
+export const MAX_SOFT_SKILLS = 10;
