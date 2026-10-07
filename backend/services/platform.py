@@ -8,7 +8,7 @@ from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from backend.models import PlatformState
+from backend.models import Account, PlatformState
 from backend.services import assessment, directory
 from backend.services.common import ApiError, clone_json, company_id, json_size, public_id, utcnow
 
@@ -110,10 +110,20 @@ def _outgoing(state: dict[str, Any]) -> list[dict[str, Any]]:
     return [item for item in invitations if isinstance(item, dict)] if isinstance(invitations, list) else []
 
 
+def _account_role(session: Session, owner: str) -> str | None:
+    return session.scalar(select(Account.role).where(Account.platform_owner == owner))
+
+
+def _employer_states():
+    return select(PlatformState).join(Account, Account.platform_owner == PlatformState.owner).where(Account.role == "employer")
+
+
 def _incoming(session: Session, owner: str) -> list[dict[str, Any]]:
+    if _account_role(session, owner) != "candidate":
+        return []
     target_id = public_id(owner)
     result: list[dict[str, Any]] = []
-    for row in session.scalars(select(PlatformState).where(PlatformState.owner != owner)).all():
+    for row in session.scalars(_employer_states().where(PlatformState.owner != owner)).all():
         for invitation in _outgoing(row.state if isinstance(row.state, dict) else {}):
             if invitation.get("candidateId") == target_id:
                 value = clone_json(invitation)
@@ -126,7 +136,7 @@ def _incoming(session: Session, owner: str) -> list[dict[str, Any]]:
 def _state_for_read(session: Session, owner: str, row: PlatformState) -> dict[str, Any]:
     state = clone_json(row.state)
     state["history"] = assessment.completed_results(session, owner)
-    own = _outgoing(state)
+    own = _outgoing(state) if _account_role(session, owner) == "employer" else []
     # A state only stores invitations sent by this owner. Received invitations
     # are derived from their sender, so the two participants always see a
     # single authoritative status.
@@ -207,8 +217,10 @@ def _resolve_candidate_id(session: Session, owner: str, candidate_id: str) -> st
 
 
 def _update_received_invitation(session: Session, owner: str, value: dict[str, Any]) -> None:
+    if _account_role(session, owner) != "candidate":
+        raise ApiError(403, "Ответить на приглашение может только соискатель.")
     target = public_id(owner)
-    for source in session.scalars(select(PlatformState).where(PlatformState.owner != owner)).all():
+    for source in session.scalars(_employer_states().where(PlatformState.owner != owner)).all():
         state = clone_json(source.state)
         invitations = _outgoing(state)
         for stored in invitations:
@@ -248,7 +260,7 @@ def _merge_invitations(session: Session, owner: str, role: str | None, state: di
     parsed = [_validate_invitation(item) for item in incoming]
     if len({item["id"] for item in parsed}) != len(parsed):
         raise ApiError(400, "Повторяющийся ID: приглашения.")
-    old_outgoing = {item.get("id"): item for item in _outgoing(previous or {})}
+    old_outgoing = {item.get("id"): item for item in _outgoing(previous or {})} if role == "employer" else {}
     stored: list[dict[str, Any]] = []
     for invitation in parsed:
         old = old_outgoing.get(invitation["id"])
@@ -355,7 +367,7 @@ def contacts(session: Session, owner: str, candidate_id: str) -> dict[str, str]:
     if target_owner != owner:
         accepted = any(
             invitation.get("candidateId") == target and invitation.get("status") == "accepted"
-            for row in session.scalars(select(PlatformState).where(PlatformState.owner == owner)).all()
+            for row in session.scalars(_employer_states().where(PlatformState.owner == owner)).all()
             for invitation in _outgoing(row.state if isinstance(row.state, dict) else {})
         )
         if not profile.get("consent") or not accepted:

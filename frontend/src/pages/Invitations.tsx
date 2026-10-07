@@ -3,12 +3,12 @@ import { Building2, Check, Inbox, LockKeyhole, Send, X } from 'lucide-react';
 import { CompanyDirectory } from '../components/CompanyDirectory';
 import { ApplicationList } from '../components/ApplicationList';
 import {
-  dateLabel, hasContactAccess, initials, money, ownCandidateId, statusLabels,
+  dateLabel, initials, money, ownCandidateId, statusLabels,
   type Candidate, type PlatformState, type Role,
 } from '../model';
 
-export function Invitations({ state, role, candidates, update, notify, onProfile, syncStatus, revision }: {
-  state: PlatformState; role: Role; candidates: Candidate[];
+export function Invitations({ state, role, candidates, contactCandidateIds = [], update, notify, onProfile, syncStatus, revision }: {
+  state: PlatformState; role: Role; candidates: Candidate[]; contactCandidateIds?: string[];
   update: (fn: (state: PlatformState) => PlatformState) => void;
   notify: (message: string) => void; onProfile: (person: Candidate) => void;
   syncStatus: 'loading' | 'saving' | 'saved' | 'error'; revision: number;
@@ -56,7 +56,7 @@ export function Invitations({ state, role, candidates, update, notify, onProfile
           {role === 'candidate' ? <><div className="invitation-contact"><a href={'mailto:' + invitation.contact}>{invitation.contact}</a></div>
             {pending && <div className="invitation-bottom"><span className="privacy-note"><LockKeyhole size={15} />При принятии компания получит ваши контакты</span><div className="button-group"><button className="button secondary" onClick={() => respond(invitation.id, 'rejected')}><X size={16} />Отклонить</button><button className="button primary" onClick={() => respond(invitation.id, 'accepted')}><Check size={16} />Принять</button></div></div>}
           </> : <div className="invitation-bottom">
-            {person?.email && hasContactAccess(state, person.id) ? <a className="contact-link" href={'mailto:' + person.email}>{person.email}</a> : <span className="privacy-note"><LockKeyhole size={15} />Контакты скрыты</span>}
+            {person?.email && contactCandidateIds.includes(person.id) ? <a className="contact-link" href={'mailto:' + person.email}>{person.email}</a> : <span className="privacy-note"><LockKeyhole size={15} />Контакты скрыты</span>}
             {person && <button className="button secondary compact" onClick={() => onProfile(person)}>Профиль</button>}
           </div>}
         </article>;

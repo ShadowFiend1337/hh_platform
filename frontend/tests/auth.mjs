@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { chromium } from 'playwright';
-import { createInitialState } from '../src/model.ts';
+import { createInitialState, storageKey } from '../src/model.ts';
+import { startIsolatedService } from './helpers/isolated-service.mjs';
 
-// Real local API and fictional accounts only. The development mailbox is
-// ignored by Git; this test never uses personal addresses or an email service.
-const base = process.env.PREDEL_URL || 'http://127.0.0.1:5173';
+// Real isolated API and frontend; fictional verification codes remain in memory.
+const isolated = await startIsolatedService();
+const base = isolated.base;
+const syncCacheKey = 'predel:sync:v1';
 const require = createRequire(import.meta.url);
 const browser = await chromium.launch({ headless: true });
 const contexts = [];
@@ -41,15 +42,9 @@ async function save(context, state) {
   return response.json();
 }
 async function codeFor(email) {
-  for (let attempt = 0; attempt < 40; attempt++) {
-    try {
-      const messages = (await readFile(new URL('../../server/data/mail.log', import.meta.url), 'utf8')).trim().split(/\r?\n/u).filter(Boolean).map(line => JSON.parse(line));
-      const message = messages.findLast(item => item.email === email);
-      if (message) { assert.match(message.code, /^\d{6}$/u); return message.code; }
-    } catch (error) { if (error.code !== 'ENOENT') throw error; }
-    await new Promise(resolve => setTimeout(resolve, 100));
-  }
-  throw new Error('The fictional registration did not enter the local development mailbox.');
+  const code = isolated.codes.get(email);
+  assert.match(code, /^\d{6}$/u);
+  return code;
 }
 async function register(page, account) {
   await page.goto(base + '/auth?mode=register&role=' + account.role);
@@ -109,7 +104,15 @@ try {
   const firstPage = await page(first);
   const guest = createInitialState();
   Object.assign(guest.profile, { name: 'Гостевой черновик', email: 'guest@example.invalid', consent: true, bio: 'Гостевой текст не принадлежит новому аккаунту.' });
-  await save(first, guest);
+  await first.addInitScript(({ stateKey, syncKey, state }) => {
+    if (sessionStorage.getItem('auth-draft-fixture')) return;
+    localStorage.setItem(stateKey, JSON.stringify(state));
+    localStorage.setItem(syncKey, JSON.stringify({ baseline: state, draftHash: JSON.stringify(state), dirty: true,
+      identity: 'anonymous:legacy-fixture' }));
+    sessionStorage.setItem('auth-draft-fixture', 'seeded');
+  }, { stateKey: storageKey, syncKey: syncCacheKey, state: guest });
+  assert.equal((await first.request.get(base + '/api/platform/state')).status(), 401);
+  assert.equal((await first.request.put(base + '/api/platform/state', { data: { state: guest, baseRevision: 0 } })).status(), 401);
   await firstPage.goto(base + '/auth?mode=register&role=candidate');
   await firstPage.getByRole('heading', { name: 'Регистрация', exact: true }).waitFor();
   await firstPage.setViewportSize({ width: 320, height: 800 });
@@ -122,12 +125,18 @@ try {
   const fresh = await snapshot(first);
   assert.equal(fresh.identity, 'auth:' + verifiedCandidate.id);
   assert.ok(!fresh.state || fresh.state.profile.bio !== guest.profile.bio, 'Registration must not inherit the guest profile.');
+  assert.equal(await firstPage.evaluate(key => JSON.parse(localStorage.getItem(key) || 'null')?.profile.bio || '', storageKey), '',
+    'The old guest draft must be removed from browser storage before the registered account opens.');
   assert.equal(await firstPage.locator('.role-control').count(), 0, 'Verified users cannot switch their account role.');
   await firstPage.goto(base + '/app?role=employer&tab=company');
   await firstPage.waitForURL(url => url.searchParams.get('role') === 'candidate');
   const candidateState = (await snapshot(first)).state || createInitialState();
   Object.assign(candidateState.profile, { name: candidate.name, email: candidate.email, consent: true, bio: 'Сохранённое описание кандидата на другом устройстве.' });
-  await save(first, candidateState);
+  const savedCandidate = await save(first, candidateState);
+  assert.equal((await first.request.put(base + '/api/platform/state', {
+    headers: { 'X-Platform-Identity': fresh.identity }, data: { state: candidateState, baseRevision: savedCandidate.revision - 1 },
+  })).status(), 409, 'A stale browser revision cannot replace a newer saved profile.');
+  assert.equal((await snapshot(first)).state.profile.bio, candidateState.profile.bio);
   console.log('PASS Email confirmation, isolated registration, prefilled questionnaire and fixed candidate role');
 
   const second = await context();
@@ -150,11 +159,15 @@ try {
   const companyState = await snapshot(company);
   assert.equal(companyState.identity, 'auth:' + verifiedEmployer.id);
   assert.notEqual(companyState.state?.profile.bio, candidateState.profile.bio);
+  assert.equal((await company.request.put(base + '/api/platform/state', {
+    headers: { 'X-Platform-Identity': fresh.identity }, data: { state: companyState.state, baseRevision: companyState.revision },
+  })).status(), 409, 'A candidate identity cannot authorize a write to an employer cabinet.');
   console.log('PASS Employer registration preserves ordinary and swipe views with its own role');
 
   await companyPage.getByRole('button', { name: 'Выйти', exact: true }).click();
   await companyPage.waitForURL(url => url.pathname === '/');
   assert.equal((await company.request.get(base + '/api/auth/me')).status(), 401);
+  assert.equal((await company.request.get(base + '/api/platform/state')).status(), 401);
   await login(companyPage, candidate);
   assert.equal((await snapshot(company)).state.profile.bio, candidateState.profile.bio);
   assert.notEqual((await snapshot(company)).state.company.name, employer.companyName, 'A previous employer cache must not replace candidate cabinet data.');
@@ -163,4 +176,5 @@ try {
 } finally {
   for (const context of contexts) await context.close();
   await browser.close();
+  await isolated.close();
 }

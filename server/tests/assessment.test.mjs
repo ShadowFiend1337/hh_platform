@@ -12,6 +12,8 @@ import { createAssessmentServer } from '../server.mjs';
 import { specializationOptions, industryOptions } from '../../shared/catalog.ts';
 
 const initialTime = Date.parse('2026-10-05T12:00:00.000Z');
+const registrationCodes = new Map();
+let nextClient = 0;
 function survey(specialization = 'Frontend', desiredGrade = 'Junior') {
   return { id: 'survey-test', date: new Date(initialTime).toISOString(), industry: 'ИТ', professionalRole: 'Разработчик',
     specialization, desiredGrade, experience: '1 год', stack: ['JavaScript'], softSkills: ['Коммуникация'] };
@@ -39,23 +41,46 @@ function assertBlueprint(attempt, program) {
   }
 }
 async function startServer(t, options = {}) {
-  const service = createAssessmentServer({ dbPath: ':memory:', ...options });
+  const codes = new Map();
+  const service = createAssessmentServer({ dbPath: ':memory:', authEnv: {}, authMailer: async ({ email, code }) => { codes.set(email, code); }, ...options });
   service.server.listen(0, '127.0.0.1');
   await once(service.server, 'listening');
   t.after(() => new Promise((resolveClose, reject) => service.server.close(error => error ? reject(error) : resolveClose())));
-  return { ...service, base: `http://127.0.0.1:${service.server.address().port}` };
+  const base = `http://127.0.0.1:${service.server.address().port}`;
+  registrationCodes.set(base, codes);
+  t.after(() => registrationCodes.delete(base));
+  return { ...service, base };
 }
 function client(base) {
-  let cookie = '';
-  return async (path, { method = 'GET', body, headers = {} } = {}) => {
-    const response = await fetch(base + path, { method, headers: { ...(cookie ? { cookie } : {}),
+  const cookies = new Map();
+  let registration;
+  async function raw(path, { method = 'GET', body, headers = {} } = {}) {
+    const response = await fetch(base + path, { method, headers: { Cookie: [...cookies].map(([key, value]) => `${key}=${value}`).join('; '),
       ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}), ...headers },
       ...(body !== undefined ? { body: typeof body === 'string' ? body : JSON.stringify(body) } : {}) });
-    const setCookie = response.headers.get('set-cookie');
-    if (setCookie) cookie = setCookie.split(';')[0];
+    for (const value of response.headers.getSetCookie()) {
+      const [key, token] = value.split(';')[0].split('=');
+      if (token) cookies.set(key, token); else cookies.delete(key);
+    }
     const json = await response.json();
     return { status: response.status, headers: response.headers, json };
+  }
+  const request = async (...args) => {
+    if (!registration) registration = (async () => {
+      const login = `assessment-fixture-${++nextClient}`, email = `${login}@example.test`;
+      const sent = await raw('/api/auth/register/request-code', { method: 'POST', body: {
+        role: 'candidate', login, email, password: 'assessment fixture password', name: 'Вымышленный кандидат', consent: true,
+      } });
+      assert.equal(sent.status, 202);
+      const verified = await raw('/api/auth/register/verify', { method: 'POST', body: { email, code: registrationCodes.get(base).get(email) } });
+      assert.equal(verified.status, 201);
+      request.authCookies = verified.headers.get('set-cookie');
+    })();
+    await registration;
+    return raw(...args);
   };
+  request.cookieHeader = () => [...cookies].map(([key, value]) => `${key}=${value}`).join('; ');
+  return request;
 }
 async function begin(request, input = {}) {
   const response = await request('/api/assessment/attempts', { method: 'POST', body: { survey: survey(), ...input } });
@@ -254,12 +279,12 @@ test('vacancy emphasis never overrides non-repetition while fresh variants remai
   }
 });
 
-test('HTTP session is HttpOnly and SameSite; attempt requires both owner cookie and token', async t => {
+test('authenticated HTTP session is HttpOnly and SameSite; attempt requires both account cookie and token', async t => {
   const service = await startServer(t);
   const request = client(service.base);
   const response = await begin(request);
-  const cookie = response.headers.get('set-cookie');
-  assert.match(cookie, /predel_session=[a-f0-9]{64}/);
+  const cookie = request.authCookies;
+  assert.match(cookie, /predel_account_session=[a-f0-9]{64}/);
   assert.match(cookie, /HttpOnly/); assert.match(cookie, /SameSite=Strict/); assert.match(cookie, /Path=\/api/);
   assert.equal(response.json.token.length, 64);
   const path = `/api/assessment/attempts/${response.json.id}`;
@@ -340,15 +365,15 @@ test('SQLite keeps private attempts, owner restrictions and immutable results ac
     await rm(resolved, { recursive: true, force: true });
   });
   const dbPath = join(directory, 'attempts.sqlite');
-  const first = createAssessmentServer({ dbPath, now: () => initialTime });
+  const codes = new Map();
+  const mailer = async ({ email, code }) => { codes.set(email, code); };
+  const first = createAssessmentServer({ dbPath, now: () => initialTime, authEnv: {}, authMailer: mailer });
   openServers.push(first.server);
   first.server.listen(0, '127.0.0.1'); await once(first.server, 'listening');
-  let cookie;
-  const start = await fetch(`http://127.0.0.1:${first.server.address().port}/api/assessment/attempts`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ survey: survey() }),
-  });
-  assert.equal(start.status, 201); cookie = start.headers.get('set-cookie').split(';')[0];
-  const attempt = await start.json();
+  const firstBase = `http://127.0.0.1:${first.server.address().port}`;
+  registrationCodes.set(firstBase, codes);
+  const firstClient = client(firstBase), started = await begin(firstClient);
+  const cookie = firstClient.cookieHeader(), attempt = started.json;
   const privateAttempt = first.store.get(attempt.id).attempt;
   const payload = { token: attempt.token, answers: answersFor(privateAttempt, 5) };
   const submit = await fetch(`http://127.0.0.1:${first.server.address().port}/api/assessment/attempts/${attempt.id}/submit`, {
@@ -356,10 +381,12 @@ test('SQLite keeps private attempts, owner restrictions and immutable results ac
   });
   assert.equal(submit.status, 200); const result = await submit.json();
   await new Promise((resolveClose, reject) => first.server.close(error => error ? reject(error) : resolveClose()));
-  const reopened = createAssessmentServer({ dbPath, now: () => initialTime + 1000 });
+  const reopened = createAssessmentServer({ dbPath, now: () => initialTime + 1000, authEnv: {}, authMailer: mailer });
   openServers.push(reopened.server);
   reopened.server.listen(0, '127.0.0.1'); await once(reopened.server, 'listening');
   reopened.base = `http://127.0.0.1:${reopened.server.address().port}`;
+  registrationCodes.set(reopened.base, codes);
+  t.after(() => { registrationCodes.delete(firstBase); registrationCodes.delete(reopened.base); });
   assert.deepEqual(reopened.store.get(attempt.id).attempt, privateAttempt);
   const restored = await fetch(`${reopened.base}/api/assessment/attempts/${attempt.id}`, { headers: { Cookie: cookie, 'X-Attempt-Token': attempt.token } });
   assert.equal(restored.status, 200); assert.deepEqual((await restored.json()).result, result);

@@ -6,6 +6,7 @@ import { gradeOptions, isGrade } from '../shared/grading.ts';
 import { defaultSearchFilters, normalizeSearchFilters, employmentTypes, languageOptions } from '../shared/search.ts';
 import { RequestError } from './assessment.mjs';
 import { unsupportedRequestedRoles } from './query-role-scope.mjs';
+import { accountsShareRealm, isLocalFixtureAccount } from './local-fixtures.mjs';
 
 const legacySeeds = [
   ['candidate-mikhail','Михаил Соколов','Frontend','Middle',91,['React','TypeScript','JavaScript','CSS'],'Москва',48,true],
@@ -262,11 +263,16 @@ export class DirectoryService {
   accessible(owner, row) {
     if (!this.accountForOwner) return true;
     const account=this.accountForOwner(owner);
-    if (!account) return row.synthetic===1 && row.owner===null;
-    return account.role==='employer' && !row.synthetic && this.accountForOwner(row.owner)?.role==='candidate';
+    if (!account) return false;
+    const target=this.accountForOwner(row.owner);
+    return account.role==='employer' && target?.role==='candidate' && accountsShareRealm(account,target)
+      && (!row.synthetic || isLocalFixtureAccount(target));
   }
   options(owner) {
     if (!this.accountForOwner) return {...this.store.options(),languages:languageOptions,employmentTypes};
+    const account=this.accountForOwner(owner);
+    if (!account) throw new RequestError(401,'Войдите в аккаунт.');
+    if (account.role!=='employer') throw new RequestError(403,'Поиск кандидатов доступен работодателю.');
     const rows=this.store.all().filter(row=>this.accessible(owner,row));
     const unique=key=>[...new Set(rows.map(row=>row[key]).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'ru'));
     return {cities:unique('city'),industries:unique('industry'),languages:languageOptions,employmentTypes};
@@ -377,6 +383,7 @@ export class DirectoryService {
       const match=stored?semanticMatch(vector,stored.vector):null;
       const semanticScore=match?.score??null;
       const person=JSON.parse(row.public_payload);
+      if (this.accountForOwner && isLocalFixtureAccount(this.accountForOwner(row.owner))) person.synthetic=true;
       if (owner&&row.owner===owner) person.id='candidate-anna';
       const evidence=(match?parseSemanticSegments(row.document)[match.index]:person.bio||person.workHistory||person.professionalRole||'')
         .replace(/^Вымышленный проект /u, 'Проект ');

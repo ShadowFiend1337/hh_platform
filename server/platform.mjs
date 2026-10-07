@@ -5,6 +5,7 @@ import { defaultSearchFilters, employmentTypes, languageOptions, normalizeSearch
 import { publicCandidate } from './directory-store.mjs';
 import { RequestError, threshold } from './assessment.mjs';
 import { syncMarketplaceCompany } from './marketplace.mjs';
+import { accountsShareRealm, isLocalFixtureAccount } from './local-fixtures.mjs';
 
 const ownCandidateId = 'candidate-anna';
 const ownCompanyId = 'company-line';
@@ -248,19 +249,26 @@ export class PlatformService {
     this.store = directoryStore; this.assessments = assessmentStore; this.now = now;
     this.accountForOwner = accountForOwner;
   }
+  authorize(owner) {
+    if (this.accountForOwner && !this.accountForOwner(owner)) throw new RequestError(401, 'Войдите в аккаунт.');
+  }
   candidateAccessible(owner, candidate) {
     if (!candidate) return false;
-    if (!this.accountForOwner || candidate.owner === owner) return true;
+    if (!this.accountForOwner) return true;
     const account = this.accountForOwner(owner);
-    if (!account) return candidate.synthetic === 1 && candidate.owner === null;
-    return account.role === 'employer' && !candidate.synthetic && this.accountForOwner(candidate.owner)?.role === 'candidate';
+    if (!account) return false;
+    if (candidate.owner === owner) return true;
+    const target = this.accountForOwner(candidate.owner);
+    return account.role === 'employer' && target?.role === 'candidate' && accountsShareRealm(account, target)
+      && (!candidate.synthetic || isLocalFixtureAccount(target));
   }
   invitationAccessible(owner, invitation) {
     if (!this.accountForOwner) return true;
     const candidate = this.store.get(invitation.candidate_id);
     if (invitation.sender === owner) return candidate?.owner !== owner && this.candidateAccessible(owner, candidate);
-    return candidate?.owner === owner && this.accountForOwner(owner)?.role === 'candidate'
-      && this.accountForOwner(invitation.sender)?.role === 'employer';
+    const account = this.accountForOwner(owner), sender = this.accountForOwner(invitation.sender);
+    return candidate?.owner === owner && account?.role === 'candidate' && sender?.role === 'employer'
+      && accountsShareRealm(account, sender);
   }
   history(owner) {
     return this.assessments.completed(owner).filter(row => row.owner === owner && row.result).map(row => publicResult(row.result));
@@ -278,10 +286,12 @@ export class PlatformService {
   }
   read(owner) {
     ownerKey(owner);
+    this.authorize(owner);
     const account = this.store.db.prepare('SELECT * FROM platform_accounts WHERE owner=?').get(owner);
     if (!account) return { state: null, revision: 0, directoryPeople: [] };
     const invitations = this.invitations(owner, account.public_id);
     const privateProfile = JSON.parse(account.profile);
+    if (this.accountForOwner) privateProfile.synthetic = isLocalFixtureAccount(this.accountForOwner(owner));
     delete privateProfile._proofId;
     const state = { version: 2, profile: privateProfile, company: JSON.parse(account.company), invitations,
       history: this.history(owner),
@@ -296,7 +306,9 @@ export class PlatformService {
     const directoryPeople = ids.flatMap(id => {
       const row = this.store.get(id);
       if (!row || !this.candidateAccessible(owner, row) || row.owner !== owner && (!row.consent || !applicantIds.has(id) && (!row.eligible || !row.visible))) return [];
-      return [publicCandidate(JSON.parse(row.public_payload), row.owner === owner ? ownCandidateId : row.id)];
+      const person = JSON.parse(row.public_payload);
+      if (this.accountForOwner && isLocalFixtureAccount(this.accountForOwner(row.owner))) person.synthetic = true;
+      return [publicCandidate(person, row.owner === owner ? ownCandidateId : row.id)];
     });
     const contactCandidateIds = directoryPeople.filter(person => applicantIds.has(person.id)
       || invitations.some(item => item.candidateId === person.id && item.companyId === ownCompanyId && item.status === 'accepted')).map(person => person.id);
@@ -304,6 +316,7 @@ export class PlatformService {
   }
   save(owner, input, baseRevision, role = null) {
     ownerKey(owner);
+    this.authorize(owner);
     if (this.accountForOwner) role = this.accountForOwner(owner)?.role || null;
     if (role !== null && role !== 'candidate' && role !== 'employer') throw new RequestError(403, 'Роль аккаунта недоступна.');
     if (!Number.isSafeInteger(baseRevision) || baseRevision < 0) fail('Некорректная версия данных.');
@@ -324,6 +337,7 @@ export class PlatformService {
       if ((account?.revision || 0) !== baseRevision) throw new RequestError(409, 'Данные изменились в другой вкладке. Обновите страницу.');
       const oldProfile = account ? JSON.parse(account.profile) : null;
       const person = profile(value.profile, oldProfile);
+      if (this.accountForOwner) person.synthetic = isLocalFixtureAccount(this.accountForOwner(owner));
       if (role === 'employer' && (hasPrivateProfile(person) || person.consent || incomingSurveys.length)) {
         throw new RequestError(403, 'Профиль и анкеты доступны соискателю.');
       }
@@ -432,6 +446,7 @@ export class PlatformService {
   }
   contacts(owner, id) {
     ownerKey(owner);
+    this.authorize(owner);
     if (typeof id !== 'string' || !id.length || id.length > 100) fail('Некорректный кандидат.');
     const own = this.store.db.prepare('SELECT * FROM platform_accounts WHERE owner=?').get(owner);
     const target = id === ownCandidateId ? own?.public_id : id;
@@ -449,6 +464,7 @@ export class PlatformService {
   }
   delete(owner) {
     ownerKey(owner);
+    this.authorize(owner);
     this.store.transaction(() => {
       const account = this.store.db.prepare('SELECT * FROM platform_accounts WHERE owner=?').get(owner);
       if (!account) return;

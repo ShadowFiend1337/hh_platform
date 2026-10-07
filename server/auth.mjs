@@ -6,6 +6,7 @@ import { promisify } from 'node:util';
 import { connect as connectSocket } from 'node:net';
 import { connect as connectTls } from 'node:tls';
 import { fileURLToPath } from 'node:url';
+import { isLocalFixtureAccount } from './local-fixtures.mjs';
 
 const scrypt = promisify(scryptCallback);
 const passwordParameters = { cost: 16384, blockSize: 8, parallelization: 1, maxmem: 64 * 1024 * 1024 };
@@ -124,6 +125,7 @@ function accountPayload(row) {
     role: row.role,
     name: row.name || '',
     companyName: row.company_name || '',
+    ...(isLocalFixtureAccount(row) ? { testAccount: true } : {}),
   };
 }
 

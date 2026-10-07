@@ -214,7 +214,14 @@ def api_guard(request: Request) -> None:
 
 def _identity(request: Request, response: Response, session: Session) -> Identity:
     api_guard(request)
-    return resolve_identity(request, response, session)
+    identity = resolve_identity(request, response, session)
+    public_auth_paths = {
+        "/api/auth/register/request-code", "/api/auth/register/verify",
+        "/api/auth/login", "/api/auth/me", "/api/auth/logout",
+    }
+    if request.url.path not in public_auth_paths and identity.account is None:
+        raise ApiError(401, "Войдите в аккаунт.")
+    return identity
 
 
 @app.get("/api/health")
@@ -224,8 +231,10 @@ def health(request: Request) -> dict[str, str]:
 
 
 @app.get("/api/assessment/program")
-def assessment_program(request: Request, specialization: str | None = None, grade: str | None = None) -> dict[str, Any]:
-    api_guard(request)
+def assessment_program(request: Request, response: Response, specialization: str | None = None, grade: str | None = None, session: Session = Depends(get_session)) -> dict[str, Any]:
+    identity = _identity(request, response, session)
+    if identity.account.get("role") != "candidate":
+        raise ApiError(403, "Тестирование доступно соискателю.")
     return assessment.program_info(specialization, grade)
 
 
@@ -299,7 +308,9 @@ def platform_delete(request: Request, response: Response, session: Session = Dep
 
 @app.get("/api/directory/options")
 def directory_options(request: Request, response: Response, session: Session = Depends(get_session)) -> dict[str, Any]:
-    _identity(request, response, session)
+    identity = _identity(request, response, session)
+    if identity.account.get("role") != "employer":
+        raise ApiError(403, "Поиск кандидатов доступен работодателю.")
     return directory.options(session)
 
 

@@ -18,7 +18,7 @@ function fixture(t) {
   const options = { now: () => clock, accountForOwner: owner => accounts.get(owner) || null };
   const platform = new PlatformService(store, assessments, options), marketplace = new MarketplaceService(store, { ...options, seeds: false });
   const tasks = new RefreshTaskService(store, options);
-  for (const owner of [employer, candidate, otherEmployer, otherCandidate, guest]) {
+  for (const owner of [employer, candidate, otherEmployer, otherCandidate]) {
     const state = createInitialState();
     state.company.name = 'Вымышленная компания'; state.company.contact = 'company@example.test';
     if (accounts.get(owner)?.role === 'candidate') {

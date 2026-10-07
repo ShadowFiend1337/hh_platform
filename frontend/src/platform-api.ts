@@ -30,6 +30,14 @@ async function request(method = 'GET', value?: unknown, expectedIdentity?: strin
       headers: { ...(value === undefined ? {} : { 'Content-Type': 'application/json' }),
         ...(expectedIdentity ? { 'X-Platform-Identity': expectedIdentity } : {}) }, body: value === undefined ? undefined : hash(value) });
     const identity = response.headers.get('X-Platform-Identity') || undefined;
+    if (response.status === 401) {
+      try {
+        localStorage.removeItem(storageKey); localStorage.removeItem('predel:platform:v1'); localStorage.removeItem(syncCacheKey);
+        sessionStorage.removeItem('predel:assessment:v1'); sessionStorage.removeItem('predel:search');
+      } catch { /* Navigation also discards the in-memory workspace. */ }
+      window.location.replace('/auth?mode=login');
+      throw new ApiError('Войдите в аккаунт.', 401);
+    }
     if (expectedIdentity && identity && expectedIdentity !== identity) {
       // A login/logout in another tab changed the shared cookie. This is not
       // a revision conflict: an old draft must never be rebased to that user.
@@ -73,7 +81,7 @@ export function rebaseState(local: PlatformState, base: PlatformState | null, re
 }
 
 /** SQLite is authoritative; the browser cache also buffers unsaved changes. */
-export function usePlatformPersistence(state: PlatformState, update: Dispatch<SetStateAction<PlatformState>>, initialIdentity?: string) {
+export function usePlatformPersistence(state: PlatformState, update: Dispatch<SetStateAction<PlatformState>>, initialIdentity?: string, enabled = true) {
   const [ready, setReady] = useState(false);
   const [revision, setRevision] = useState(0);
   const [directoryRevision, setDirectoryRevision] = useState(0);
@@ -116,6 +124,7 @@ export function usePlatformPersistence(state: PlatformState, update: Dispatch<Se
   }
 
   useEffect(() => {
+    if (!enabled) { mounted.current = false; return; }
     mounted.current = true;
     let active = true;
     request('GET', undefined, serverIdentity.current).then(result => {
@@ -136,16 +145,16 @@ export function usePlatformPersistence(state: PlatformState, update: Dispatch<Se
       setReady(true); setStatus(merged && hash(merged) === persisted.current ? 'saved' : 'saving');
     }).catch(cause => { if (active) { setError(cause.message); setStatus('error'); } });
     return () => { active = false; mounted.current = false; };
-  }, [update, retryVersion]);
+  }, [update, retryVersion, enabled]);
 
   useEffect(() => {
-    if (!ready) return;
+    if (!enabled || !ready) return;
     try { localStorage.setItem(syncCacheKey, hash({ baseline: baseline.current, draftHash: hash(state), dirty: hash(state) !== persisted.current, identity: serverIdentity.current })); }
     catch { /* The interface reports browser-cache failures separately. */ }
-  }, [ready, state, revision, status]);
+  }, [enabled, ready, state, revision, status]);
 
   useEffect(() => {
-    if (!ready || blocked.current || writing.current) return;
+    if (!enabled || !ready || blocked.current || writing.current) return;
     if (status === 'error') {
       // Keep an unchanged failed draft available for explicit retry. A user
       // correction (for example new consent) is a new save, not that retry.
@@ -193,10 +202,10 @@ export function usePlatformPersistence(state: PlatformState, update: Dispatch<Se
       })();
     }, 250);
     return () => window.clearTimeout(timer);
-  }, [ready, state, update, status]);
+  }, [enabled, ready, state, update, status]);
 
   useEffect(() => {
-    if (!ready) return;
+    if (!enabled || !ready) return;
     let active = true;
     const refresh = async () => {
       if (blocked.current || writing.current || document.visibilityState === 'hidden' || hash(current.current) !== persisted.current) return;
@@ -212,7 +221,7 @@ export function usePlatformPersistence(state: PlatformState, update: Dispatch<Se
     const timer = window.setInterval(() => { void refresh(); }, 20000);
     window.addEventListener('focus', refresh);
     return () => { active = false; window.clearInterval(timer); window.removeEventListener('focus', refresh); };
-  }, [ready, update]);
+  }, [enabled, ready, update]);
 
   return { ready, revision, directoryRevision, people, contactCandidateIds, status, error,
     retry: () => {
@@ -221,6 +230,7 @@ export function usePlatformPersistence(state: PlatformState, update: Dispatch<Se
       else { setStatus('loading'); setRetryVersion(value => value + 1); }
     },
     clear: async () => {
+      if (!enabled) throw new ApiError('Войдите в аккаунт.', 401);
       blocked.current = true;
       try {
         await writing.current;

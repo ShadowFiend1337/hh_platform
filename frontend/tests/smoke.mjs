@@ -1,28 +1,18 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { mkdir, readFile } from 'node:fs/promises';
+import { mkdir } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
-import { parseEnv } from 'node:util';
 import { chromium } from 'playwright';
 // Node-only fixtures; they are never served or bundled with the browser app.
 import { programs } from '../../server/bank.mjs';
-import { defaultSearchFilters, normalizeSearchFilters } from '../../shared/search.ts';
+import { normalizeSearchFilters } from '../../shared/search.ts';
+import { createInitialState } from '../src/model.ts';
+import { startIsolatedService } from './helpers/isolated-service.mjs';
 
 const require = createRequire(import.meta.url);
-const base = process.env.PREDEL_URL || 'http://127.0.0.1:5173';
-const targetUrl = new URL(base);
-if (['127.0.0.1', 'localhost'].includes(targetUrl.hostname) && ['5173', '8787'].includes(targetUrl.port)) {
-  let configured = {};
-  try { configured = parseEnv(await readFile(new URL('../../.env', import.meta.url), 'utf8')); }
-  catch (error) {
-    if (error.code !== 'ENOENT') throw new Error('Не удалось безопасно проверить почтовые настройки перед smoke. Запустите тест в изолированной среде без SMTP.');
-  }
-  const smtpKeys = ['SMTP_HOST', 'SMTP_USER', 'SMTP_PASSWORD', 'SMTP_FROM'];
-  if (smtpKeys.some(key => [configured[key], process.env[key]].some(value => typeof value === 'string' && value.trim()))) {
-    throw new Error('Browser smoke остановлен: для основного локального сервиса настроен SMTP. Тест создаёт вымышленные аккаунты; запустите изолированные API и интерфейс без SMTP через PREDEL_URL.');
-  }
-}
+const isolated = await startIsolatedService();
+const base = isolated.base;
 const output = resolve('test-results');
 const storageKey = 'predel:platform:v2';
 await mkdir(output, { recursive: true });
@@ -75,9 +65,6 @@ async function prepareContext(target) {
   });
 }
 
-async function rows(expected) {
-  await page.waitForFunction(count => document.querySelectorAll('.candidate-row').length === count, expected);
-}
 async function saved(target = page) {
   await target.waitForFunction(() => {
     const status = document.querySelector('.main-content')?.getAttribute('data-sync-status');
@@ -110,16 +97,13 @@ async function directoryResults(target = page, expectedTotal) {
   return result;
 }
 async function role(next) {
-  if (actors.size) {
-    page = actors.get(next).page;
-    const accountRole = next === 'Кандидат' ? 'candidate' : 'employer';
-    await page.goto(base + '/app?role=' + accountRole + '&tab=' + (accountRole === 'candidate' ? 'profile' : 'candidates'));
-    await saved();
-    assert.equal(await page.locator('.role-control').count(), 0, 'Verified account roles cannot be switched in the interface');
-    return;
-  }
-  await page.locator('.role-button').click();
-  await page.locator('.role-menu').getByRole('button', { name: next, exact: true }).click();
+  const actor = actors.get(next);
+  assert.ok(actor, 'Each role uses its own verified account.');
+  page = actor.page;
+  const accountRole = next === 'Кандидат' ? 'candidate' : 'employer';
+  await page.goto(base + '/app?role=' + accountRole + '&tab=' + (accountRole === 'candidate' ? 'profile' : 'candidates'));
+  await saved();
+  assert.equal(await page.locator('.role-control').count(), 0, 'Verified account roles cannot be switched in the interface');
 }
 async function tab(name) {
   await page.locator('.main-nav').getByRole('link', { name: new RegExp('^' + name) }).click();
@@ -174,10 +158,9 @@ async function fillSurvey(target = page, name = candidateName, email = 'anna@exa
   await target.getByLabel('Согласен на обработку персональных данных', { exact: true }).check();
 }
 
-async function registeredActor(role, label, name) {
-  const actorContext = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
-  contexts.push(actorContext);
-  await prepareContext(actorContext);
+async function registeredActor(role, label, name, suppliedContext) {
+  const actorContext = suppliedContext || await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
+  if (!suppliedContext) { contexts.push(actorContext); await prepareContext(actorContext); }
   const email = label + '.' + suffix + '@example.invalid';
   const requested = await actorContext.request.post(base + '/api/auth/register/request-code', {
     data: { role, login: label + '.' + suffix, email, password: 'LocalSmoke927!', consent: true,
@@ -185,15 +168,10 @@ async function registeredActor(role, label, name) {
   });
   assert.equal(requested.status(), 202, await requested.text());
   const delivery = await requested.json();
-  assert.equal(delivery.delivery, 'development', 'Smoke fixtures use only the ignored local mailbox, never external email.');
+  assert.equal(delivery.delivery, 'development', 'Smoke verification uses only its in-memory mailbox.');
   assert.equal(delivery.code, undefined, 'The verification code is not a public API response.');
-  let code;
-  for (let attempt = 0; attempt < 40 && !code; attempt++) {
-    const messages = (await readFile(new URL('../../server/data/mail.log', import.meta.url), 'utf8')).trim().split(/\r?\n/u).filter(Boolean).map(line => JSON.parse(line));
-    code = messages.findLast(message => message.email === email)?.code;
-    if (!code) await new Promise(resolve => setTimeout(resolve, 100));
-  }
-  assert.match(code || '', /^\d{6}$/u, 'The local fictional registration must receive a development code.');
+  const code = isolated.codes.get(email);
+  assert.match(code || '', /^\d{6}$/u, 'The isolated fictional registration must receive its private code.');
   const verified = await actorContext.request.post(base + '/api/auth/register/verify', { data: { email, code } });
   assert.equal(verified.status(), 201, await verified.text());
   const actorPage = await actorContext.newPage();
@@ -205,21 +183,14 @@ async function registeredActor(role, label, name) {
   await actorPage.goto(base + '/app?role=' + role + '&tab=' + (role === 'candidate' ? 'profile' : 'candidates'));
   await initialized;
   await saved(actorPage);
-  const actor = { context: actorContext, page: actorPage, email };
+  const actor = { context: actorContext, page: actorPage, email, login: label + '.' + suffix, password: 'LocalSmoke927!' };
   return actor;
 }
 
 try {
-  // Persist a private initial state before browsing so migration cannot cancel pagination.
-  const existing = await (await context.request.get(base + '/api/platform/state')).json();
-  if (!existing.state) {
-    const { createInitialState } = await import('../src/model.ts');
-    assert.equal((await context.request.put(base + '/api/platform/state', { data: { state: createInitialState(), baseRevision: existing.revision } })).status(), 200);
-  }
-  let baseline = await (await context.request.get(base + '/api/directory/search?' + new URLSearchParams({ q: '', filters: JSON.stringify(defaultSearchFilters), limit: '30', offset: '0' }))).json();
-  assert.ok(baseline.total >= 146, 'The directory includes the full fictional corpus');
-  assert.ok(baseline.items.every(item => item.person.synthetic), 'Guests see only the fictional directory.');
-  const guestBaseline = baseline;
+  assert.equal((await context.request.get(base + '/api/platform/state')).status(), 401);
+  assert.equal((await context.request.get(base + '/api/directory/search')).status(), 401);
+  assert.equal((await context.request.put(base + '/api/platform/state', { data: { state: createInitialState(), baseRevision: 0 } })).status(), 401);
   await page.goto(base);
   await page.locator('.hero-art img').waitFor();
   await page.evaluate(() => document.fonts.ready);
@@ -227,43 +198,22 @@ try {
   await page.screenshot({ path: resolve(output, 'landing-desktop.png'), fullPage: false });
   await noOverflow(page);
   await audit(page);
+  await page.locator('.landing-partners img').evaluateAll(images => Promise.all(images.map(image => image.decode())));
+  assert.equal(await page.locator('.landing-partners img').evaluateAll(images => images.length > 0 && images.every(image => image.complete && image.naturalWidth > 0)), true);
   await page.locator('.hero-actions').getByRole('button', { name: 'Попробовать', exact: true }).click();
-  await rows(30);
-  assert.equal(new URL(page.url()).pathname, '/app');
+  await page.getByRole('heading', { name: 'Регистрация', exact: true }).waitFor();
+  assert.equal(new URL(page.url()).pathname, '/auth');
+  assert.equal(await page.locator('.candidate-row').count(), 0);
   await page.goBack();
   await page.locator('.landing').waitFor();
   await page.goForward();
-  await rows(30);
-  console.log('PASS Original landing, Try entry and browser history');
+  await page.getByRole('heading', { name: 'Регистрация', exact: true }).waitFor();
+  console.log('PASS Original landing, registration-only Try entry and browser history');
   await page.evaluate(() => document.fonts.ready);
-  assert.equal(await page.locator('.partner-logos img').evaluateAll(images => images.every(image => image.complete && image.naturalWidth > 0)), true);
   await noOverflow(page);
   await page.screenshot({ path: resolve(output, 'desktop.png'), fullPage: true });
   await audit(page);
-  const explanation = page.locator('.match-details').first();
-  await explanation.locator('summary').click();
-  assert.equal(await explanation.locator('p').isVisible(), true, 'Matching explanation remains available');
-  await explanation.locator('summary').click();
-  console.log('PASS Desktop, assets and accessibility');
-
-  await page.getByRole('textbox', { name: 'Потребность работодателя' }).fill('Frontend Middle React TypeScript');
-  await page.getByRole('button', { name: 'Подобрать', exact: true }).click();
-  const selected = await directoryResults();
-  assert.ok(selected.total > 0 && selected.items.every(item => item.person.confirmed.specialization === 'Frontend' && item.person.confirmed.grade === 'Middle'));
-  await persist(() => page.getByRole('button', { name: 'Сохранить подборку', exact: true }).click());
-  await page.getByLabel('Есть достижения ФСП').check();
-  const fspSelected = await directoryResults();
-  assert.ok(fspSelected.total > 0 && fspSelected.items.every(item => item.person.achievements.length > 0));
-  await page.getByRole('button', { name: 'Подборки', exact: true }).click();
-  await page.locator('.saved-item').getByRole('button', { name: 'Frontend Middle React TypeScript', exact: true }).click();
-  await directoryResults(page, selected.total);
-  await tab('Приглашения');
-  await tab('Кандидаты');
-  await directoryResults(page, selected.total);
-  assert.equal(await page.getByRole('textbox', { name: 'Потребность работодателя' }).inputValue(), 'Frontend Middle React TypeScript');
-  await page.getByRole('button', { name: 'Очистить поиск', exact: true }).click();
-  await directoryResults(page, baseline.total);
-  console.log('PASS Query, filters, FSP and saved selection');
+  console.log('PASS Desktop landing and signup assets and accessibility');
 
   // Real publication and invitations belong to separately verified accounts.
   // A second candidate lets the smoke prove that incoming invitations are private.
@@ -282,14 +232,40 @@ try {
   actors.set('Кандидат', candidateActor);
   actors.set('Работодатель', employerActor);
   page = employerActor.page;
-  baseline = await directoryResults();
+  const baseline = await directoryResults();
   assert.ok(baseline.items.every(item => !item.person.synthetic), 'Verified employers use the real registered pool without fictional profiles.');
   assert.ok(baseline.items.some(item => item.person.name === otherName));
   assert.equal((await candidateActor.context.request.get(base + '/api/directory/search')).status(), 403, 'A candidate account cannot read another candidate directory.');
   await candidateActor.page.goto(base + '/app?role=employer&tab=candidates');
   await candidateActor.page.waitForURL(url => url.searchParams.get('role') === 'candidate');
   assert.equal(await candidateActor.page.locator('.role-control').count(), 0, 'The candidate URL cannot change the verified account role.');
-  console.log('PASS Verified account roles and separate fictional and registered directories');
+  console.log('PASS Verified account roles and authenticated registered directory');
+  await page.evaluate(() => document.fonts.ready);
+  await noOverflow(page); await audit(page);
+  const explanation = page.locator('.match-details').first();
+  await explanation.locator('summary').click();
+  assert.equal(await explanation.locator('p').isVisible(), true, 'Matching explanation remains available');
+  await explanation.locator('summary').click();
+  await page.screenshot({ path: resolve(output, 'desktop.png'), fullPage: true });
+
+  await page.getByRole('textbox', { name: 'Потребность работодателя' }).fill('Frontend Middle React TypeScript');
+  await page.getByRole('button', { name: 'Подобрать', exact: true }).click();
+  const selected = await directoryResults();
+  assert.ok(selected.total > 0 && selected.items.every(item => item.person.confirmed.specialization === 'Frontend' && item.person.confirmed.grade === 'Middle'));
+  await persist(() => page.getByRole('button', { name: 'Сохранить подборку', exact: true }).click());
+  await page.getByLabel('Есть достижения ФСП').check();
+  const fspSelected = await directoryResults();
+  assert.equal(fspSelected.total, 0, 'An entered profile does not manufacture a verified federation achievement.');
+  await page.getByRole('button', { name: 'Подборки', exact: true }).click();
+  await page.locator('.saved-item').getByRole('button', { name: 'Frontend Middle React TypeScript', exact: true }).click();
+  await directoryResults(page, selected.total);
+  await tab('Приглашения');
+  await tab('Кандидаты');
+  await directoryResults(page, selected.total);
+  assert.equal(await page.getByRole('textbox', { name: 'Потребность работодателя' }).inputValue(), 'Frontend Middle React TypeScript');
+  await page.getByRole('button', { name: 'Очистить поиск', exact: true }).click();
+  await directoryResults(page, baseline.total);
+  console.log('PASS Query, filters, FSP and saved selection');
 
   await role('Кандидат');
   await page.getByRole('heading', { name: 'Анкета', exact: true }).waitFor();
@@ -360,9 +336,8 @@ try {
   await persist(() => page.getByRole('button', { name: 'Сохранить изменения', exact: true }).click());
   await role('Работодатель');
   await directoryResults(page, baseline.total + 1);
-  const stillFictional = await directoryResults(guestPage, guestBaseline.total);
-  assert.ok(stillFictional.items.every(item => item.person.synthetic));
-  assert.ok(!stillFictional.items.some(item => item.person.name === candidateName), 'Publishing a real profile does not expose it to the guest demo.');
+  assert.equal((await context.request.get(base + '/api/directory/search')).status(), 401, 'Published profiles remain unavailable to a guest.');
+  assert.equal(await guestPage.locator('.candidate-row').count(), 0);
   console.log('PASS Mandatory questionnaire, first failure, category confirmation, persistence and publication consent');
 
   await page.getByRole('combobox', { name: 'Специализация', exact: true }).selectOption('Frontend');
@@ -376,7 +351,7 @@ try {
   assert.equal(realCandidate.email, '', 'Directory payloads do not send unrevealed candidate email to the browser.');
   const contactUrl = base + '/api/directory/' + encodeURIComponent(realCandidate.id) + '/contacts';
   assert.equal((await employerActor.context.request.get(contactUrl)).status(), 403, 'The employer API cannot reveal a contact before acceptance.');
-  assert.equal((await context.request.get(contactUrl)).status(), 404, 'The guest API cannot address real candidate contacts.');
+  assert.equal((await context.request.get(contactUrl)).status(), 401, 'The guest API cannot address real candidate contacts.');
   assert.equal((await other.context.request.get(contactUrl)).status(), 404, 'Another candidate cannot address another private contact.');
 
   await page.locator('.person-link').filter({ hasText: candidateName }).click();
@@ -421,15 +396,34 @@ try {
   const disclosed = await employerActor.context.request.get(contactUrl);
   assert.equal(disclosed.status(), 200);
   assert.equal((await disclosed.json()).email, 'anna@example.com');
-  assert.equal((await context.request.get(contactUrl)).status(), 404, 'Acceptance does not grant contact access to guests.');
+  assert.equal((await context.request.get(contactUrl)).status(), 401, 'Acceptance does not grant contact access to guests.');
   assert.equal((await other.context.request.get(contactUrl)).status(), 404, 'Acceptance does not grant contact access to other candidates.');
   await other.page.goto(base + '/app?role=candidate&tab=invitations');
   await other.page.locator('.invitation-card').waitFor();
   assert.equal(await other.page.locator('.invitation-card').count(), 1, 'The other candidate receives only their own invitation.');
   assert.equal(await other.page.locator('a[href="mailto:anna@example.com"]').count(), 0, 'Another candidate cannot receive the accepted candidate contact.');
+  await persist(() => other.page.getByRole('button', { name: 'Отклонить', exact: true }).click(), other.page);
+  await other.page.locator('.status-rejected').waitFor();
+  await page.reload();
+  await page.locator('.status-rejected').waitFor();
+  assert.equal(await page.locator('.status-accepted').count(), 1);
+  const rejectedContactUrl = base + '/api/directory/' + encodeURIComponent(inviteSelection.items.find(item => item.person.name === otherName).person.id) + '/contacts';
+  assert.equal((await employerActor.context.request.get(rejectedContactUrl)).status(), 403, 'Rejection never discloses the other candidate contact.');
   console.log('PASS Shared statuses, contact disclosure and persistence');
 
   await role('Кандидат');
+  await page.getByLabel('Согласен на обработку персональных данных', { exact: true }).uncheck();
+  await persist(() => page.getByRole('button', { name: 'Сохранить изменения', exact: true }).click());
+  assert.equal((await state()).profile.consent, false);
+  assert.equal((await employerActor.context.request.get(contactUrl)).status(), 403, 'Revoking consent immediately closes previously accepted contacts.');
+  await role('Работодатель');
+  await directoryResults(page, baseline.total);
+  assert.equal(await page.locator('.person-link').filter({ hasText: candidateName }).count(), 0);
+  await role('Кандидат');
+  await page.getByLabel('Согласен на обработку персональных данных', { exact: true }).check();
+  await page.getByLabel('Показывать профиль работодателям').check();
+  await persist(() => page.getByRole('button', { name: 'Сохранить изменения', exact: true }).click());
+  assert.equal((await employerActor.context.request.get(contactUrl)).status(), 200, 'The same accepted offer regains access only after renewed consent.');
   await page.getByLabel('Показывать профиль работодателям').uncheck();
   await persist(() => page.getByRole('button', { name: 'Сохранить изменения', exact: true }).click());
   await role('Работодатель');
@@ -466,7 +460,7 @@ try {
   const mobileContext = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, deviceScaleFactor: 1, reducedMotion: 'reduce' });
   contexts.push(mobileContext);
   await prepareContext(mobileContext);
-  const mobile = await mobileContext.newPage();
+  let mobile = await mobileContext.newPage();
   mobile.on('pageerror', error => errors.push(error.message));
   await mobile.goto(base);
   await mobile.evaluate(() => document.fonts.ready);
@@ -477,6 +471,15 @@ try {
   await mobile.locator('.mobile-menu').getByRole('link', { name: 'Возможности', exact: true }).click();
   assert.equal(await mobile.locator('.mobile-menu').count(), 0);
   await mobile.locator('.hero-actions').getByRole('button', { name: 'Попробовать', exact: true }).click();
+  await mobile.getByRole('heading', { name: 'Регистрация', exact: true }).waitFor();
+  assert.equal(await mobile.locator('.candidate-row').count(), 0);
+  assert.equal((await mobileContext.request.get(base + '/api/directory/search')).status(), 401);
+  await noOverflow(mobile); await audit(mobile);
+  assert.equal((await mobileContext.request.post(base + '/api/auth/login', { data: {
+    loginOrEmail: employerActor.login, password: employerActor.password,
+  } })).status(), 200);
+  await mobile.goto(base + '/app?role=employer&tab=candidates');
+  await saved(mobile);
   await directoryResults(mobile);
   await noOverflow(mobile);
   await mobile.screenshot({ path: resolve(output, 'mobile.png'), fullPage: true });
@@ -503,13 +506,17 @@ try {
     await mobile.goto(base + route);
     await mobile.evaluate(() => document.fonts.ready);
     if (route.includes('role=candidate')) {
-      await mobile.getByRole('heading', { name: 'Анкета', exact: true }).waitFor();
-      assert.equal(await mobile.getByRole('heading', { name: 'Анкета', exact: true }).isVisible(), true);
+      await mobile.waitForURL(url => url.searchParams.get('role') === 'employer');
+      assert.equal(await mobile.locator('.role-control').count(), 0, 'A mobile URL cannot change the verified employer role.');
     }
     if (route.includes('tab=company')) await mobile.getByRole('heading', { name: 'Компания', exact: true }).waitFor();
     await noOverflow(mobile);
   }
-  await mobile.goto(base + '/app?role=candidate&tab=profile');
+  await mobile.close();
+  assert.equal((await mobileContext.request.post(base + '/api/auth/logout')).status(), 200);
+  const mobileCandidate = await registeredActor('candidate', 'smoke.mobile', 'Кандидат мобильной проверки', mobileContext);
+  mobile = mobileCandidate.page;
+  await mobile.setViewportSize({ width: 320, height: 750 });
   await mobile.getByRole('heading', { name: 'Анкета', exact: true }).waitFor();
   await fillSurvey(mobile);
   assert.equal(await mobile.locator('input[name="softSkills"]:visible').count(), 5);
@@ -519,7 +526,10 @@ try {
   await persist(() => mobile.getByRole('button', { name: 'К тесту', exact: true }).click(), mobile);
   await mobile.getByRole('button', { name: 'Начать тест', exact: true }).waitFor();
   await noOverflow(mobile);
-  await mobileContext.request.delete(base + '/api/platform/state');
+  const mobileSnapshot = await mobileContext.request.get(base + '/api/platform/state');
+  assert.equal((await mobileContext.request.delete(base + '/api/platform/state', { headers: {
+    'X-Platform-Identity': mobileSnapshot.headers()['x-platform-identity'],
+  } })).status(), 200);
   await mobileContext.close();
   console.log('PASS Mobile 390px, 320px and keyboard dialog');
 
@@ -572,32 +582,52 @@ try {
   const legacyDate = new Date().toISOString();
   legacy.profile.confirmed = { specialization: 'Frontend', grade: 'Middle', score: 86, date: legacyDate };
   legacy.history = [{ id: 'test-initial', specialization: 'Frontend', grade: 'Middle', score: 86, date: legacyDate, passed: true }];
-  await migrationContext.addInitScript(value => localStorage.setItem('predel:platform:v1', JSON.stringify(value)), legacy);
+  await migrationContext.addInitScript(value => {
+    if (sessionStorage.getItem('smoke:legacy-seeded')) return;
+    sessionStorage.setItem('smoke:legacy-seeded', 'true');
+    localStorage.setItem('predel:platform:v1', JSON.stringify(value));
+  }, legacy);
   const migration = await migrationContext.newPage();
+  let guestSaves = 0;
+  migration.on('request', request => {
+    if (new URL(request.url()).pathname === '/api/platform/state' && request.method() === 'PUT') guestSaves++;
+  });
   await migration.goto(base + '/app?role=candidate&tab=profile');
-  await migration.getByRole('heading', { name: 'Анкета', exact: true }).waitFor();
-  await migration.locator('.main-content[data-sync-status="error"]').waitFor();
-  await migration.locator('.data-error').getByRole('button', { name: 'Повторить сохранение', exact: true }).waitFor();
-  assert.equal(await migration.locator('.data-error').getAttribute('role'), 'alert');
-  assert.match(await migration.locator('.data-error').textContent(), /Для сохранения личной анкеты необходимо согласие/u);
-  assert.equal(await migration.getByLabel('Email', { exact: true }).inputValue(), 'edited@example.com', 'An unconsented legacy draft stays editable locally');
-  assert.equal(await migration.getByLabel('Согласен на обработку персональных данных', { exact: true }).isChecked(), false, 'Synthetic legacy consent is never accepted automatically');
-  assert.equal((await (await migrationContext.request.get(base + '/api/platform/state')).json()).state, null, 'The server rejects private legacy contacts before explicit consent');
-  await migration.getByRole('combobox', { name: 'Отрасль', exact: true }).selectOption('ИТ');
-  await migration.getByLabel('Роль в команде', { exact: true }).fill('Разработчик');
-  await migration.getByRole('combobox', { name: 'Специализация', exact: true }).selectOption('Frontend');
-  await migration.getByRole('combobox', { name: 'Предполагаемый грейд', exact: true }).selectOption('Middle');
-  await migration.getByLabel('Согласен на обработку персональных данных', { exact: true }).check();
-  assert.equal(await migration.locator('.onboarding-form').evaluate(form => form.checkValidity()), true);
-  await persist(() => migration.getByRole('button', { name: 'К тесту', exact: true }).click(), migration);
+  await migration.getByRole('heading', { name: 'Регистрация', exact: true }).waitFor();
+  assert.equal(await migration.locator('.candidate-row, .profile-form, .onboarding-form').count(), 0);
+  assert.equal(guestSaves, 0, 'A guest draft must never be sent to the server.');
+  assert.equal((await migrationContext.request.get(base + '/api/platform/state')).status(), 401);
+  assert.equal((await migrationContext.request.put(base + '/api/platform/state', { data: { state: legacy, baseRevision: 0 } })).status(), 401);
+  assert.equal(await migration.evaluate(() => localStorage.getItem('predel:platform:v1')), null, 'Private guest cache is discarded.');
+  assert.equal(await migration.evaluate(key => localStorage.getItem(key), storageKey), null);
+  await noOverflow(migration); await audit(migration);
+  await migration.close();
+  const freshActor = await registeredActor('candidate', 'smoke.fresh', 'Новый кандидат проверки', migrationContext);
+  const freshPage = freshActor.page;
+  await freshPage.getByRole('heading', { name: 'Анкета', exact: true }).waitFor();
+  assert.equal(await freshPage.getByLabel('Имя и фамилия', { exact: true }).inputValue(), 'Новый кандидат проверки');
+  assert.equal(await freshPage.getByLabel('Email', { exact: true }).inputValue(), freshActor.email, 'Verified account fields replace unrelated guest contacts.');
+  assert.equal(await freshPage.getByLabel('Согласен на обработку персональных данных', { exact: true }).isChecked(), false);
+  assert.equal((await (await migrationContext.request.get(base + '/api/platform/state')).json()).state, null,
+    'No private profile is stored before this candidate submits their own consent.');
+  const clean = await state(freshPage);
+  assert.equal(clean.profile.confirmed, null);
+  assert.equal(clean.profile.bio, '');
+  assert.equal(clean.profile.visible, false);
+  assert.deepEqual(clean.profile.softSkills, []);
+  assert.deepEqual(clean.history, []);
+  assert.deepEqual(clean.surveys, []);
+  assert.deepEqual(clean.invitations, []);
+  assert.notEqual(clean.profile.email, 'edited@example.com');
+  await fillSurvey(freshPage, 'Новый кандидат проверки', freshActor.email);
+  await persist(() => freshPage.getByRole('button', { name: 'К тесту', exact: true }).click(), freshPage);
   const migrated = await (await migrationContext.request.get(base + '/api/platform/state')).json();
-  assert.equal(migrated.state.profile.email, 'edited@example.com', 'Explicit consent permits the private edited contact to migrate');
+  assert.equal(migrated.state.profile.email, freshActor.email);
   assert.equal(migrated.state.profile.consent, true);
-  assert.equal(migrated.state.profile.confirmed, null, 'An old synthetic category is not a server assessment');
+  assert.equal(migrated.state.profile.confirmed, null, 'Discarded guest qualifications are never migrated into the account.');
   assert.equal(migrated.state.history.length, 0);
   assert.equal(migrated.state.profile.visible, false);
-  console.log('PASS Isolated legacy migration requires explicit consent and rejects a synthetic qualification');
-  await migrationContext.request.delete(base + '/api/platform/state');
+  console.log('PASS Guest cache cannot migrate; verified onboarding starts with explicit personal consent');
   await migrationContext.close();
 
   await page.evaluate(key => localStorage.setItem(key, '{broken'), storageKey);
@@ -610,22 +640,24 @@ try {
   assert.deepEqual(errors, [], 'Browser runtime errors');
   console.log('PASS Recovery from corrupted storage, no browser errors');
 } catch (error) {
+  console.error('SMOKE assertion', error);
   console.error('SMOKE page contexts', await Promise.all(contexts.flatMap(context => context.pages()).map(async target => ({
     route: target.url(), headings: await target.locator('h1, h2').allTextContents(),
     alerts: await target.getByRole('alert').allTextContents(), statuses: await target.getByRole('status').allTextContents(),
   }))));
   console.error('SMOKE failure context', {
     route: page.url(), headings: await page.locator('h1, h2').allTextContents(),
-    syncStatus: await page.locator('.main-content').getAttribute('data-sync-status'),
+    syncStatus: await page.evaluate(() => document.querySelector('.main-content')?.getAttribute('data-sync-status') || null),
     profile: await page.evaluate(key => {
-      const value = JSON.parse(localStorage.getItem(key) || 'null');
+      let value;
+      try { value = JSON.parse(localStorage.getItem(key) || 'null'); } catch { return 'corrupted'; }
       return value ? { desiredGrade: value.profile.desiredGrade, confirmedGrade: value.profile.confirmed?.grade,
-        surveyCompletedAt: value.profile.surveyCompletedAt, surveyGrades: value.surveys.map(survey => survey.desiredGrade) } : null;
+        surveyCompletedAt: value.profile.surveyCompletedAt, surveyGrades: value.surveys?.map(survey => survey.desiredGrade) } : null;
     }, storageKey),
   });
   throw error;
 } finally {
-  await Promise.all(contexts.map(context => context.request.delete(base + '/api/platform/state').catch(() => {})));
   await Promise.all(contexts.map(context => context.close()));
   await browser.close();
+  await isolated.close();
 }

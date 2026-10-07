@@ -4,6 +4,7 @@ import { isGrade } from '../shared/grading.ts';
 import { MAX_STACK_SKILLS } from '../shared/resume-limits.ts';
 import { RequestError } from './assessment.mjs';
 import { publicCandidate } from './directory-store.mjs';
+import { accountsShareRealm, isLocalFixtureAccount } from './local-fixtures.mjs';
 
 const fail = message => { throw new RequestError(400, message); };
 const ownCandidateId = 'candidate-anna';
@@ -90,8 +91,15 @@ export class MarketplaceService {
   }
   companyAccessible(owner, company) {
     if (!this.accountForOwner) return true;
-    if (!this.accountForOwner(owner)) return company.synthetic === 1 && company.owner === null;
-    return !company.synthetic && this.accountForOwner(company.owner)?.role === 'employer';
+    const account = this.accountForOwner(owner), target = this.accountForOwner(company.owner);
+    return target?.role === 'employer' && accountsShareRealm(account, target)
+      && (!company.synthetic || isLocalFixtureAccount(target));
+  }
+  authorize(owner, role) {
+    if (!this.accountForOwner) return;
+    const account = this.accountForOwner(owner);
+    if (!account) throw new RequestError(401, 'Войдите в аккаунт.');
+    if (role && account.role !== role) throw new RequestError(403, 'Действие для этой роли недоступно.');
   }
   employer(owner) {
     if (!this.accountForOwner) return;
@@ -118,6 +126,7 @@ export class MarketplaceService {
     }
   }
   account(owner, { required = true } = {}) {
+    this.authorize(owner);
     if (typeof owner !== 'string' || !owner || owner.length > 200) throw new RequestError(401, 'Сессия недоступна.');
     const account = this.store.db.prepare('SELECT * FROM platform_accounts WHERE owner=?').get(owner);
     if (!account && required) throw new RequestError(409, 'Сначала сохраните профиль или данные компании.');
@@ -131,15 +140,18 @@ export class MarketplaceService {
     return { id: row.id, companyId: row.company_id, company: row.company_name, title: row.title, description: row.description,
       specialization: row.specialization, grade: row.grade, city: row.city, format: row.format,
       stack: this.store.db.prepare('SELECT skill FROM marketplace_vacancy_skills WHERE vacancy_id=? ORDER BY position').all(row.id).map(item => item.skill),
-      salaryFrom: row.salary_from, salaryTo: row.salary_to, currency: 'RUB', status: row.status, date: row.created_at, synthetic: Boolean(row.synthetic) };
+      salaryFrom: row.salary_from, salaryTo: row.salary_to, currency: 'RUB', status: row.status, date: row.created_at,
+      synthetic: Boolean(row.synthetic) || isLocalFixtureAccount(this.accountForOwner?.(row.owner)) };
   }
   companyDTO(row, owner) {
     const description = row.synthetic && row.owner === null
       ? row.description.replace(/^Вымышленная (.)/u, (_match, first) => first.toLocaleUpperCase('ru')) : row.description;
     return { id: row.id, name: row.name, industry: row.industry, website: row.website, contact: row.contact,
-      description, synthetic: Boolean(row.synthetic), vacancies: this.vacancies(owner, { companyId: row.id }).items };
+      description, synthetic: Boolean(row.synthetic) || isLocalFixtureAccount(this.accountForOwner?.(row.owner)),
+      vacancies: this.vacancies(owner, { companyId: row.id }).items };
   }
   companies({ offset = 0, limit = 12, q = '', owner } = {}) {
+    this.authorize(owner);
     if (!Number.isSafeInteger(offset) || offset < 0 || offset > 1000000 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) fail('Проверьте параметры страницы компаний.');
     const query = text(q, 400).normalize('NFKC').toLocaleLowerCase('ru');
     const args = [];
@@ -158,11 +170,13 @@ export class MarketplaceService {
       nextOffset: offset + page.length < total ? offset + page.length : null };
   }
   company(companyId, owner) {
+    this.authorize(owner);
     const row = this.store.db.prepare('SELECT * FROM marketplace_companies WHERE id=?').get(id(companyId));
     if (!row || !this.companyAccessible(owner, row)) throw new RequestError(404, 'Компания не найдена.');
     return this.companyDTO(row, owner);
   }
   vacancies(owner, { own = false, companyId = null } = {}) {
+    this.authorize(owner, own ? 'employer' : undefined);
     if (own) this.account(owner, { required: false });
     const condition = own ? 'c.owner=?' : "v.status='open'";
     const args = own ? [owner] : [];
@@ -173,6 +187,7 @@ export class MarketplaceService {
     return { items: rows.filter(row => this.companyAccessible(owner, row)).map(row => this.vacancyDTO(row)) };
   }
   vacancy(owner, vacancyId) {
+    this.authorize(owner);
     const row = this.row(vacancyId);
     if (!row || !this.companyAccessible(owner, row) || row.status !== 'open' && row.owner !== owner) throw new RequestError(404, 'Вакансия недоступна.');
     return this.vacancyDTO(row);
@@ -223,12 +238,18 @@ export class MarketplaceService {
     const account = this.store.db.prepare('SELECT profile FROM platform_accounts WHERE owner=?').get(row.candidate_owner);
     const person = account ? JSON.parse(account.profile) : null;
     const snapshot = JSON.parse(row.vacancy_snapshot), own = row.candidate_owner === owner;
+    const company = this.store.db.prepare('SELECT owner FROM marketplace_companies WHERE id=?').get(row.company_id);
+    const fixture = isLocalFixtureAccount(this.accountForOwner?.(company?.owner))
+      || isLocalFixtureAccount(this.accountForOwner?.(row.candidate_owner));
+    if (isLocalFixtureAccount(this.accountForOwner?.(row.candidate_owner)) && person) person.synthetic = true;
+    if (fixture) snapshot.synthetic = true;
     return { id: row.id, vacancyId: row.vacancy_id, candidateId: own ? ownCandidateId : row.candidate_id,
       companyId: row.company_id, company: snapshot.company, vacancy: snapshot,
       candidate: person && (own || person.consent) ? publicCandidate(person, own ? ownCandidateId : row.candidate_id) : null,
       status: row.status, date: row.created_at, respondedAt: row.responded_at, message: row.message, synthetic: Boolean(snapshot.synthetic) };
   }
   apply(owner, vacancyId, input = {}) {
+    this.authorize(owner, 'candidate');
     if (this.accountForOwner?.(owner)?.role === 'employer') throw new RequestError(403, 'Откликаться может только соискатель.');
     const value = object(input, ['message']), message = text(value.message, 2000);
     return this.store.transaction(() => {
@@ -247,6 +268,7 @@ export class MarketplaceService {
     });
   }
   applications(owner, role) {
+    this.authorize(owner, role);
     this.account(owner, { required: false });
     if (!['candidate', 'employer'].includes(role)) fail('Выберите роль для просмотра откликов.');
     const condition = role === 'candidate' ? 'a.candidate_owner=?' : 'c.owner=?';
@@ -254,7 +276,9 @@ export class MarketplaceService {
       WHERE ${condition} ORDER BY a.created_at DESC,a.id LIMIT 1000`).all(owner);
     return { items: rows.filter(row => this.companyAccessible(owner, { owner: row.company_owner, synthetic: row.company_synthetic })
       && (!this.accountForOwner || role === 'candidate' && row.candidate_owner === owner
-        || this.accountForOwner(row.candidate_owner)?.role === 'candidate')).map(row => this.applicationDTO(row, owner)) };
+        || this.accountForOwner(row.candidate_owner)?.role === 'candidate'
+          && accountsShareRealm(this.accountForOwner(owner), this.accountForOwner(row.candidate_owner))))
+      .map(row => this.applicationDTO(row, owner)) };
   }
   respond(owner, applicationId, input) {
     this.employer(owner);
@@ -264,7 +288,8 @@ export class MarketplaceService {
       this.account(owner);
       const row = this.store.db.prepare(`SELECT a.*,c.owner FROM marketplace_applications a
         JOIN marketplace_companies c ON c.id=a.company_id WHERE a.id=?`).get(id(applicationId));
-      if (!row || row.owner !== owner || this.accountForOwner && this.accountForOwner(row.candidate_owner)?.role !== 'candidate') throw new RequestError(404, 'Отклик не найден.');
+      if (!row || row.owner !== owner || this.accountForOwner && (this.accountForOwner(row.candidate_owner)?.role !== 'candidate'
+        || !accountsShareRealm(this.accountForOwner(owner), this.accountForOwner(row.candidate_owner)))) throw new RequestError(404, 'Отклик не найден.');
       if (row.status !== 'sent' && row.status !== value.status) throw new RequestError(409, 'Ответ на отклик уже сохранён.');
       if (row.status === 'sent') {
         const date = new Date(this.now()).toISOString();

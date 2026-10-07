@@ -89,7 +89,8 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
     return row;
   }
   function allowRole(identity, role, message) {
-    if (identity.account && identity.account.role !== role) throw new RequestError(403, message);
+    if (!identity.account) throw new RequestError(401, 'Войдите в аккаунт.');
+    if (identity.account.role !== role) throw new RequestError(403, message);
   }
   const server = createServer(async (request, response) => {
     try {
@@ -101,7 +102,6 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
           ...(webOrigin ? [webOrigin] : ['http://127.0.0.1:5173', 'http://127.0.0.1:4173', 'http://localhost:5173', 'http://localhost:4173'])]);
         if (origin && !allowed.has(origin)) throw new RequestError(403, 'Источник запроса не разрешён.');
         if (request.method === 'GET' && url.pathname === '/api/health') return send(response, 200, { status: 'ok' });
-        if (request.method === 'GET' && url.pathname === '/api/assessment/program') return send(response, 200, programInfo(url.searchParams.get('specialization'), url.searchParams.get('grade')));
         const identity = owner(request, response);
         const session = identity.owner;
         if (url.pathname === '/api/auth/register/request-code') {
@@ -140,6 +140,11 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
           expireCookie(response, authCookieName);
           expireCookie(response, cookieName);
           return send(response, 200, { status: 'signed_out' });
+        }
+        if (!identity.account) throw new RequestError(401, 'Войдите в аккаунт.');
+        if (request.method === 'GET' && url.pathname === '/api/assessment/program') {
+          allowRole(identity, 'candidate', 'Тестирование доступно соискателю.');
+          return send(response, 200, programInfo(url.searchParams.get('specialization'), url.searchParams.get('grade')));
         }
         if (url.pathname === '/api/platform/state') {
           const identityScope = identity.account ? 'auth:' + identity.account.id : 'anonymous:' + session;

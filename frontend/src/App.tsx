@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Check, ChevronDown, X } from 'lucide-react';
 import { Employer } from './pages/Employer';
 import { Company } from './pages/Company';
@@ -15,7 +15,7 @@ import { Landing } from './pages/Landing';
 import { Auth, type AuthMode } from './pages/Auth';
 import { readCandidateContacts, syncCacheKey, usePlatformPersistence } from './platform-api';
 import {
-  currentSurvey, emptyFilters, hasContactAccess, otherCandidates, ownCandidateId, readState, saveState, storageKey,
+  currentSurvey, emptyFilters, ownCandidateId, readState, saveState, storageKey,
   type Candidate, type Page, type Role,
 } from './model';
 
@@ -25,8 +25,9 @@ const navigation: Record<Role, { page: Page; label: string }[]> = {
 };
 
 type AppRoute = { role: Role; page: Page; home: boolean; privacy: boolean; auth: AuthMode | null };
-type AuthAccount = { id: string; login: string; email: string; role: Role; name?: string; companyName?: string };
+type AuthAccount = { id: string; login: string; email: string; role: Role; name?: string; companyName?: string; testAccount?: boolean };
 const accountCacheKey = 'predel:account:v1';
+const pendingSearchKey = 'predel:pending-search';
 
 function clearLocalPlatformCache() {
   localStorage.removeItem(storageKey);
@@ -63,7 +64,12 @@ export function App() {
       const scope = account?.id || 'anonymous';
       try {
         const previous = localStorage.getItem(accountCacheKey);
-        if (previous !== scope && (previous !== null || account)) clearLocalPlatformCache();
+        if (!account || previous !== scope && (previous !== null || account)) clearLocalPlatformCache();
+        if (account) {
+          const pendingSearch = sessionStorage.getItem(pendingSearchKey);
+          if (pendingSearch && account.role === 'employer') sessionStorage.setItem('predel:search', pendingSearch);
+          sessionStorage.removeItem(pendingSearchKey);
+        }
         localStorage.setItem(accountCacheKey, scope);
       } catch { /* Server identity still separates accounts when cache storage is unavailable. */ }
       setIdentity({ ready: true, account, error: '' });
@@ -94,19 +100,35 @@ function Workspace({ authAccount }: { authAccount: AuthAccount | null }) {
   const [signingOut, setSigningOut] = useState(false);
   const [dialog, setDialog] = useState<{ type: 'profile' | 'invite'; person: Candidate } | null>(null);
   const [knownPeople, setKnownPeople] = useState<Candidate[]>([]);
-  const persistence = usePlatformPersistence(state, setState, authAccount ? 'auth:' + authAccount.id : undefined);
-  const candidates = [...new Map([...otherCandidates, ...persistence.people, ...knownPeople, state.profile].map(person => [person.id, person])).values()];
+  const persistence = usePlatformPersistence(state, setState, authAccount ? 'auth:' + authAccount.id : undefined, Boolean(authAccount));
+  const contactAuthority = useRef({ revision: 0, ids: [] as string[] });
+  const previousContactIds = useRef<string[]>([]);
+  contactAuthority.current = { revision: persistence.revision, ids: persistence.contactCandidateIds };
+  const candidates = [...new Map([...knownPeople, ...persistence.people, state.profile].map(person => [person.id, person])).values()]
+    .map(person => {
+      if (person.id === ownCandidateId) return person;
+      if (!persistence.contactCandidateIds.includes(person.id)) return { ...person, email: '', phone: '' };
+      const known = knownPeople.find(item => item.id === person.id);
+      return { ...person, email: known?.email || '', phone: known?.phone || '' };
+    });
   const surveyComplete = Boolean(currentSurvey(state));
   const candidatePage = !surveyComplete ? 'onboarding' : !state.profile.confirmed && route.page !== 'onboarding' && route.page !== 'invitations' ? 'assessment' : route.page;
   const page = route.role === 'candidate' ? candidatePage : route.page;
   const candidateStarted = surveyComplete;
-  const contactsAllowed = (id: string) => hasContactAccess(state, id) || persistence.contactCandidateIds.includes(id);
+  const contactsAllowed = (id: string) => persistence.contactCandidateIds.includes(id);
   const pending = state.invitations.filter(invitation => (invitation.status === 'sent' || invitation.status === 'viewed')
     && (route.role === 'candidate' ? invitation.candidateId === ownCandidateId : invitation.companyId === state.company.id)).length;
 
-  useEffect(() => { if (!saveState(state)) setToast('Хранилище браузера недоступно. Изменения сохранятся до закрытия страницы.'); }, [state]);
+  useEffect(() => { if (authAccount && !saveState(state)) setToast('Хранилище браузера недоступно. Изменения сохранятся до закрытия страницы.'); }, [state, authAccount]);
   useEffect(() => {
-    if (!authAccount) return;
+    if (!authAccount) {
+      if (!route.home && !route.privacy && !route.auth) {
+        history.replaceState(null, '', '/auth?mode=register&role=' + route.role);
+        setRoute(previous => ({ ...previous, auth: 'register' }));
+        setRoleMenu(false); setDialog(null);
+      }
+      return;
+    }
     const role = authAccount.role;
     if (route.auth || (!route.home && !route.privacy && route.role !== role)) {
       const requestedPage = route.role === role && route.page === 'onboarding'
@@ -152,23 +174,36 @@ function Workspace({ authAccount }: { authAccount: AuthAccount | null }) {
     return () => document.removeEventListener('keydown', close);
   }, [roleMenu]);
   useEffect(() => {
-    if (route.role !== 'employer') return;
+    if (!authAccount || route.role !== 'employer' || !persistence.ready) return;
     let active = true;
-    const ids = [...new Set([...persistence.contactCandidateIds, ...state.invitations.filter(item => item.status === 'accepted' && item.companyId === state.company.id
-      && item.candidateId !== ownCandidateId).map(item => item.candidateId)])];
+    const ids = persistence.contactCandidateIds;
+    const revokedIds = previousContactIds.current.filter(id => !ids.includes(id));
+    previousContactIds.current = ids;
+    setKnownPeople(previous => previous.map(person => ids.includes(person.id) ? person : { ...person, email: '', phone: '' }));
+    setDialog(previous => {
+      if (!previous || ids.includes(previous.person.id)) return previous;
+      return revokedIds.includes(previous.person.id) || previous.person.email || previous.person.phone
+        ? null : { ...previous, person: { ...previous.person, email: '', phone: '' } };
+    });
     for (const id of ids) {
       const person = candidates.find(item => item.id === id);
       if (!person) continue;
       void readCandidateContacts(id).then(contacts => {
         if (active) setKnownPeople(previous => [...previous.filter(item => item.id !== id), { ...person, ...contacts }]);
       }).catch(() => {
-        if (active) setKnownPeople(previous => previous.map(item => item.id === id ? { ...item, email: '', phone: '' } : item));
+        if (active) forgetContacts(id);
       });
     }
     return () => { active = false; };
-  }, [route.role, state.invitations, state.company.id, persistence.revision, persistence.contactCandidateIds]);
+  }, [authAccount, route.role, persistence.ready, persistence.revision, persistence.contactCandidateIds]);
+
+  function forgetContacts(id: string) {
+    setKnownPeople(previous => previous.map(item => item.id === id ? { ...item, email: '', phone: '' } : item));
+    setDialog(previous => previous?.person.id === id ? { ...previous, person: { ...previous.person, email: '', phone: '' } } : previous);
+  }
 
   function navigate(requestedRole: Role, requestedPage: Page) {
+    if (!authAccount) { openAuth('register', requestedRole); return; }
     const role = authAccount?.role || requestedRole;
     const page = role === requestedRole && (role === 'candidate' && requestedPage === 'onboarding' || navigation[role].some(item => item.page === requestedPage))
       ? requestedPage : navigation[role][0].page;
@@ -180,10 +215,15 @@ function Workspace({ authAccount }: { authAccount: AuthAccount | null }) {
   const onProfile = (person: Candidate) => {
     remember(person); setDialog({ type: 'profile', person });
     if (route.role === 'employer' && contactsAllowed(person.id) && person.id !== ownCandidateId) {
+      const revision = persistence.revision;
       void readCandidateContacts(person.id).then(contacts => {
+        if (contactAuthority.current.revision !== revision || !contactAuthority.current.ids.includes(person.id)) return;
         const updated = { ...person, ...contacts }; remember(updated);
         setDialog(previous => previous?.person.id === person.id ? { ...previous, person: updated } : previous);
-      }).catch(cause => setToast(cause.message));
+      }).catch(cause => {
+        if (contactAuthority.current.revision !== revision || !contactAuthority.current.ids.includes(person.id)) return;
+        forgetContacts(person.id); setToast(cause.message);
+      });
     }
   };
   const onInvite = (person: Candidate) => { remember(person); setDialog({ type: 'invite', person }); };
@@ -218,6 +258,7 @@ function Workspace({ authAccount }: { authAccount: AuthAccount | null }) {
       const response = await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
       if (!response.ok) throw new Error();
       clearLocalPlatformCache();
+      sessionStorage.removeItem(pendingSearchKey);
       window.location.assign('/');
     } catch {
       setSigningOut(false); setToast('Не удалось завершить сессию. Повторите попытку.');
@@ -225,21 +266,24 @@ function Workspace({ authAccount }: { authAccount: AuthAccount | null }) {
   }
   function start(role: Role = 'employer', query?: string) {
     if (query) {
-      try { sessionStorage.setItem('predel:search', JSON.stringify({ draft: query, query, filters: { ...emptyFilters, stack: [] } })); }
+      try { sessionStorage.setItem(authAccount ? 'predel:search' : pendingSearchKey, JSON.stringify({ draft: query, query, filters: { ...emptyFilters, stack: [] } })); }
       catch { /* Opening the workspace still works when storage is disabled. */ }
     }
-    navigate(role, navigation[role][0].page);
+    if (authAccount) navigate(role, navigation[role][0].page);
+    else openAuth('register', role);
   }
 
-  if (route.privacy) return <Privacy onHome={goHome} onClearLocal={async () => {
+  if (route.privacy) return <Privacy onHome={goHome} onClearLocal={authAccount ? async () => {
     await persistence.clear();
     clearLocalPlatformCache();
     setKnownPeople([]);
     setDialog(null);
-  }} />;
+  } : undefined} />;
   if (route.auth) return <Auth key={route.auth} mode={route.auth} initialRole={route.role} onBack={goHome}
     onSwitchMode={mode => openAuth(mode, route.role)} onRoleChange={updateAuthRole} onAuthenticated={completeAuthentication} />;
   if (route.home) return <Landing onStart={start} onAuth={openAuth} />;
+  if (!authAccount) return <Auth mode="register" initialRole={route.role} onBack={goHome}
+    onSwitchMode={mode => openAuth(mode, route.role)} onRoleChange={updateAuthRole} onAuthenticated={completeAuthentication} />;
   return <div className="app-shell">
     <a className="skip-link" href="#main-content">К содержимому</a>
     <header className="site-header"><div className="header-inner">
@@ -250,6 +294,7 @@ function Workspace({ authAccount }: { authAccount: AuthAccount | null }) {
       )}</nav>
       <div className="header-account">{authAccount ? <>
         <span className="app-account-name" title={authAccount.login}>{authAccount.companyName || authAccount.name || authAccount.login}</span>
+        {authAccount.testAccount && <span className="role-static">Учебный аккаунт</span>}
         <button className="app-signout" disabled={signingOut} onClick={() => void signOut()}>{signingOut ? 'Выходим…' : 'Выйти'}</button>
         <span className="role-button role-static">{authAccount.role === 'employer' ? 'Работодатель' : 'Ищу работу'}</span>
       </> : <>
@@ -266,7 +311,7 @@ function Workspace({ authAccount }: { authAccount: AuthAccount | null }) {
       {!persistence.ready ? <div className="panel empty-state"><p role="status">Загружаем ваши данные…</p>{persistence.error && <><p role="alert">{persistence.error}</p><button className="button secondary" onClick={persistence.retry}>Повторить загрузку</button></>}</div> : <>
       {persistence.status === 'error' && <div className="data-error" role="alert"><span>{persistence.error}</span><button className="text-button" onClick={persistence.retry}>Повторить сохранение</button></div>}
       {page === 'candidates' && <Employer directoryRevision={persistence.directoryRevision} state={state} candidates={candidates} update={setState} onProfile={onProfile} onInvite={onInvite} notify={setToast} />}
-      {page === 'invitations' && <Invitations state={state} candidates={candidates} role={route.role} update={setState} notify={setToast} onProfile={onProfile} syncStatus={persistence.status} revision={persistence.revision} />}
+      {page === 'invitations' && <Invitations state={state} candidates={candidates} contactCandidateIds={persistence.contactCandidateIds} role={route.role} update={setState} notify={setToast} onProfile={onProfile} syncStatus={persistence.status} revision={persistence.revision} />}
       {page === 'company' && <Company state={state} update={setState} notify={setToast} syncStatus={persistence.status} />}
       {page === 'profile' && <Profile state={state} update={setState} notify={setToast} onTest={() => navigate('candidate', 'assessment')} onPreview={() => onProfile(state.profile)} />}
       {page === 'onboarding' && <Onboarding state={state} update={setState} onComplete={() => navigate('candidate', 'assessment')}

@@ -24,6 +24,7 @@ export function ApplicationList({ role, revision = 0, notify, showEmpty = true, 
   const [loadingContact, setLoadingContact] = useState<string | null>(null);
   const [dialog, setDialog] = useState<ProfileDialog | null>(null);
   const dialogSequence = useRef(0);
+  const dialogPersonId = useRef<string | null>(null);
   const contactSequence = useRef(0);
   const onLoadedRef = useRef(onLoaded); onLoadedRef.current = onLoaded;
 
@@ -31,6 +32,11 @@ export function ApplicationList({ role, revision = 0, notify, showEmpty = true, 
     const controller = new AbortController();
     setLoading(true); setError('');
     contactSequence.current += 1;
+    // A new server revision may revoke consent or remove the applicant. An
+    // open dialog must not keep its earlier contact permission or PDF data.
+    dialogSequence.current += 1;
+    dialogPersonId.current = null;
+    setDialog(null);
     setLoadingContact(null); setContacts({}); setContactErrors({});
     listApplications(role, controller.signal).then(result => {
       if (controller.signal.aborted) return;
@@ -53,6 +59,13 @@ export function ApplicationList({ role, revision = 0, notify, showEmpty = true, 
     try {
       const updated = await respondToApplication(application.id, status);
       setItems(previous => previous.map(item => item.id === updated.id ? updated : item));
+      if (!updated.candidate) {
+        contactSequence.current += 1; setLoadingContact(null);
+        if (dialogPersonId.current === updated.candidateId) {
+          dialogSequence.current += 1; dialogPersonId.current = null; setDialog(null);
+        }
+        setContacts(previous => { const next = { ...previous }; delete next[updated.id]; return next; });
+      }
       notify?.(status === 'accepted' ? 'Отклик принят' : 'Отклик отклонён');
     } catch (cause) { setError(errorMessage(cause)); }
     finally { setBusy(null); }
@@ -62,13 +75,17 @@ export function ApplicationList({ role, revision = 0, notify, showEmpty = true, 
     if (!application.candidate) return;
     const person = { ...application.candidate, email: '', phone: '' };
     const request = ++dialogSequence.current;
+    dialogPersonId.current = person.id;
     setDialog({ person, loading: true, contacts: false, error: '' });
     try {
       const actual = await readCandidateContacts(application.candidateId);
       if (dialogSequence.current !== request) return;
       setDialog({ person: { ...person, ...actual }, loading: false, contacts: true, error: '' });
     } catch (cause) {
-      if (dialogSequence.current === request) setDialog({ person, loading: false, contacts: false, error: errorMessage(cause) });
+      if (dialogSequence.current === request) {
+        setDialog({ person, loading: false, contacts: false, error: errorMessage(cause) });
+        setContacts(previous => { const next = { ...previous }; delete next[application.id]; return next; });
+      }
     }
   }
 
@@ -81,11 +98,21 @@ export function ApplicationList({ role, revision = 0, notify, showEmpty = true, 
     try {
       const actual = await readCandidateContacts(application.candidateId);
       if (contactSequence.current === request) setContacts(previous => ({ ...previous, [application.id]: actual }));
-    } catch (cause) { if (contactSequence.current === request) setContactErrors(previous => ({ ...previous, [application.id]: errorMessage(cause) })); }
+    } catch (cause) {
+      if (contactSequence.current === request) {
+        setContactErrors(previous => ({ ...previous, [application.id]: errorMessage(cause) }));
+        if (dialogPersonId.current === application.candidateId) {
+          dialogSequence.current += 1;
+          setDialog(previous => previous?.person.id === application.candidateId ? {
+            ...previous, person: { ...previous.person, email: '', phone: '' }, loading: false, contacts: false, error: errorMessage(cause),
+          } : previous);
+        }
+      }
+    }
     finally { if (contactSequence.current === request) setLoadingContact(null); }
   }
 
-  const closeDialog = () => { dialogSequence.current += 1; setDialog(null); };
+  const closeDialog = () => { dialogSequence.current += 1; dialogPersonId.current = null; setDialog(null); };
   if (!loading && !error && !items.length && !showEmpty) return null;
   return <section className="application-list" aria-labelledby="application-heading">
     <h2 id="application-heading">{role === 'employer' ? 'Отклики' : 'Мои отклики'}</h2>

@@ -403,21 +403,32 @@ test('candidate rows, normalized skills and vectors survive SQLite reopening', a
 });
 
 test('HTTP platform snapshots are session-owned, CAS-checked and deletable', async t => {
-  const { server, directory } = createAssessmentServer({ dbPath: ':memory:' });
+  const codes = new Map();
+  const { server, directory } = createAssessmentServer({ dbPath: ':memory:', authEnv: {}, authMailer: async ({ email, code }) => { codes.set(email, code); } });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise(resolve => server.close(resolve)));
   const base = `http://127.0.0.1:${server.address().port}`;
-  const initial = await fetch(base + '/api/platform/state');
-  const cookie = initial.headers.get('set-cookie').split(';')[0];
+  async function registered(login) {
+    const email = `${login}@example.test`;
+    assert.equal((await fetch(base + '/api/auth/register/request-code', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role: 'candidate', login, email, password: 'directory fixture password', name: 'Вымышленный кандидат', consent: true }) })).status, 202);
+    const verified = await fetch(base + '/api/auth/register/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, code: codes.get(email) }) });
+    assert.equal(verified.status, 201);
+    return verified.headers.getSetCookie().find(value => value.startsWith('predel_account_session=')).split(';')[0];
+  }
+  const cookie = await registered('directory-owner'), otherCookie = await registered('directory-outsider');
+  const initial = await fetch(base + '/api/platform/state', { headers: { Cookie: cookie } });
+  const identity = initial.headers.get('x-platform-identity');
   assert.deepEqual(await initial.json(), { state: null, revision: 0, directoryPeople: [] });
   const state = createInitialState();
   state.profile = { ...state.profile, name: 'Тестовый кандидат', email: 'test@example.com', professionalRole: 'Инженер', stack: ['C++'], consent: true, visible: true };
-  const put = () => fetch(base + '/api/platform/state', { method: 'PUT', headers: { cookie, 'Content-Type': 'application/json' }, body: JSON.stringify({ state, baseRevision: 0 }) });
+  const put = () => fetch(base + '/api/platform/state', { method: 'PUT', headers: { cookie, 'X-Platform-Identity': identity, 'Content-Type': 'application/json' }, body: JSON.stringify({ state, baseRevision: 0 }) });
   const saved = await put(); assert.equal(saved.status, 200); assert.equal((await saved.json()).revision, 1);
   assert.equal((await put()).status, 409);
-  assert.equal((await (await fetch(base + '/api/platform/state')).json()).state, null, 'another browser cannot read private state');
+  assert.equal((await (await fetch(base + '/api/platform/state', { headers: { Cookie: otherCookie } })).json()).state, null, 'another account cannot read private state');
   assert.equal(directory.store.all().some(row => row.owner), false, 'a self-declared grade never publishes a real profile');
   assert.equal((await fetch(base + '/api/directory/candidate-anna/contacts', { headers: { cookie } })).status, 200);
-  assert.equal((await fetch(base + '/api/platform/state', { method: 'DELETE', headers: { cookie } })).status, 200);
+  assert.equal((await fetch(base + '/api/platform/state', { method: 'DELETE', headers: { cookie, 'X-Platform-Identity': identity } })).status, 200);
   assert.equal((await (await fetch(base + '/api/platform/state', { headers: { cookie } })).json()).state, null);
 });

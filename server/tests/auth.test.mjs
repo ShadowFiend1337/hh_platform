@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AuthError, AuthService, createVerificationMailer, hashPassword, passwordMatches, validateRegistration } from '../auth.mjs';
 import { createInitialState } from '../../frontend/src/model.ts';
+import { digest } from '../assessment.mjs';
 
 const initialTime = Date.parse('2026-10-07T09:00:00.000Z');
 const ownerA = 'a'.repeat(64);
@@ -272,16 +273,19 @@ async function httpFixture(t, options = {}) {
   return { ...service, emails, base: `http://127.0.0.1:${service.server.address().port}` };
 }
 
-test('HTTP accounts start apart from guest data and independent-device login shares only authenticated state', async t => {
+test('HTTP accounts require registration and independent-device login shares only authenticated state', async t => {
   const service = await httpFixture(t);
   const firstCookies = new Map();
   const first = client(service.base, firstCookies);
   const guest = await first('/api/platform/state');
-  assert.equal(guest.status, 200);
+  assert.equal(guest.status, 401);
   const anonymous = firstCookies.get('predel_session');
   const state = createInitialState();
   state.company.name = 'Saved Before Registration';
-  assert.equal((await first('/api/platform/state', { method: 'PUT', body: { state, baseRevision: 0 } })).status, 200);
+  assert.equal((await first('/api/platform/state', { method: 'PUT', body: { state, baseRevision: 0 } })).status, 401);
+  // A private legacy row cannot be reopened by its old anonymous cookie.
+  service.directory.store.db.prepare('INSERT INTO platform_accounts VALUES(?,?,?,?,?,?)')
+    .run(digest(anonymous), `user-${digest(anonymous).slice(0, 20)}`, 1, JSON.stringify(state.profile), JSON.stringify(state.company), new Date(initialTime).toISOString());
   const requested = await first('/api/auth/register/request-code', { method: 'POST', body: registration() });
   assert.equal(requested.status, 202);
   assert(!JSON.stringify(requested.payload).includes('code"'));
@@ -296,7 +300,7 @@ test('HTTP accounts start apart from guest data and independent-device login sha
   assert.match(fresh.headers.get('x-platform-identity'), /^auth:/u);
   const ownState = createInitialState();
   ownState.profile = { ...ownState.profile, name: 'Authenticated Candidate', email: 'candidate@example.com', consent: true };
-  const guestIdentity = guest.headers.get('x-platform-identity');
+  const guestIdentity = `anonymous:${digest(anonymous)}`;
   assert.equal((await first('/api/platform/state', { method: 'PUT', body: { state: ownState, baseRevision: 0 },
     headers: { 'X-Platform-Identity': guestIdentity } })).status, 409);
   assert.equal((await first('/api/platform/state', { method: 'PUT', body: { state: ownState, baseRevision: 0 } })).status, 409);
@@ -315,12 +319,12 @@ test('HTTP accounts start apart from guest data and independent-device login sha
   assert.equal((await second('/api/auth/me')).status, 200);
   const oldAnonymous = client(service.base, new Map([['predel_session', anonymous]]));
   const oldState = await oldAnonymous('/api/platform/state');
-  assert.equal(oldState.payload.state.company.name, 'Saved Before Registration');
-  assert.equal(oldState.payload.state.profile.name, '');
+  assert.equal(oldState.status, 401);
+  assert(!JSON.stringify(oldState.payload).includes('Saved Before Registration'));
   assert.equal((await oldAnonymous('/api/auth/me')).status, 401);
 });
 
-test('HTTP registered roles restrict protected actions while anonymous main routes remain available', async t => {
+test('HTTP registered roles restrict protected actions and anonymous business routes require login', async t => {
   const service = await httpFixture(t);
   const candidate = client(service.base), employer = client(service.base), anonymous = client(service.base);
   async function register(request, input) {
@@ -333,9 +337,9 @@ test('HTTP registered roles restrict protected actions while anonymous main rout
     role: 'employer', companyName: 'Example Company', consent: true });
   assert.equal((await candidate('/api/directory/search')).status, 403);
   assert.equal((await employer('/api/assessment/attempts', { method: 'POST', body: {} })).status, 403);
-  assert.equal((await anonymous('/api/companies')).status, 200);
-  assert.equal((await anonymous('/api/vacancies')).status, 200);
-  assert.equal((await anonymous('/api/directory/search')).status, 200);
+  assert.equal((await anonymous('/api/companies')).status, 401);
+  assert.equal((await anonymous('/api/vacancies')).status, 401);
+  assert.equal((await anonymous('/api/directory/search')).status, 401);
   assert.equal((await candidate('/api/vacancies', { method: 'POST', body: {} })).status, 403);
   assert.equal((await employer('/api/vacancies/unknown/applications', { method: 'POST', body: {} })).status, 403);
 });

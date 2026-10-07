@@ -9,15 +9,14 @@ const vacancy = () => ({ title: 'Разработка кабинета', descrip
   specialization: 'Frontend', grade: 'Junior', city: 'Закрытый город компании', format: 'Удалённо',
   stack: ['React', 'TypeScript'], salaryFrom: 100000, salaryTo: 150000 });
 
-async function fixture(t) {
+async function fixture(t, options = {}) {
   const codes = new Map();
   const service = createAssessmentServer({ dbPath: ':memory:', authEnv: {},
-    authMailer: async ({ email, code }) => { codes.set(email, code); } });
+    authMailer: async ({ email, code }) => { codes.set(email, code); }, ...options });
   await new Promise(resolve => service.server.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise(resolve => { service.server.close(resolve); service.server.closeAllConnections(); }));
   const base = `http://127.0.0.1:${service.server.address().port}`;
-  function browser() {
-    const cookies = new Map();
+  function browser(cookies = new Map()) {
     let identity;
     const client = async (path, method = 'GET', input) => {
       const response = await fetch(base + path, { method, headers: {
@@ -34,6 +33,7 @@ async function fixture(t) {
     };
     client.owner = () => service.auth.accountForToken(cookies.get('predel_account_session'))?.platformOwner
       || digest(cookies.get('predel_session'));
+    client.cookies = cookies;
     return client;
   }
   async function register(role, login) {
@@ -74,126 +74,136 @@ async function fixture(t) {
   return { service, browser, register, person, company, invitation };
 }
 
-test('demo catalogue and option values stay separate from registered and anonymous personal profiles', async t => {
+test('all business endpoints reject a guest before revealing data or accepting any mutation', async t => {
+  const f = await fixture(t), guest = f.browser();
+  const reads = ['/api/platform/state', '/api/directory/search', '/api/directory/options', '/api/directory/candidate-mikhail/contacts',
+    '/api/companies', '/api/companies/demo-company-vector', '/api/vacancies', '/api/vacancies?own=1',
+    '/api/vacancies/demo-company-vector-vacancy-1', '/api/applications?role=candidate', '/api/applications?role=employer',
+    '/api/assessment/program?specialization=Frontend&grade=Junior', '/api/assessment/attempts/11111111-1111-1111-1111-111111111111'];
+  for (const path of reads) {
+    const response = await guest(path);
+    assert.equal(response.status, 401, path); assert.deepEqual(Object.keys(response.data), ['error']);
+    assert(!JSON.stringify(response.data).includes('Михаил'));
+  }
+  const writes = [
+    ['/api/platform/state', 'PUT', { state: f.company(), baseRevision: 0 }], ['/api/platform/state', 'DELETE'],
+    ['/api/vacancies', 'POST', vacancy()], ['/api/vacancies/demo-company-vector-vacancy-1', 'PATCH', { status: 'closed' }],
+    ['/api/vacancies/demo-company-vector-vacancy-1/applications', 'POST', {}], ['/api/applications/unknown', 'PATCH', { status: 'accepted' }],
+    ['/api/assessment/attempts', 'POST', {}], ['/api/assessment/attempts/11111111-1111-1111-1111-111111111111/submit', 'POST', {}],
+  ];
+  for (const [path, method, body] of writes) assert.equal((await guest(path, method, body)).status, 401, path);
+  assert.equal(f.service.directory.store.db.prepare('SELECT COUNT(*) AS n FROM platform_accounts').get().n, 0);
+  assert.equal(f.service.directory.store.db.prepare('SELECT COUNT(*) AS n FROM marketplace_applications').get().n, 0);
+  assert.equal(f.service.store.countSince(guest.owner(), '1970-01-01T00:00:00.000Z'), 0);
+  assert.equal((await guest('/api/health')).status, 200);
+  assert.equal((await guest('/api/auth/me')).status, 401);
+  assert.equal((await guest('/api/auth/logout', 'POST', {})).status, 200);
+});
+
+test('registered employer sees real candidates and registered candidate cannot open the candidate catalogue', async t => {
   const f = await fixture(t), employer = await f.register('employer', 'isolation-employer'), candidate = await f.register('candidate', 'isolation-candidate');
-  const guest = f.browser(), otherGuest = f.browser();
-  await guest('/api/platform/state'); await otherGuest('/api/platform/state');
   assert.equal((await candidate('/api/platform/state', 'PUT', { state: f.person(candidate.owner(), 'Зарегистрированный профиль', 'Закрытый город кандидата'), baseRevision: 0 })).status, 200);
-  assert.equal((await otherGuest('/api/platform/state', 'PUT', { state: f.person(otherGuest.owner(), 'Личная демо-анкета', 'Личный город демо'), baseRevision: 0 })).status, 200);
-  const demo = await guest('/api/directory/search?limit=50'), real = await employer('/api/directory/search?limit=50');
-  assert.equal(demo.status, 200); assert(demo.data.total > 0);
-  assert(demo.data.items.every(item => item.person.synthetic === true));
-  assert(!JSON.stringify(demo.data).includes('Зарегистрированный профиль'));
-  assert(!JSON.stringify(demo.data).includes('Личная демо-анкета'));
-  assert.equal(real.data.total, 1); assert.equal(real.data.items[0].person.name, 'Зарегистрированный профиль');
-  assert(!real.data.items[0].person.synthetic);
-  const demoOptions = await guest('/api/directory/options'), realOptions = await employer('/api/directory/options');
-  assert(!demoOptions.data.cities.includes('Закрытый город кандидата'));
-  assert(!demoOptions.data.cities.includes('Личный город демо'));
-  assert.deepEqual(realOptions.data.cities, ['Закрытый город кандидата']);
+  const real = await employer('/api/directory/search?limit=50');
+  assert.equal(real.status, 200); assert.equal(real.data.total, 1); assert.equal(real.data.items[0].person.name, 'Зарегистрированный профиль');
+  assert(!real.data.items[0].person.synthetic); assert(!real.data.items[0].person.email);
+  assert.deepEqual((await employer('/api/directory/options')).data.cities, ['Закрытый город кандидата']);
   assert.equal((await candidate('/api/directory/search')).status, 403);
   assert.equal((await candidate('/api/directory/options')).status, 403);
-  assert.equal((await candidate('/api/auth/logout', 'POST', {})).status, 200);
-  const loggedOut = await candidate('/api/directory/search');
-  assert(loggedOut.data.items.every(item => item.person.synthetic === true));
+  assert.equal((await employer('/api/assessment/attempts', 'POST', {})).status, 403);
+  assert.equal((await candidate('/api/assessment/program?specialization=Frontend&grade=Junior')).status, 200);
+  assert.equal((await employer('/api/assessment/program?specialization=Frontend&grade=Junior')).status, 403);
 });
 
-test('demo retains its own questionnaire, decisions and synthetic invitation while rejecting real recipients', async t => {
-  const f = await fixture(t), candidate = await f.register('candidate', 'isolation-recipient'), guest = f.browser();
-  await guest('/api/platform/state');
-  const real = await candidate('/api/platform/state', 'PUT', { state: f.person(candidate.owner(), 'Закрытый получатель', 'Казань'), baseRevision: 0 });
-  assert.equal(real.status, 200);
-  const personId = f.service.directory.store.forOwner(candidate.owner()).id;
-  const state = f.company();
-  state.invitations = [f.invitation(personId)];
-  assert.equal((await guest('/api/platform/state', 'PUT', { state, baseRevision: 0 })).status, 404);
-  assert.deepEqual((await candidate('/api/platform/state')).data.state.invitations, []);
-  assert.equal((await guest(`/api/directory/${personId}/contacts`)).status, 404);
-  const own = f.person(guest.owner(), 'Собственная демо-анкета', 'Казань');
-  own.candidateDecisions = [{ candidateId: 'candidate-mikhail', decision: 'liked', date: new Date().toISOString() }];
-  own.invitations = [f.invitation('candidate-mikhail', 'demo-synthetic-invitation')];
-  const saved = await guest('/api/platform/state', 'PUT', { state: own, baseRevision: 0 });
-  assert.equal(saved.status, 200); assert.equal(saved.data.state.candidateDecisions.length, 1);
-  assert.equal(saved.data.state.invitations.length, 1);
-  assert.equal(saved.data.directoryPeople.find(person => person.id === 'candidate-mikhail')?.synthetic, true);
-  assert.equal((await guest('/api/directory/candidate-anna/contacts')).status, 200);
-  saved.data.state.candidateDecisions.push({ candidateId: personId, decision: 'liked', date: new Date().toISOString() });
-  assert.equal((await guest('/api/platform/state', 'PUT', { state: saved.data.state, baseRevision: saved.data.revision })).status, 404);
-  assert.equal((await guest('/api/platform/state', 'DELETE')).status, 200);
-});
-
-test('legacy demo-to-real invitation and decision cannot leak through snapshots or accepted contacts', async t => {
-  const f = await fixture(t), candidate = await f.register('candidate', 'legacy-candidate'), guest = f.browser();
-  await guest('/api/platform/state');
+test('legacy anonymous profiles, invitations and decisions stay inaccessible with the old cookie', async t => {
+  const f = await fixture(t), candidate = await f.register('candidate', 'legacy-candidate'), employer = await f.register('employer', 'legacy-employer'), guest = f.browser();
+  assert.equal((await guest('/api/platform/state')).status, 401);
   await candidate('/api/platform/state', 'PUT', { state: f.person(candidate.owner(), 'Закрытый legacy профиль', 'Казань'), baseRevision: 0 });
-  const saved = await guest('/api/platform/state', 'PUT', { state: f.company(), baseRevision: 0 });
-  const personId = f.service.directory.store.forOwner(candidate.owner()).id, date = new Date().toISOString();
-  // Reproduce old stored relations without weakening production HTTP guards.
+  await employer('/api/platform/state', 'PUT', { state: f.company(), baseRevision: 0 });
+  const owner = guest.owner(), legacyId = `user-${owner.slice(0, 20)}`, legacy = f.person(owner, 'Старая личная демо-анкета', 'Частный город демо'), date = new Date().toISOString();
+  f.service.directory.store.db.prepare('INSERT INTO platform_accounts VALUES(?,?,?,?,?,?)')
+    .run(owner, legacyId, 1, JSON.stringify(legacy.profile), JSON.stringify(legacy.company), date);
+  f.service.directory.store.upsert({ ...legacy.profile, id: legacyId }, owner, true);
+  const personId = f.service.directory.store.forOwner(candidate.owner()).id;
   f.service.directory.store.db.prepare('INSERT INTO platform_invitations VALUES(?,?,?,?,?,?)')
-    .run('old-demo-invitation', guest.owner(), personId, 'accepted', date, JSON.stringify(f.invitation(personId, 'old-demo-invitation')));
-  f.service.directory.store.db.prepare('INSERT INTO platform_candidate_decisions VALUES(?,?,?,?)').run(guest.owner(), personId, 'liked', date);
-  const read = await guest('/api/platform/state');
-  assert.equal(saved.status, 200); assert.deepEqual(read.data.state.invitations, []);
-  assert.deepEqual(read.data.state.candidateDecisions, []); assert.deepEqual(read.data.directoryPeople, []);
-  assert.deepEqual(read.data.contactCandidateIds, []);
+    .run('old-demo-invitation', owner, personId, 'accepted', date, JSON.stringify(f.invitation(personId, 'old-demo-invitation')));
+  f.service.directory.store.db.prepare('INSERT INTO platform_candidate_decisions VALUES(?,?,?,?)').run(owner, personId, 'liked', date);
+  assert.equal((await guest('/api/platform/state')).status, 401);
+  assert.equal((await guest('/api/platform/state', 'DELETE')).status, 401);
+  assert.equal((await guest(`/api/directory/${personId}/contacts`)).status, 401);
   assert.deepEqual((await candidate('/api/platform/state')).data.state.invitations, []);
-  assert.equal((await guest(`/api/directory/${personId}/contacts`)).status, 404);
+  const found = await employer('/api/directory/search?limit=50');
+  assert.equal(found.data.total, 1); assert(!JSON.stringify(found.data).includes('Старая личная демо-анкета'));
+  assert(!JSON.stringify((await employer('/api/directory/options')).data).includes('Частный город демо'));
+  assert(f.service.directory.store.forOwner(owner), 'guest cannot delete a legacy profile through the public API');
 });
 
-test('demo companies and applications are synthetic; registered vacancies require verified employer', async t => {
+test('registered marketplace and contacts work while guests and other registered roles cannot mutate them', async t => {
   const f = await fixture(t), employer = await f.register('employer', 'market-isolation-employer'), candidate = await f.register('candidate', 'market-isolation-candidate'), guest = f.browser();
-  await guest('/api/platform/state');
   await employer('/api/platform/state', 'PUT', { state: f.company(), baseRevision: 0 });
   await candidate('/api/platform/state', 'PUT', { state: f.person(candidate.owner(), 'Кандидат отклика', 'Казань'), baseRevision: 0 });
-  await guest('/api/platform/state', 'PUT', { state: f.person(guest.owner(), 'Демо кандидат отклика', 'Казань'), baseRevision: 0 });
   const published = await employer('/api/vacancies', 'POST', vacancy());
   assert.equal(published.status, 201);
-  const realVacancy = published.data, demoCompanies = await guest('/api/companies'), realCompanies = await candidate('/api/companies');
-  assert(demoCompanies.data.items.length > 0); assert(demoCompanies.data.items.every(company => company.synthetic));
-  assert.equal(realCompanies.data.total, 1); assert.equal(realCompanies.data.items[0].id, realVacancy.companyId);
-  assert.equal((await guest(`/api/companies/${realVacancy.companyId}`)).status, 404);
-  assert.equal((await guest(`/api/vacancies/${realVacancy.id}`)).status, 404);
-  assert((await guest('/api/vacancies')).data.items.every(item => item.synthetic));
-  assert.equal((await guest('/api/vacancies', 'POST', vacancy())).status, 401);
-  assert.equal((await guest(`/api/vacancies/${realVacancy.id}`, 'PATCH', { status: 'closed' })).status, 401);
-  assert.equal((await guest(`/api/vacancies/${realVacancy.id}/applications`, 'POST', {})).status, 404);
+  const realVacancy = published.data, realCompanies = await candidate('/api/companies');
+  assert.equal(realCompanies.status, 200); assert.equal(realCompanies.data.total, 1);
+  assert.equal(realCompanies.data.items[0].id, realVacancy.companyId); assert(!realCompanies.data.items[0].synthetic);
+  assert.equal((await candidate(`/api/companies/${realVacancy.companyId}`)).status, 200);
+  assert.equal((await guest(`/api/companies/${realVacancy.companyId}`)).status, 401);
+  assert.equal((await guest(`/api/vacancies/${realVacancy.id}`)).status, 401);
+  assert.equal((await guest(`/api/vacancies/${realVacancy.id}/applications`, 'POST', {})).status, 401);
   assert.equal((await candidate('/api/vacancies', 'POST', vacancy())).status, 403);
-  const demoVacancy = demoCompanies.data.items[0].vacancies[0];
-  const appliedDemo = await guest(`/api/vacancies/${demoVacancy.id}/applications`, 'POST', { message: 'Учебный отклик' });
-  assert.equal(appliedDemo.status, 201); assert.equal(appliedDemo.data.synthetic, true);
-  assert.equal((await guest('/api/applications?role=candidate')).data.items.length, 1);
-  assert.equal((await candidate(`/api/vacancies/${demoVacancy.id}/applications`, 'POST', {})).status, 404);
-  const appliedReal = await candidate(`/api/vacancies/${realVacancy.id}/applications`, 'POST', {});
-  assert.equal(appliedReal.status, 201);
+  assert.equal((await employer(`/api/vacancies/${realVacancy.id}/applications`, 'POST', {})).status, 403);
+  const applied = await candidate(`/api/vacancies/${realVacancy.id}/applications`, 'POST', {});
+  assert.equal(applied.status, 201);
   const incoming = await employer('/api/applications?role=employer');
   assert.equal(incoming.data.items.length, 1); assert.equal(incoming.data.items[0].candidate.name, 'Кандидат отклика');
-  assert.equal((await guest(`/api/applications/${appliedReal.data.id}`, 'PATCH', { status: 'accepted' })).status, 401);
-  assert.equal((await employer(`/api/applications/${appliedReal.data.id}`, 'PATCH', { status: 'accepted' })).status, 200);
-  const personId = incoming.data.items[0].candidateId;
-  assert.equal((await employer(`/api/directory/${personId}/contacts`)).status, 200);
-  assert.equal((await guest(`/api/directory/${personId}/contacts`)).status, 404);
+  assert.equal((await candidate('/api/applications?role=employer')).status, 403);
+  assert.equal((await employer(`/api/applications/${applied.data.id}`, 'PATCH', { status: 'accepted' })).status, 200);
+  assert.equal((await employer(`/api/directory/${incoming.data.items[0].candidateId}/contacts`)).status, 200);
+  assert.equal((await guest(`/api/directory/${incoming.data.items[0].candidateId}/contacts`)).status, 401);
 });
 
-test('old anonymous applications to a real company cannot restore applicant or contact access', async t => {
+test('old anonymous applications never restore applicant or contact access for a registered employer', async t => {
   const f = await fixture(t), employer = await f.register('employer', 'legacy-market-employer'), guest = f.browser();
-  await guest('/api/platform/state');
+  await guest('/api/auth/me');
   await employer('/api/platform/state', 'PUT', { state: f.company(), baseRevision: 0 });
-  await guest('/api/platform/state', 'PUT', { state: f.person(guest.owner(), 'Частный старый демо-кандидат', 'Казань'), baseRevision: 0 });
-  const published = await employer('/api/vacancies', 'POST', vacancy()), personId = f.service.directory.store.forOwner(guest.owner()).id;
+  const owner = guest.owner(), personId = `user-${owner.slice(0, 20)}`, state = f.person(owner, 'Частный старый демо-кандидат', 'Казань');
+  f.service.directory.store.db.prepare('INSERT INTO platform_accounts VALUES(?,?,?,?,?,?)')
+    .run(owner, personId, 1, JSON.stringify(state.profile), JSON.stringify(state.company), new Date().toISOString());
+  f.service.directory.store.upsert({ ...state.profile, id: personId }, owner, true);
+  const published = await employer('/api/vacancies', 'POST', vacancy());
   assert.equal(published.status, 201);
   f.service.directory.store.db.prepare('INSERT INTO marketplace_applications VALUES(?,?,?,?,?,?,?,?,?,?)')
-    .run('legacy-cross-scope-application', published.data.id, published.data.companyId, guest.owner(), personId,
+    .run('legacy-cross-scope-application', published.data.id, published.data.companyId, owner, personId,
       'sent', new Date().toISOString(), null, 'Учебная старая запись', JSON.stringify(published.data));
-  assert.deepEqual((await guest('/api/applications?role=candidate')).data.items, []);
+  assert.equal((await guest('/api/applications?role=candidate')).status, 401);
   assert.deepEqual((await employer('/api/applications?role=employer')).data.items, []);
   const snapshot = await employer('/api/platform/state');
   assert.deepEqual(snapshot.data.directoryPeople, []); assert.deepEqual(snapshot.data.contactCandidateIds, []);
   assert.equal((await employer(`/api/directory/${personId}/contacts`)).status, 404);
   assert.equal((await employer('/api/applications/legacy-cross-scope-application', 'PATCH', { status: 'accepted' })).status, 404);
-  assert.equal((await guest(`/api/applications/legacy-cross-scope-application`, 'PATCH', { status: 'accepted' })).status, 401);
 });
 
-test('semantic admission and its final freshness check preserve demo and registered account boundaries', async t => {
+test('logout, revoked cookies and expired sessions cannot reopen business data; fresh login restores the same account', async t => {
+  let time = Date.parse('2026-10-07T09:00:00.000Z');
+  const f = await fixture(t, { now: () => time, authSessionDays: 1 }), candidate = await f.register('candidate', 'session-boundary-candidate');
+  const state = createInitialState();
+  Object.assign(state.profile, { name: 'Частная анкета', email: 'private@example.test', consent: true });
+  assert.equal((await candidate('/api/platform/state', 'PUT', { state, baseRevision: 0 })).status, 200);
+  const staleCookies = new Map(candidate.cookies), expired = f.browser(staleCookies);
+  time += 86400000;
+  assert.equal((await expired('/api/platform/state')).status, 401);
+  assert.equal((await expired('/api/directory/search')).status, 401);
+  assert.equal((await expired('/api/platform/state', 'DELETE')).status, 401);
+  assert.equal((await candidate('/api/auth/login', 'POST', { loginOrEmail: 'session-boundary-candidate@example.test', password: 'demo isolation fixture password' })).status, 200);
+  assert.equal((await candidate('/api/platform/state')).data.state.profile.name, 'Частная анкета');
+  const revoked = f.browser(new Map(candidate.cookies));
+  assert.equal((await candidate('/api/auth/logout', 'POST', {})).status, 200);
+  assert.equal((await candidate('/api/platform/state')).status, 401);
+  assert.equal((await revoked('/api/platform/state')).status, 401);
+  assert.equal((await revoked('/api/assessment/program?specialization=Frontend&grade=Junior')).status, 401);
+});
+
+test('configured service methods fail closed without a registered owner and semantic freshness never leaks a withdrawn account', async t => {
   const accounts = new Map([['real-employer', { role: 'employer' }], ['real-candidate', { role: 'candidate' }]]);
   function profile(id, name, synthetic = false) {
     return { ...createInitialState().profile, id, name, professionalRole: 'Frontend разработчик',
@@ -208,12 +218,16 @@ test('semantic admission and its final freshness check preserve demo and registe
     accountForOwner: owner => accounts.get(owner) || null });
   t.after(() => directory.close());
   directory.store.upsert(profile('real-person', 'Зарегистрированный профиль'), 'real-candidate', true);
-  directory.store.upsert(profile('guest-person', 'Частная демо-анкета'), 'other-guest', true);
-  const demo = await directory.search('создать доступную форму', {}, { owner: 'demo-guest' });
-  assert.deepEqual(demo.items.map(item => item.person.id), ['demo-person']);
+  await assert.rejects(directory.search('создать доступную форму', {}, { owner: 'demo-guest' }), error => error.status === 401);
+  assert.throws(() => directory.options('demo-guest'), error => error.status === 401);
   const real = await directory.search('создать доступную форму', {}, { owner: 'real-employer' });
   assert.deepEqual(real.items.map(item => item.person.id), ['real-person']);
   encoder.rerank = async (_query, texts) => { accounts.delete('real-candidate'); return texts.map(() => 0.9); };
-  const withdrawn = await directory.search('создать доступную форму', {}, { owner: 'real-employer' });
-  assert.deepEqual(withdrawn.items, []);
+  assert.deepEqual((await directory.search('создать доступную форму', {}, { owner: 'real-employer' })).items, []);
+  const f = await fixture(t), guest = f.browser(); await guest('/api/auth/me');
+  assert.throws(() => f.service.platform.read(guest.owner()), error => error.status === 401);
+  assert.throws(() => f.service.platform.save(guest.owner(), f.company(), 0), error => error.status === 401);
+  assert.throws(() => f.service.platform.delete(guest.owner()), error => error.status === 401);
+  assert.throws(() => f.service.marketplace.companies({ owner: guest.owner() }), error => error.status === 401);
+  assert.throws(() => f.service.marketplace.vacancies(guest.owner()), error => error.status === 401);
 });

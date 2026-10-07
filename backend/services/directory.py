@@ -9,7 +9,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.models import PlatformState
+from backend.models import Account, PlatformState
 from backend.services.common import (
     ApiError, EMPLOYMENT_TYPES, FORMATS, GRADES, INDUSTRIES, LANGUAGES, LANGUAGE_OPTIONS,
     SPECIALIZATIONS, clone_json, company_id, public_id,
@@ -62,12 +62,14 @@ def public_candidate(person: dict[str, Any], candidate_id: str | None = None) ->
 
 def _dynamic_candidates(session: Session) -> list[dict[str, Any]]:
     values: list[dict[str, Any]] = []
-    for row in session.scalars(select(PlatformState)).all():
+    for row in session.scalars(select(PlatformState).join(Account, Account.platform_owner == PlatformState.owner)
+                               .where(Account.role == "candidate")).all():
         state = row.state if isinstance(row.state, dict) else {}
         profile = state.get("profile") if isinstance(state.get("profile"), dict) else {}
         confirmed = profile.get("confirmed") if isinstance(profile.get("confirmed"), dict) else None
         eligible = bool(
-            profile.get("visible") is True and profile.get("consent") is True and profile.get("name")
+            profile.get("synthetic") is not True
+            and profile.get("visible") is True and profile.get("consent") is True and profile.get("name")
             and profile.get("email") and profile.get("professionalRole") and profile.get("stack")
             and confirmed and confirmed.get("score", 0) >= 70
         )
@@ -80,10 +82,7 @@ def _dynamic_candidates(session: Session) -> list[dict[str, Any]]:
 
 
 def candidates(session: Session) -> list[dict[str, Any]]:
-    dynamic = _dynamic_candidates(session)
-    by_id = {str(item.get("id")): item for item in SEED_CANDIDATES}
-    by_id.update({str(item["id"]): item for item in dynamic})
-    return list(by_id.values())
+    return _dynamic_candidates(session)
 
 
 def options(session: Session) -> dict[str, Any]:
