@@ -207,6 +207,8 @@ try {
   assert.equal(await page.locator('[name="email"]').inputValue(), 'ivan.test@example.com');
   assert.match(await page.locator('[name="stack"]').inputValue(), /React/);
   assert.equal(await page.locator('[name="specialization"]').inputValue(), 'Frontend');
+  assert.equal(await page.getByLabel('Коммуникация', { exact: true }).isChecked(), true);
+  assert.equal(await page.getByLabel('Работа в команде', { exact: true }).isChecked(), true);
   await assertNoAutomaticConsent();
   await page.screenshot({ path: resolve('test-results', 'resume-desktop.png'), fullPage: true });
   await mobileAudit();
@@ -362,7 +364,9 @@ try {
   await page.getByText('Подробнее о себе', { exact: true }).click();
   for (const [name, value] of Object.entries({ education: 'Тестовый университет', languages: 'Английский B2', phone: '+79990001122', portfolio: 'https://github.com/ivan-test' })) await page.locator(`[name="${name}"]`).fill(value);
   await page.locator('[name="format"]').selectOption('Гибрид');
-  assert.equal(await page.locator('[name="softSkills"]').count(), 0, 'The questionnaire must not show a soft-skills block');
+  assert.equal(await page.locator('[name="softSkills"]').count(), 5, 'The questionnaire offers optional self-reported skills');
+  for (const skill of ['Коммуникация', 'Работа в команде']) await page.getByLabel(skill, { exact: true }).check();
+  for (const skill of ['Самоорганизация', 'Решение задач', 'Лидерство']) await page.getByLabel(skill, { exact: true }).uncheck();
   await page.locator('[name="consent"]').check();
   await page.getByRole('button', { name: 'К тесту', exact: true }).click();
   await page.getByRole('button', { name: 'Начать тест', exact: true }).waitFor();
@@ -371,8 +375,8 @@ try {
   assert.equal(saved.profile.careerAchievements, 'Ускорил интерфейс на 30 процентов');
   assert.equal(saved.profile.workHistory, longHistory);
   assert.equal(saved.surveys[0].workHistory, longHistory);
-  assert.deepEqual(saved.profile.softSkills, []);
-  assert.deepEqual(saved.surveys[0].softSkills, []);
+  assert.deepEqual([...saved.profile.softSkills].sort(), ['Коммуникация', 'Работа в команде']);
+  assert.deepEqual([...saved.surveys[0].softSkills].sort(), ['Коммуникация', 'Работа в команде']);
   assert.equal(saved.profile.format, 'Гибрид');
   assert.equal(saved.profile.visible, false);
   assert.equal(saved.profile.confirmed, null);
@@ -388,7 +392,7 @@ try {
   await page.getByRole('button', { name: 'Начать тест', exact: true }).click();
   const body = (await requestPromise).postDataJSON();
   assert.deepEqual(Object.keys(body.survey).sort(), ['date', 'desiredGrade', 'experience', 'id', 'industry', 'professionalRole', 'softSkills', 'specialization', 'stack'].sort(), 'Assessment request must omit contacts and additional resume sections');
-  assert.deepEqual(body.survey.softSkills, [], 'Assessment must start without self-reported soft skills');
+  assert.deepEqual([...body.survey.softSkills].sort(), ['Коммуникация', 'Работа в команде'], 'Assessment receives the saved questionnaire self-assessment');
   for (const privateValue of ['ivan.test@example.com', '+79990001122', 'Тестовый университет', 'Ускорил интерфейс', 'github.com/ivan-test']) assert.ok(!JSON.stringify(body).includes(privateValue));
   const serverAttempt = await (await responsePromise).json();
   await page.locator('.question-text').waitFor();
@@ -409,7 +413,7 @@ try {
   await page.getByRole('button', { name: 'К профилю', exact: true }).click();
   await page.getByRole('heading', { name: 'Мой профиль', exact: true }).waitFor();
   assert.equal(await page.locator('[name="workHistory"]').inputValue(), longHistory);
-  assert.equal(await page.locator('[name="softSkills"]').count(), 0, 'The profile must not show a soft-skills block');
+  assert.equal(await page.locator('[name="softSkills"]').count(), 5, 'Self-reported skills can be edited in the profile');
   const editedHistory = longHistory + '\nПоследний проект: обновил систему уведомлений.';
   await page.locator('[name="workHistory"]').fill(editedHistory);
   await page.getByRole('button', { name: 'Сохранить изменения', exact: true }).click();
@@ -419,7 +423,7 @@ try {
   await page.getByRole('heading', { name: 'Мой профиль', exact: true }).waitFor();
   saved = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), storageKey);
   assert.equal(saved.profile.workHistory, editedHistory, 'Profile save must preserve long work history');
-  assert.deepEqual(saved.profile.softSkills, [], 'Profile must save without self-reported soft skills');
+  assert.deepEqual([...saved.profile.softSkills].sort(), ['Коммуникация', 'Работа в команде'], 'Profile preserves self-reported skills');
 
   // Deletion is confirmed, synchronized across tabs, and removes server records.
   const beforeErase = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), storageKey);

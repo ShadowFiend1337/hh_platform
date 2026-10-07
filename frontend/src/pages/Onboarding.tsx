@@ -2,7 +2,8 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Paperclip, Trash2 } from 'lucide-react';
 import { MAX_STACK_SKILLS, resumeTextLimits as textLimits } from '../../../shared/resume-limits';
 import { CandidateSteps } from '../components/CandidateSteps';
-import { gradeOptions, industryOptions, isGrade, isSpecialization, specializationOptions, type CandidateSurvey, type Grade, type PlatformState, type Specialization } from '../model';
+import { SoftSkillsField } from '../components/SoftSkillsField';
+import { gradeOptions, industryOptions, isGrade, isSpecialization, softSkillOptions, specializationOptions, type CandidateSurvey, type Grade, type PlatformState, type Specialization } from '../model';
 import type { ResumeFields } from '../resume-parser';
 import { employmentTypes } from '../../../shared/search.ts';
 import { deriveExperienceMonths, deriveLanguageCodes } from '../candidate-preferences';
@@ -10,6 +11,7 @@ import { deriveExperienceMonths, deriveLanguageCodes } from '../candidate-prefer
 type Draft = {
   name: string; email: string; phone: string; city: string; industry: string; professionalRole: string;
   specialization: string; desiredGrade: string; stack: string; experience: string;
+  softSkills: string[];
   careerAchievements: string; education: string; workHistory: string; portfolio: string; languages: string; format: string;
   salaryFrom: string; salaryTo: string; employmentType: string;
 };
@@ -34,6 +36,7 @@ export function Onboarding({ state, update, onComplete, accountPrefill }: {
     specialization: state.surveys.length || profile.confirmed ? profile.specialization : '',
     desiredGrade: state.surveys.length || profile.confirmed ? profile.desiredGrade : '',
     stack: profile.stack.join(', '), experience: profile.experience,
+    softSkills: profile.softSkills || [],
     careerAchievements: profile.careerAchievements || '', education: profile.education || '',
     workHistory: profile.workHistory || '', portfolio: profile.portfolio || '', languages: profile.languages || '',
     format: profile.format,
@@ -97,11 +100,16 @@ export function Onboarding({ state, update, onComplete, accountPrefill }: {
         while (skills.join(', ').length > textLimits.stack) skills.pop();
         if (skills.length) recognized.stack = skills.join(', ');
       }
+      if (result.fields.softSkills?.length) {
+        const skills = [...new Set(result.fields.softSkills)].filter(skill => softSkillOptions.includes(skill));
+        if (skills.length) recognized.softSkills = skills;
+      }
       setDraft(previous => {
         const next = { ...previous };
         for (const key of Object.keys(recognized) as (keyof Draft)[]) {
           const unchanged = previous[key] === original[key];
-          if (unchanged) Object.assign(next, { [key]: recognized[key] });
+          if (unchanged && key === 'softSkills') next.softSkills = [...new Set([...previous.softSkills, ...recognized.softSkills!])];
+          else if (unchanged) Object.assign(next, { [key]: recognized[key] });
         }
         return next;
       });
@@ -131,7 +139,7 @@ export function Onboarding({ state, update, onComplete, accountPrefill }: {
     const desiredGrade = draft.desiredGrade as Grade;
     const industry = draft.industry.trim(), professionalRole = draft.professionalRole.trim(), experience = draft.experience.trim();
     const stack = [...new Set(draft.stack.split(',').map(skill => skill.trim()).filter(Boolean))];
-    const softSkills: string[] = [];
+    const softSkills = [...new Set(draft.softSkills)].filter(skill => softSkillOptions.includes(skill));
     const salaryFrom = draft.salaryFrom === '' ? null : Number(draft.salaryFrom);
     const salaryTo = draft.salaryTo === '' ? null : Number(draft.salaryTo);
     if ([salaryFrom, salaryTo].some(value => value !== null && (!Number.isInteger(value) || value < 0 || value > 10_000_000))) {
@@ -200,6 +208,7 @@ export function Onboarding({ state, update, onComplete, accountPrefill }: {
         <label className="field"><span>Предполагаемый грейд</span><select name="desiredGrade" required value={draft.desiredGrade} onChange={event => change('desiredGrade', event.target.value)}><option value="">Выберите</option>{gradeOptions.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}</select></label>
       </div>
       <label className="field"><span>Стек</span><input name="stack" required maxLength={textLimits.stack} value={draft.stack} onChange={event => change('stack', event.target.value)} placeholder="React, TypeScript, CSS" /></label>
+      <SoftSkillsField value={draft.softSkills} onChange={value => change('softSkills', value)} />
       <div className="form-grid">
         <label className="field"><span>Общий стаж</span><input name="experience" required maxLength={100} value={draft.experience} onChange={event => change('experience', event.target.value)} placeholder="3 года 4 месяца или без опыта" aria-describedby={draft.experience.trim() && deriveExperienceMonths(draft.experience) === null ? 'onboarding-experience-help' : undefined} /></label>
         <label className="field"><span>Город</span><input name="city" maxLength={100} autoComplete="address-level2" value={draft.city} onChange={event => change('city', event.target.value)} placeholder="Необязательно" /></label>

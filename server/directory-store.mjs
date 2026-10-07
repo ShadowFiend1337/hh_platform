@@ -63,7 +63,7 @@ export function parseSemanticSegments(document) {
 
 export function publicCandidate(person, id = person.id) {
   const allowed = ['name', 'specialization', 'desiredGrade', 'confirmed', 'gradeChangedAt', 'stack', 'industry', 'professionalRole',
-    'surveyCompletedAt', 'experience', 'city', 'format', 'bio', 'careerAchievements', 'education', 'workHistory',
+    'surveyCompletedAt', 'experience', 'city', 'format', 'bio', 'careerAchievements', 'education', 'workHistory', 'softSkills',
     'portfolio', 'languages', 'achievements', 'visible', 'consent', 'salaryFrom', 'salaryTo', 'experienceMonths',
     'employmentType', 'availableFrom', 'languageCodes', 'synthetic'];
   const output = Object.fromEntries(allowed.filter(key => Object.hasOwn(person, key)).map(key => [key, person[key]]));
@@ -71,7 +71,8 @@ export function publicCandidate(person, id = person.id) {
     if (output[key]) output[key] = scrub(output[key]);
   }
   if (Array.isArray(output.stack)) output.stack = output.stack.map(scrub);
-  return { ...output, id, email: '', phone: '', fspId: '', softSkills: [] };
+  output.softSkills = Array.isArray(output.softSkills) ? output.softSkills.map(scrub).filter(Boolean) : [];
+  return { ...output, id, email: '', phone: '', fspId: '' };
 }
 
 export class DirectoryStore {

@@ -1,0 +1,4 @@
+.soft-skills-field legend { font-size: 13px; font-weight: 600; margin-bottom: 12px; }
+.soft-skills-field legend .field-caption { display: inline; font-weight: 400; margin-left: 7px; }
+.soft-skills-options { display: flex; flex-wrap: wrap; column-gap: 22px; row-gap: 8px; }
+.soft-skills-options .checkbox-field { margin: 0; }

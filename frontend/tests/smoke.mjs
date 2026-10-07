@@ -172,7 +172,7 @@ try {
   await page.getByRole('button', { name: 'К тесту', exact: true }).click();
   assert.equal(await page.getByRole('heading', { name: 'Анкета', exact: true }).isVisible(), true, 'Required answers prevent an empty submission');
   await fillSurvey();
-  assert.equal(await page.locator('input[name="softSkills"]').count(), 0, 'The questionnaire does not display soft skill choices');
+  assert.equal(await page.locator('input[name="softSkills"]').count(), 5, 'The questionnaire offers optional self-reported skills');
   await noOverflow(page);
   await page.screenshot({ path: resolve(output, 'onboarding-desktop.png'), fullPage: true });
   await audit(page);
@@ -217,7 +217,7 @@ try {
   assert.equal(new URL(page.url()).searchParams.get('tab'), 'assessment', 'A direct profile entry retains the test result until the candidate continues');
   const surveyDate = current.profile.surveyCompletedAt;
   await page.getByRole('button', { name: 'К профилю', exact: true }).click();
-  assert.equal(await page.locator('input[name="softSkills"]').count(), 0, 'The profile does not display soft skill choices');
+  assert.equal(await page.locator('input[name="softSkills"]').count(), 5, 'Self-reported skills can be edited in the profile');
   assert.equal(await page.getByRole('combobox', { name: 'Отрасль', exact: true }).inputValue(), 'ИТ');
   assert.equal(await page.getByLabel('Роль в команде', { exact: true }).inputValue(), 'Разработчик');
   await role('Работодатель');
@@ -364,7 +364,7 @@ try {
   await mobile.goto(base + '/app?role=candidate&tab=profile');
   await mobile.getByRole('heading', { name: 'Анкета', exact: true }).waitFor();
   await fillSurvey(mobile);
-  assert.equal(await mobile.locator('input[name="softSkills"]').count(), 0);
+  assert.equal(await mobile.locator('input[name="softSkills"]').count(), 5);
   await noOverflow(mobile);
   await mobile.screenshot({ path: resolve(output, 'onboarding-mobile.png'), fullPage: true });
   await audit(mobile);

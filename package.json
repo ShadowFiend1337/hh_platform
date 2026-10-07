@@ -21,6 +21,7 @@
     "test:swipe": "npm --prefix frontend run test:swipe",
     "test:offers": "npm --prefix frontend run test:offers",
     "test:companies": "node scripts/browser-companies.mjs",
+    "test:soft-skills": "node frontend/tests/soft-skills.mjs",
     "setup:local-accounts": "node scripts/local-accounts.mjs",
     "setup:search": "node scripts/ml.mjs setup",
     "train:search": "node scripts/ml.mjs train",

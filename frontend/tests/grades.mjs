@@ -34,7 +34,8 @@ try {
       assert.equal(await page.locator('.resume-import [role="alert"]').count(), 0);
       assert.equal(await page.getByLabel('Предполагаемый грейд').inputValue(), grade);
       assert.equal(await page.getByLabel('Общий стаж').inputValue(), '3 года 10 месяцев', 'Overlapping employment must not inflate the total');
-      assert.equal(await page.locator('[name="softSkills"]').count(), 0);
+      assert.equal(await page.locator('[name="softSkills"]').count(), 5);
+      assert.equal(await page.locator('[name="softSkills"]:checked').count(), 0, 'Self-reported skills remain optional');
       await page.getByLabel('Согласен на обработку персональных данных', { exact: true }).check();
       await page.getByLabel('Показывать профиль работодателям', { exact: true }).check();
       await page.getByRole('button', { name: 'К тесту', exact: true }).click();

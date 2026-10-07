@@ -103,7 +103,7 @@ function profile(input, stored) {
     stack: strings(value.stack, MAX_STACK_SKILLS, 80, 'Стек'),
     industry: choice(value.industry, ['', ...industryOptions], 'Отрасль'),
     professionalRole: text(value.professionalRole, resumeTextLimits.professionalRole, 'Роль'),
-    softSkills: [], surveyCompletedAt: date(value.surveyCompletedAt, 'Дата анкеты'),
+    softSkills: strings(value.softSkills, 10, 80, 'Софт-скиллы'), surveyCompletedAt: date(value.surveyCompletedAt, 'Дата анкеты'),
     experience: text(value.experience, resumeTextLimits.experience, 'Стаж'),
     city: text(value.city, resumeTextLimits.city, 'Город'), format: choice(value.format, formats, 'Формат работы', 'Удалённо'),
     bio: text(value.bio, 4000, 'О себе'),
@@ -136,7 +136,7 @@ function hasPrivateProfile(value) {
   if (!value) return false;
   return ['name', 'email', 'phone', 'city', 'bio', 'careerAchievements', 'education', 'workHistory', 'portfolio',
     'languages', 'industry', 'professionalRole', 'experience', 'employmentType', 'availableFrom'].some(key => Boolean(value[key]))
-    || Boolean(value.stack?.length || value.languageCodes?.length || value.confirmed || value.surveyCompletedAt)
+    || Boolean(value.stack?.length || value.softSkills?.length || value.languageCodes?.length || value.confirmed || value.surveyCompletedAt)
     || value.salaryFrom !== null && value.salaryFrom !== undefined || value.salaryTo !== null && value.salaryTo !== undefined
     || value.experienceMonths !== null && value.experienceMonths !== undefined;
 }
@@ -158,7 +158,7 @@ function survey(input) {
     specialization: category(value.specialization, isSpecialization, 'Специализация анкеты'),
     desiredGrade: category(value.desiredGrade, isGrade, 'Грейд анкеты'),
     stack: strings(value.stack, MAX_STACK_SKILLS, 80, 'Стек анкеты'),
-    experience: text(value.experience, 100, 'Стаж анкеты'), softSkills: [],
+    experience: text(value.experience, 100, 'Стаж анкеты'), softSkills: strings(value.softSkills, 10, 80, 'Софт-скиллы'),
   };
   if (!id || !created || !result.professionalRole || !result.stack.length || !result.experience) fail('Заполните обязательные поля анкеты.');
   for (const key of ['careerAchievements', 'education', 'workHistory', 'languages']) result[key] = text(value[key], resumeTextLimits[key], key);

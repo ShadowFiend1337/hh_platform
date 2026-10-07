@@ -5,6 +5,7 @@ import { FormHeader } from './Company';
 import { MAX_STACK_SKILLS, resumeTextLimits } from '../../../shared/resume-limits';
 import { employmentTypes } from '../../../shared/search.ts';
 import { deriveExperienceMonths, deriveLanguageCodes } from '../candidate-preferences';
+import { SoftSkillsField } from '../components/SoftSkillsField';
 
 function sameValues(left: string[], right: string[]) {
   const leftValues = new Set(left);
@@ -21,6 +22,7 @@ export function Profile({ state, update, notify, onTest, onPreview }: {
   const [visible, setVisible] = useState(state.profile.visible);
   const [error, setError] = useState('');
   const [experienceText, setExperienceText] = useState(state.profile.experience);
+  const [softSkills, setSoftSkills] = useState(state.profile.softSkills || []);
   const profile = state.profile;
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -29,7 +31,6 @@ export function Profile({ state, update, notify, onTest, onPreview }: {
     const stack = [...new Set(String(fields.get('stack')).split(',').map(skill => skill.trim()).filter(Boolean))];
     const industry = String(fields.get('industry') || '').trim();
     const professionalRole = String(fields.get('professionalRole') || '').trim();
-    const softSkills: string[] = [];
     const specialization = String(fields.get('specialization')) as Specialization;
     const desiredGrade = String(fields.get('desiredGrade')) as Grade;
     const experience = String(fields.get('experience')).trim();
@@ -92,6 +93,7 @@ export function Profile({ state, update, notify, onTest, onPreview }: {
         <div className="form-grid"><label className="field"><span>Общий стаж</span><input name="experience" required maxLength={100} value={experienceText} onChange={event => setExperienceText(event.target.value)} aria-describedby={experienceText.trim() && deriveExperienceMonths(experienceText) === null ? 'profile-experience-help' : undefined} /></label><label className="field"><span>Формат работы</span><select name="format" defaultValue={profile.format}><option>Удалённо</option><option>Гибрид</option><option>Офис</option></select></label></div>
         {experienceText.trim() && deriveExperienceMonths(experienceText) === null && <p className="field-help" id="profile-experience-help">Для подбора по стажу укажите точную продолжительность, например «3 года 4 месяца». Приблизительный стаж останется в профиле.</p>}
         <label className="field"><span>Стек</span><input name="stack" required maxLength={resumeTextLimits.stack} defaultValue={profile.stack.join(', ')} placeholder="React, TypeScript, CSS" /></label>
+        <SoftSkillsField value={softSkills} onChange={setSoftSkills} />
         <label className="field"><span>Места работы и проекты</span><textarea name="workHistory" rows={6} maxLength={resumeTextLimits.workHistory} defaultValue={profile.workHistory || ''} /></label>
         <label className="field"><span>О себе</span><textarea name="bio" rows={4} maxLength={3000} defaultValue={profile.bio} /></label>
         <label className="field"><span>Достижения</span><textarea name="careerAchievements" rows={3} maxLength={resumeTextLimits.careerAchievements} defaultValue={profile.careerAchievements || ''} placeholder="Результаты проектов, награды, соревнования" /></label>

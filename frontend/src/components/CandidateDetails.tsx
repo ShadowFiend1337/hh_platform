@@ -26,6 +26,7 @@ export function CandidateDetails({ person, contacts, onInvite, contactNote = 'О
     </div>
     <section><h4>О себе</h4><p className="body-copy">{person.bio || 'Пока не заполнено'}</p></section>
     <section><h4>Стек</h4><div className="tags">{person.stack.map(skill => <span className="tag" key={skill}>{skill}</span>)}</div></section>
+    {person.softSkills?.length > 0 && <section><h4>Софт-скиллы <span className="field-caption">Самооценка</span></h4><div className="tags">{person.softSkills.map(skill => <span className="tag" key={skill}>{skill}</span>)}</div></section>}
     {workHistory && <section><h4>Места работы и проекты</h4><p className="body-copy resume-copy">{workHistory}</p></section>}
     {careerAchievements && <section><h4>Достижения</h4><p className="body-copy resume-copy">{careerAchievements}</p></section>}
     {education && <section><h4>Образование</h4><p className="body-copy resume-copy">{education}</p></section>}
