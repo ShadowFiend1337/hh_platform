@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { DirectoryService } from '../directory.mjs';
 import { directoryCandidates } from '../directory-seed.mjs';
 import { DirectoryStore, cosine, semanticMatch, semanticDocument, semanticSegments, parseSemanticSegments,
-  publicCandidate, textHash, PROFILE_INDEX_POLICY } from '../directory-store.mjs';
+  semanticRerankingSections, publicCandidate, textHash, PROFILE_INDEX_POLICY } from '../directory-store.mjs';
 
 const dimension = 312;
 const axis = (index, value = 1) => Array.from({ length: dimension }, (_, i) => i === index ? value : 0);
@@ -77,6 +77,22 @@ test('task-only extraction preserves the same private-contact, provenance and du
   assert.deepEqual(sections.slice(1),['Уменьшил дрейф','Радиотехника']);
   assert.doesNotMatch(JSON.stringify(sections),/hidden@example|Демонстрацион|Инженер электроники|C\+\+/u);
   assert.equal(person.workHistory,person.bio,'Extraction does not mutate the account');
+});
+
+test('sparse reranking keeps factual competencies beside education while described work keeps its task sections', () => {
+  const sparse=profile('sparse',{bio:'',workHistory:'',careerAchievements:'',education:'Высшее образование',
+    professionalRole:'Инженер hidden@example.com',stack:['C++','+7 (999) 123-45-67']});
+  const sections=semanticRerankingSections(sparse);
+  assert.equal(sections.length,2);
+  assert.deepEqual(sections[0],{text:'Высшее образование',kind:'professional'});
+  assert.equal(sections[1].kind,'competencies');
+  assert.match(sections[1].text,/Инженер.*\nC\+\+/su);
+  assert.doesNotMatch(JSON.stringify(sections),/hidden@example|999/u);
+  assert(sections.every(section=>semanticSegments(sparse).includes(section.text)), 'Each scored section has its exact indexed vector');
+  assert.deepEqual(semanticRerankingSections(profile('described')).map(section=>section.text),
+    semanticSegments(profile('described'),{includeIdentity:false}));
+  assert.deepEqual(semanticRerankingSections({}),[],'Empty profiles do not acquire invented competencies');
+  assert.equal(sparse.professionalRole,'Инженер hidden@example.com','Private source fields remain unchanged');
 });
 
 test('maximum cosine finds the strongest actual section and rejects truncated or non-finite vector bundles', () => {

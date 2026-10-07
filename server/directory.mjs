@@ -1,4 +1,4 @@
-import { DirectoryStore, semanticMatch, semanticSegments, parseSemanticSegments, PROFILE_INDEX_POLICY } from './directory-store.mjs';
+import { DirectoryStore, semanticMatch, semanticRerankingSections, parseSemanticSegments, PROFILE_INDEX_POLICY, PROFILE_EVIDENCE_POLICY } from './directory-store.mjs';
 import { directoryCandidates } from './directory-seed.mjs';
 import { SemanticWorker, validScoreCalibration } from './semantic-worker.mjs';
 import { industryOptions, isSpecialization, specializationLabels, stackOptions } from '../shared/catalog.ts';
@@ -393,7 +393,7 @@ export class DirectoryService {
       else reasons.push(`Результат серверного теста ${row.score}/100.`);
       return {person,semanticScore,rank:semanticScore??row.score,reason:reasons.join(' '),testScore:row.score,fsp:row.fsp,
         sourceId:row.id,documentHash:row.document_hash,publicPayload:row.public_payload,
-        taskSections:stage?semanticSegments(person,{includeIdentity:false}):[],reasonSuffix:reasons.slice(1),
+        taskSections:stage?semanticRerankingSections(person):[],reasonSuffix:reasons.slice(1),
         roleLabel:specializationLabels[row.specialization] || row.specialization};
     });
     let items;
@@ -427,9 +427,11 @@ export class DirectoryService {
             throw new Error('Модель вернула некорректный вектор запроса.');
           }
         }
-        // Identity helps recall; the calibrated second stage compares actual
-        // work, achievements and education. It always sees biography evidence.
-        const passages=shortlist.flatMap(item=>item.taskSections.map(text=>`${item.roleLabel}\n${text}`));
+        // Sparse profiles also expose their actual role and skills, never a
+        // fabricated description of work. The frozen model formula and
+        // cutoffs apply unchanged; task DEV metrics do not validate this
+        // separate runtime competency-evidence policy.
+        const passages=shortlist.flatMap(item=>item.taskSections.map(section=>`${item.roleLabel}\n${section.text}`));
         // DEV calibration pairs the raw query with this exact task section,
         // never with the maximum retrieval cosine of the whole profile.
         const rowLookup=new Map(rows.map(row=>[row.id,row]));
@@ -437,8 +439,8 @@ export class DirectoryService {
           const row=rowLookup.get(item.sourceId), stored=vectors.get(item.sourceId);
           if (!row || !this.currentVector(row,stored)) throw new Error('Секции профиля не соответствуют индексу.');
           const indexed=parseSemanticSegments(row.document), stride=this.encoder.info.dimension*4;
-          return item.taskSections.map(text=>{
-            const index=indexed.indexOf(text);
+          return item.taskSections.map(section=>{
+            const index=indexed.indexOf(section.text);
             const match=index<0?null:semanticMatch(rawVector,stored.vector.subarray(index*stride,(index+1)*stride));
             if (!match || !Number.isFinite(match.score)) throw new Error('Секция профиля не соответствует вектору.');
             return match.score;
@@ -474,8 +476,10 @@ export class DirectoryService {
           const row=fresh.get(item.sourceId);
           if (!row || row.document_hash!==item.documentHash || row.public_payload!==item.publicPayload
             || !this.currentVector(row,vectors.get(row.id))) return [];
-          return [{...item,rerankerScore:sectionScores[winning],rank:maximum,
-            reason:[`Похожие задачи в профиле: ${item.taskSections[winning].replace(/^Вымышленный проект /u, 'Проект ').slice(0,350)}`,...item.reasonSuffix].join(' ')}];
+          const section=item.taskSections[winning];
+          const label=section.kind==='competencies'?'Роль и навыки в профиле':'Похожие задачи в профиле';
+          return [{...item,rerankerScore:sectionScores[winning],rank:maximum,evidenceKind:section.kind,
+            reason:[`${label}: ${section.text.replace(/^Вымышленный проект /u, 'Проект ').slice(0,350)}`,...item.reasonSuffix].join(' ')}];
         });
         items=eligible.filter(item=>item.rank>=(fusion?.threshold??stage.threshold));
         // A DEV applicability floor can offer a small nearest list only when
@@ -489,7 +493,9 @@ export class DirectoryService {
     } else items=candidates.filter(item=>!embeddingQuery||item.semanticScore!==null&&item.semanticScore>=this.encoder.info.threshold);
     items.sort(order);
     return {items:items.slice(offset,offset+limit).map(({testScore,fsp,sourceId,documentHash,publicPayload,taskSections,reasonSuffix,roleLabel,...item})=>item),total:items.length,offset,limit,query,interpreted,effectiveFilters:filters,
-      model:{...this.encoder.info,indexPolicy:PROFILE_INDEX_POLICY,...(stage?{stage:structuredClone(stage),rerankerAggregation:stage.scoreCalibration?'max-fused-task-sections-v1':'max-task-sections-v1'}:{})},warnings};
+      model:{...this.encoder.info,indexPolicy:PROFILE_INDEX_POLICY,...(stage?{stage:structuredClone(stage),
+        profileEvidencePolicy:PROFILE_EVIDENCE_POLICY,
+        rerankerAggregation:stage.scoreCalibration?'max-fused-professional-sections-v2':'max-professional-sections-v2'}:{})},warnings};
   }
   close() { this.encoder.close();this.store.close(); }
 }

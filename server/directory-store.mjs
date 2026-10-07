@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 
 export const textHash = text => createHash('sha256').update(text).digest('hex');
 export const PROFILE_INDEX_POLICY = 'profile-sections-max-v2';
+export const PROFILE_EVIDENCE_POLICY = 'professional-sections-with-sparse-competencies-v1';
 const MAX_SEGMENTS = 8;
 const MAX_SEGMENT_CHARACTERS = 4000;
 const MAX_PROFILE_CHARACTERS = 12000;
@@ -29,7 +30,7 @@ function professionalContent(person, value, history = false) {
   return lines.filter(line => !syntheticMetadataLine.test(line.trimStart())).join('\n');
 }
 
-export function semanticSegments(person, { includeIdentity = true } = {}) {
+function semanticSections(person, { includeIdentity = true } = {}) {
   const result = [], seen = new Set();
   let remaining = MAX_PROFILE_CHARACTERS;
   const identity = [person.professionalRole, (person.stack || []).join(', ')].filter(Boolean).join('\n');
@@ -42,9 +43,24 @@ export function semanticSegments(person, { includeIdentity = true } = {}) {
     if (!bounded || seen.has(bounded)) continue;
     const text = bounded.slice(0, remaining).trim();
     if (!text || seen.has(text)) continue;
-    seen.add(bounded); seen.add(text); result.push(text); remaining -= text.length;
+    seen.add(bounded); seen.add(text); result.push({ field, text }); remaining -= text.length;
   }
   return result;
+}
+
+export function semanticSegments(person, options) {
+  return semanticSections(person, options).map(section => section.text);
+}
+
+export function semanticRerankingSections(person) {
+  const sections = semanticSections(person);
+  const hasNarrative = sections.some(section => section.field === 'bio' || section.field === 'workHistory');
+  // A published role and stack are factual, self-reported competencies. With
+  // no biography or work description they can be scored in their own right,
+  // alongside education/achievements, without inventing professional tasks.
+  // Described work retains the existing task-only second-stage behavior.
+  return sections.filter(section => section.field !== 'identity' || !hasNarrative)
+    .map(section => ({ text: section.text, kind: section.field === 'identity' ? 'competencies' : 'professional' }));
 }
 
 export function semanticDocument(person) {

@@ -67,7 +67,7 @@ test('fusion pairs each cross logit with its own section vector and explains the
   assert.ok(Math.abs(item.rank-8)<1e-5);
   assert.equal(item.rerankerScore,0,'The winning fused section has a lower raw logit than biography');
   assert.match(item.reason,/Устранил дрейф датчика/u);assert.doesNotMatch(item.reason,/Первичная диагностика/u);
-  assert.equal(result.model.rerankerAggregation,'max-fused-task-sections-v1');
+  assert.equal(result.model.rerankerAggregation,'max-fused-professional-sections-v2');
   assert.equal(encoder.rankCalls[0].query,rawQuery);
   assert.doesNotMatch(JSON.stringify(item),/sectionVectors|sectionCosines|publicPayload|private@example|79990000000/u);
 });
@@ -93,6 +93,31 @@ test('fusion score determines ordering and its own cutoff without changing the f
   assert.equal(result.items[0].rerankerScore,0,'A raw logit below the original cutoff may pass valid fusion');
   assert.ok(Math.abs(result.items[0].rank-9)<1e-5);assert.ok(Math.abs(result.items[1].rank-7)<1e-5);
   assert.equal(encoder.info.reranker.threshold,0.5);assert.equal(encoder.info.reranker.scoreCalibration.threshold,4);
+});
+
+test('sparse competencies pair their own raw-query cosine and cross logit through unchanged fusion',async t=>{
+  const encoder=new Encoder();
+  const competencyQuery='Нужен инженер электроники с C++';
+  const person=profile('sparse',{bio:'',workHistory:'',careerAchievements:'',education:'TASK:education Высшее образование'});
+  encoder.encode=async texts=>{
+    encoder.calls.push(texts);
+    return texts.map(text=>text===competencyQuery||text==='инженер электроники с C++'?[1,0]:text.includes('Высшее образование')?axis(0.9):axis(0.4));
+  };
+  encoder.rerank=async(query,passages)=>{
+    encoder.rankCalls.push({query,passages});
+    return passages.map(passage=>passage.includes('C++')?1:-10);
+  };
+  const result=await service(t,[person],encoder).search(competencyQuery);
+  assert.equal(result.total,1);
+  assert.ok(Math.abs(result.items[0].semanticScore-0.9)<1e-5,'Education supplies the maximum retrieval cosine');
+  assert.ok(Math.abs(result.items[0].rank-5)<1e-5,'The winning identity uses its own 0.4 cosine, not the 0.9 recall maximum');
+  assert.equal(result.items[0].rerankerScore,1);
+  assert.match(result.items[0].reason,/Роль и навыки в профиле/u);
+  assert.equal(result.items[0].evidenceKind,'competencies');
+  assert.equal(encoder.info.reranker.scoreCalibration.threshold,4);
+  assert.equal(encoder.info.reranker.threshold,0.5);
+  assert.equal(result.model.stage.scoreCalibration.featurePolicy.encoderDocumentContext,'task-section-without-role',
+    'The frozen artifact descriptor is preserved; the runtime evidence policy is declared separately');
 });
 
 test('QDA includes both off-diagonal terms and selects the winning paired section',async t=>{

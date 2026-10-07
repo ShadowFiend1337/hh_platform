@@ -54,7 +54,7 @@ test('neural reranking rescues low cosine and rejects an unrelated high-cosine c
   assert.equal(result.query, query);
   assert.ok(encoder.rerankCalls[0].passages.every(passage => passage.startsWith(specializationLabels.Embedded + '\nTASK:')),
     'Runtime context matches DEV: canonical specialization label plus actual professional section');
-  assert.equal(result.model.rerankerAggregation,'max-task-sections-v1');
+  assert.equal(result.model.rerankerAggregation,'max-professional-sections-v2');
   assert.doesNotMatch(JSON.stringify(result.items), /passage|documentHash|sourceId|taskSections|reasonSuffix|roleLabel|private@example|79990000000/u);
 });
 
@@ -106,12 +106,55 @@ test('hiring wrappers remain in calibrated reranker input while exact metadata l
   assert.equal(result2.query,declared);
 });
 
-test('a role-only profile remains searchable by exact filters but cannot pass task reranking', async t => {
+test('a sparse profile can match its actual role and skills without claiming described work', async t => {
   const encoder=new Encoder();
-  const value=service(t,[profile('identity-only',{bio:'',workHistory:'',careerAchievements:'',education:''})],encoder);
+  encoder.encode=async texts=>texts.map(()=>[1,0]);
+  const person=profile('identity-only',{bio:'',workHistory:'',careerAchievements:'',education:''});
+  const value=service(t,[person],encoder);
   assert.equal((await value.search('',{specialization:'Embedded'})).total,1);
-  assert.equal((await value.search(query)).total,0);
-  assert.equal(encoder.rerankCalls.length,0,'Identity has no second-stage professional evidence');
+  const result=await value.search('Нужен инженер электроники с C++');
+  assert.equal(result.total,1);
+  assert.deepEqual(encoder.rerankCalls[0].passages,[specializationLabels.Embedded+'\n'+person.professionalRole+'\nC++']);
+  assert.match(result.items[0].reason,/Роль и навыки в профиле: Инженер электроники\nC\+\+/u);
+  assert.doesNotMatch(result.items[0].reason,/Похожие задачи|опыт работы/iu);
+  assert.equal(result.items[0].rerankerScore,2);
+  assert.equal(result.items[0].evidenceKind,'competencies');
+  assert.equal(encoder.info.reranker.threshold,0.5,'The existing stage cutoff is unchanged');
+  assert.equal(result.model.profileEvidencePolicy,'professional-sections-with-sparse-competencies-v1');
+  assert.doesNotMatch(JSON.stringify(result.items),/"kind"|taskSections|private@example|79990000000/u);
+});
+
+test('sparse competency evidence below the frozen cutoff is rejected even with perfect recall', async t => {
+  const encoder=new Encoder();encoder.encode=async texts=>texts.map(()=>[1,0]);
+  encoder.rerank=async(text,passages)=>{encoder.rerankCalls.push({query:text,passages});return passages.map(()=>-3);};
+  const value=service(t,[profile('identity-only',{bio:'',workHistory:'',careerAchievements:'',education:''})],encoder);
+  assert.equal((await value.search('Нужен инженер электроники с C++')).total,0);
+  assert.equal(encoder.rerankCalls.length,1,'The model evaluates competencies instead of blanket admission by identity');
+});
+
+test('generic education does not hide sparse role and skill evidence', async t => {
+  const encoder=new Encoder();encoder.encode=async texts=>texts.map(()=>[1,0]);
+  encoder.rerank=async(text,passages)=>{
+    encoder.rerankCalls.push({query:text,passages});
+    return passages.map(passage=>passage.includes('C++')?2:-3);
+  };
+  const person=profile('identity-only',{bio:'',workHistory:'',careerAchievements:'',education:'Высшее образование'});
+  const result=await service(t,[person],encoder).search('Нужен инженер электроники с C++');
+  assert.equal(result.total,1);
+  assert.deepEqual(encoder.rerankCalls[0].passages,[specializationLabels.Embedded+'\nВысшее образование',
+    specializationLabels.Embedded+'\n'+person.professionalRole+'\nC++']);
+  assert.match(result.items[0].reason,/Роль и навыки в профиле/u);
+  assert.equal(result.items[0].evidenceKind,'competencies');
+  assert.doesNotMatch(result.items[0].reason,/Высшее образование/u);
+});
+
+test('changing sparse skills during reranking discards the obsolete competency result', async t => {
+  const encoder=new Encoder();encoder.encode=async texts=>texts.map(()=>[1,0]);
+  const person=profile('owner',{bio:'',workHistory:'',careerAchievements:'',education:''});
+  const value=service(t,[],encoder);value.store.upsert(person,'owner-A',true);
+  const original=encoder.rerank.bind(encoder);
+  encoder.rerank=async(text,passages)=>{const scores=await original(text,passages);value.store.upsert({...person,stack:['Rust']},'owner-A',true);return scores;};
+  assert.equal((await value.search('Нужен инженер электроники с C++',{}, {owner:'owner-A'})).total,0);
 });
 
 test('consent revocation and achievement changes after multi-section scoring discard every obsolete result', async t => {

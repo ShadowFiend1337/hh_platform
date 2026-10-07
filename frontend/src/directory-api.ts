@@ -15,6 +15,7 @@ export interface DirectoryItem {
   semanticScore: number | null;
   rerankerScore?: number;
   approximate?: true;
+  evidenceKind?: 'professional' | 'competencies';
 }
 export interface DirectoryReranker {
   version: string;
@@ -52,7 +53,10 @@ export interface DirectorySearch {
       groups?: Record<string, string[][]> } };
   effectiveFilters?: SearchFilters;
   model: { status: 'ready' | 'unavailable'; name: string; version: string; dimension: number; trained: boolean;
-    reranker?: DirectoryReranker; stage?: DirectoryReranker; rerankerAggregation?: 'max-task-sections-v1' | 'max-fused-task-sections-v1' };
+    indexPolicy?: string; profileEvidencePolicy?: string;
+    reranker?: DirectoryReranker; stage?: DirectoryReranker;
+    rerankerAggregation?: 'max-task-sections-v1' | 'max-fused-task-sections-v1'
+      | 'max-professional-sections-v2' | 'max-fused-professional-sections-v2' };
   warnings?: string[];
 }
 export interface DirectoryOptions {
