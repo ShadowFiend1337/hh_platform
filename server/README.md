@@ -51,7 +51,7 @@ npm run dev
 | `POST` | `/api/assessment/attempts/{id}/submit` | Проверяет `{token, answers}`; повтор идентичных ответов возвращает прежний результат |
 | `GET`, `PUT`, `DELETE` | `/api/platform/state` | Читает, сохраняет с `baseRevision` или удаляет состояние владельца |
 | `GET` | `/api/directory/options` | Возвращает варианты фильтров |
-| `GET` | `/api/directory/search` | Принимает `q`, JSON-параметр `filters`, `offset`, `limit` до 100 |
+| `GET` | `/api/directory/search` | Принимает `q`, JSON-параметр `filters`, `offset`, `limit` до 50 |
 | `GET` | `/api/directory/{id}/contacts` | Открывает контакты по правилам согласия и приглашения |
 | `GET` | `/api/companies`, `/api/companies/{id}` | Каталог компаний и открытых предложений |
 | `GET`, `POST` | `/api/vacancies` | Список вакансий или публикация предложения работодателем |
