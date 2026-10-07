@@ -1,9 +1,27 @@
-import { BadgeCheck, LockKeyhole, MapPin, Medal, Printer } from 'lucide-react';
+import { useState } from 'react';
+import { BadgeCheck, Download, LockKeyhole, MapPin, Medal } from 'lucide-react';
 import { dateLabel, gradeLabels, initials, specializationLabels, type Candidate } from '../model';
 
 export function CandidateDetails({ person, contacts, onInvite, contactNote = 'Откроются после принятия приглашения' }: {
   person: Candidate; contacts: boolean; onInvite?: () => void; contactNote?: string;
 }) {
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState('');
+  async function downloadPdf() {
+    if (exporting) return;
+    setExporting(true); setExportError('');
+    try {
+      const [{ createProfilePdf }, response] = await Promise.all([import('../profile-pdf'), fetch('/assets/fonts/manrope.ttf')]);
+      if (!response.ok) throw new Error('Не удалось загрузить шрифт для PDF. Повторите попытку.');
+      const bytes = await createProfilePdf(person, contacts, new Uint8Array(await response.arrayBuffer()));
+      const url = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: 'application/pdf' }));
+      const link = document.createElement('a'); link.href = url;
+      link.download = 'predel-' + (person.name.replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-|-$/g, '') || 'profile') + '.pdf';
+      document.body.appendChild(link); link.click(); link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (cause) { setExportError(cause instanceof Error ? cause.message : 'Не удалось сформировать PDF.'); }
+    finally { setExporting(false); }
+  }
   const sectionText = (value?: string) => person.synthetic ? (value || '').split(/\r?\n/u)
     .filter(line => !/^(?:Вымышленный демонстрационный профиль\.|Демонстрационный профиль:|Демонстрационные данные:|Результат демонстрационного проекта:)/u.test(line.trimStart()))
     .join('\n').replace(/^Вымышленный проект /u, 'Проект ') : value;
@@ -41,8 +59,9 @@ export function CandidateDetails({ person, contacts, onInvite, contactNote = 'О
       {contacts && person.portfolio && <p className="body-copy resume-copy">{person.portfolio}</p>}
     </section>
     <div className="dialog-actions no-print">
-      <button className="button secondary" onClick={() => window.print()}><Printer size={16} />PDF-профиль</button>
+      <button className="button secondary" disabled={exporting} onClick={() => { void downloadPdf(); }}><Download size={16} />{exporting ? 'Готовим PDF…' : 'PDF-профиль'}</button>
       {onInvite && <button className="button primary" onClick={onInvite}>Пригласить</button>}
     </div>
+    {exportError && <p className="form-error no-print" role="alert">{exportError}</p>}
   </div>;
 }

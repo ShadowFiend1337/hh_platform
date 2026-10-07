@@ -1,0 +1,248 @@
+{
+  "schemaVersion": 1,
+  "suiteVersion": "authored-composition-control-v1",
+  "provenance": {
+    "kind": "authored-synthetic-control",
+    "labels": "Reference judgments fixed by the project authors before model inference.",
+    "purpose": "Control of the complete active retrieval composition on new narrow tasks, including same-profession near negatives.",
+    "independenceLimit": "Literal overlap is checked automatically. Task-family novelty is an authored assessment; shared professional vocabulary and neighbouring concepts remain possible.",
+    "notEvidenceOf": ["independent expert agreement", "professional qualification", "actual hiring outcomes", "real users completing the workflow"],
+    "reusePolicy": "Never train, choose weights, select thresholds or revise these judgments after inspecting this control run. A changed model requires a separately named control version."
+  },
+  "families": [
+    {
+      "id": "control-map-marker-clusters",
+      "specialization": "Frontend",
+      "novelTask": "Spatial grouping of map markers according to the visible area and zoom.",
+      "nearestExistingFamily": "v2-web-render",
+      "distinction": "The target is spatial grouping and cluster expansion, rather than generic component rendering performance.",
+      "query": "На карте одновременно видны тысячи точек. Нужен человек, который объединит соседние отметки в группы и раскроет группу на отдельные места при приближении.",
+      "positive": "Реализую пространственную группировку географических отметок в браузерной карте. Пересчитываю кластеры для текущего масштаба и видимой области, показываю количество объектов и раскрываю группу при приближении. Проверяю поведение плотных скоплений и границ экрана.",
+      "nearNegative": "Создаю веб-страницу с готовой картой офисов и отдельными географическими отметками. Добавляю поиск адреса, карточку выбранного места и настройку цветов карты. Объединение плотных отметок в группы и алгоритмы пространственной кластеризации не реализовывал.",
+      "labelRationale": "The positive implements marker clustering; the nearby profile embeds a map and uses individual markers without that algorithm.",
+      "salaryFrom": 200000
+    },
+    {
+      "id": "control-node-link-editor",
+      "specialization": "Frontend",
+      "novelTask": "Interactive node-and-edge editing for a browser workflow diagram.",
+      "nearestExistingFamily": "v2-web-rich-editor",
+      "distinction": "Graph topology, connector hit testing and edge updates are separate from editing rich text.",
+      "query": "Нужен разработчик, чтобы в браузере двигать блоки процесса, соединять их стрелками и сохранять связи после переноса блока в другое место.",
+      "positive": "Пишу браузерный редактор графа процесса. Реализую перемещение узлов, привязку соединителя к порту блока, выбор и удаление рёбер, проверку допустимых связей и обновление стрелок при движении. Храню структуру узлов и связей отдельно от координат отображения.",
+      "nearNegative": "Верстаю статические схемы процесса на веб-странице. Показываю готовые блоки и стрелки из заданной структуры, добавляю подписи и экспорт изображения. Перемещение узлов, создание связей пользователем и интерактивное редактирование графа в задачи не входили.",
+      "labelRationale": "Interactive editing is required, while the near negative renders an existing graph.",
+      "salaryFrom": 155000
+    },
+    {
+      "id": "control-runtime-feature-flags",
+      "specialization": "Backend",
+      "novelTask": "Deterministic runtime feature activation for a stable fraction of accounts.",
+      "nearestExistingFamily": "v2-api-cache-invalidation",
+      "distinction": "Stable account assignment and switching a feature without deployment are not cache invalidation.",
+      "query": "Хотим включать новую возможность для небольшой постоянной группы аккаунтов и быстро выключать её без перевыкладки сервиса. Кто реализует такую серверную логику?",
+      "positive": "Разрабатываю серверный механизм флагов возможностей. Стабильно назначаю аккаунт в долю выпуска по детерминированному хешу, проверяю приоритет индивидуальных правил и изменяю включение во время работы сервиса. Отключение флага не требует новой сборки приложения.",
+      "nearNegative": "Поддерживаю конфигурационные параметры серверного приложения. Меняю значения при запуске процесса, разделяю настройки окружений и проверяю обязательные переменные. Динамического переключения для отдельных аккаунтов и стабильных групп выпуска не реализовывал.",
+      "labelRationale": "The positive implements runtime targeting; startup configuration does not satisfy it.",
+      "salaryFrom": 170000
+    },
+    {
+      "id": "control-formula-dependency-engine",
+      "specialization": "Backend",
+      "novelTask": "Dependency-aware evaluation of user formulas with cycle detection.",
+      "nearestExistingFamily": "api-load",
+      "distinction": "This concerns parsing and evaluating a formula graph, rather than query or endpoint speed.",
+      "query": "Пользователь задаёт формулы со ссылками на другие значения. Нужен человек, который пересчитает зависимые выражения после изменения числа и объяснит ошибку при круговой ссылке.",
+      "positive": "Создаю серверный вычислитель пользовательских формул. Разбираю выражения, строю граф зависимостей, обнаруживаю циклические ссылки и пересчитываю затронутые узлы в корректном порядке. Ограничиваю допустимые операции и выдаю понятную диагностику неверного выражения.",
+      "nearNegative": "Пишу серверные расчёты по фиксированным формулам разработчика. Проверяю числовые параметры и возвращаю итог стоимости. Пользовательский язык выражений, ссылки между вычислениями и обнаружение циклов зависимостей не поддерживал.",
+      "labelRationale": "Fixed computations do not provide user-defined dependency evaluation.",
+      "salaryFrom": 180000
+    },
+    {
+      "id": "control-mobile-nfc-badge",
+      "specialization": "Mobile",
+      "novelTask": "Phone NFC badge reading and operating-system interaction states.",
+      "nearestExistingFamily": "v2-mobile-bluetooth",
+      "distinction": "Contactless NFC tag sessions and phone system prompts differ from Bluetooth reconnects.",
+      "query": "Сотрудник прикладывает пропуск к телефону. Нужен разработчик приложения, который прочитает бесконтактную метку, обработает убранную раньше времени карту и покажет результат.",
+      "positive": "Интегрирую чтение NFC-меток в приложение смартфона. Управляю сеансом считывания пропуска, разбираю данные тега, обрабатываю потерю карты в середине операции и системные подсказки. Проверяю поддерживаемые форматы бесконтактных карт на устройствах.",
+      "nearNegative": "Делаю мобильный экран пропуска, показывающий идентификатор сотрудника и штрихкод из учётной записи. Обрабатываю загрузку данных и изменение яркости экрана. Чтение физической бесконтактной карты через NFC в приложении не выполнял.",
+      "labelRationale": "Displaying a digital badge differs from reading a physical NFC badge.",
+      "salaryFrom": 160000
+    },
+    {
+      "id": "control-mobile-audio-focus",
+      "specialization": "Mobile",
+      "novelTask": "Playback audio focus, interruption recovery and headset controls.",
+      "nearestExistingFamily": "v2-mobile-location",
+      "distinction": "Audio focus and media sessions are distinct from background location tracking.",
+      "query": "Музыка в приложении должна затихать при разговоре по телефону, правильно продолжаться после него и управляться кнопкой на наушниках. Кто наладит это поведение?",
+      "positive": "Разрабатываю воспроизведение аудио в мобильном приложении. Обрабатываю получение и потерю аудиофокуса, звонки, временное приглушение и восстановление воспроизведения. Настраиваю медиасеанс, кнопки гарнитуры и действия при отключении наушников.",
+      "nearNegative": "Добавляю в мобильный интерфейс выбор музыкальных альбомов, обложки и список композиций. Подключаю внешний экран проигрывателя по ссылке. Управление аудиофокусом, телефонными прерываниями и медиакнопками операционной системы не реализовывал.",
+      "labelRationale": "Music catalogue UI does not demonstrate operating-system playback control.",
+      "salaryFrom": 165000
+    },
+    {
+      "id": "control-fixed-point-audio-filter",
+      "specialization": "Embedded",
+      "novelTask": "Fixed-point digital audio filtering on a constrained controller.",
+      "nearestExistingFamily": "v3-embedded-sensor-calibration",
+      "distinction": "Filter coefficients, saturation and passband response differ from sensor offset correction.",
+      "query": "В небольшом контроллере нужно убрать высокочастотный шум из звука без вычислений с плавающей точкой. Кто рассчитает цифровой фильтр и проверит переполнение?",
+      "positive": "Реализую цифровую фильтрацию аудиосигнала на микроконтроллере с фиксированной точкой. Подбираю коэффициенты фильтра, контролирую насыщение и переполнение аккумулятора, измеряю частотную характеристику и задержку. Сопоставляю результат целочисленной реализации с опорными сигналами.",
+      "nearNegative": "Подключаю микрофон и аудиокодек к микроконтроллеру, принимаю звуковые отсчёты через последовательный интерфейс и передаю их дальше. Цифровые фильтры, расчёт коэффициентов и проверку арифметики с фиксированной точкой не разрабатывал.",
+      "labelRationale": "Audio acquisition alone does not perform constrained fixed-point filtering.",
+      "salaryFrom": 185000
+    },
+    {
+      "id": "control-epaper-refresh-ghosting",
+      "specialization": "Embedded",
+      "novelTask": "Electrophoretic display refresh waveforms and ghosting control.",
+      "nearestExistingFamily": "v2-embedded-peripheral",
+      "distinction": "Temperature-dependent display refresh and ghost removal differ from a generic peripheral link.",
+      "query": "На электронных чернилах после смены страницы остаётся старое изображение. Нужен инженер, который настроит фазы обновления и очистку следов при разной температуре.",
+      "positive": "Настраиваю обновление дисплеев на электронных чернилах во встроенном устройстве. Подбираю таблицы импульсов и последовательность фаз, учитываю температуру и различия полного и частичного обновления. Проверяю остаточное изображение и режим очистки после нескольких смен страницы.",
+      "nearNegative": "Вывожу страницы текста на готовый дисплей электронных чернил через стандартную библиотеку. Подготавливаю шрифты и разметку страницы. Таблицы напряжений, температурные режимы и устранение остаточного изображения на уровне управления дисплеем не исследовал.",
+      "labelRationale": "Rendering pages using a driver does not show refresh waveform and ghosting expertise.",
+      "salaryFrom": 175000
+    },
+    {
+      "id": "control-webauthn-assertions",
+      "specialization": "Security",
+      "novelTask": "Phishing-resistant WebAuthn authentication verification.",
+      "nearestExistingFamily": "v2-security-key-lifecycle",
+      "distinction": "Authenticator assertions, origins and challenge replay are separate from cryptographic key rotation.",
+      "query": "Хотим вход без пароля с физическим ключом, чтобы поддельный сайт не мог забрать авторизацию. Нужен человек, который проверит привязку к домену и повтор старого подтверждения.",
+      "positive": "Проверяю безопасность входа по WebAuthn и аппаратному аутентификатору. Анализирую проверку challenge, origin и relying party, срок жизни запроса и повтор предъявления assertion. Проектирую восстановление доступа и контролирую обход защиты от фишинга.",
+      "nearNegative": "Проводил аудит обычного входа по паролю и резервному одноразовому коду. Проверял лимиты попыток, журналы неудачных входов и сложность пароля. Протокол WebAuthn, подпись утверждения аутентификатора и привязку к домену не исследовал.",
+      "labelRationale": "Password and OTP controls are insufficient evidence for WebAuthn protocol security.",
+      "salaryFrom": 190000
+    },
+    {
+      "id": "control-document-watermark-tracing",
+      "specialization": "Security",
+      "novelTask": "Recipient-specific document watermarks for leak attribution.",
+      "nearestExistingFamily": "v2-security-incident-containment",
+      "distinction": "Attribution through distinct document marks differs from stopping an ongoing security incident.",
+      "query": "Конфиденциальный документ раздают нескольким получателям. Нужен специалист, который оставит для каждого различимый след в копии и проверит, можно ли найти источник утечки после печати.",
+      "positive": "Разрабатываю маркировку конфиденциальных документов для расследования утечек. Формирую персональные водяные знаки для получателя, проверяю сохранение метки после печати и повторного сканирования и фиксирую доказуемую связь копии с выдачей. Анализирую риск ложной атрибуции.",
+      "nearNegative": "Настраиваю разграничение доступа к конфиденциальным документам и журнал скачиваний. Проверяю разрешения папок и блокировку внешних ссылок. Индивидуальную маркировку копий и поиск следа после печати не реализовывал.",
+      "labelRationale": "Access logs alone cannot attribute a physically printed document copy.",
+      "salaryFrom": 180000
+    },
+    {
+      "id": "control-entity-record-survivorship",
+      "specialization": "DataEngineering",
+      "novelTask": "Consolidation of duplicate master records with survivorship and reversal.",
+      "nearestExistingFamily": "v2-data-schema-lineage",
+      "distinction": "Identity matching, field survivorship and undoing a merge differ from schema lineage.",
+      "query": "В разных источниках один клиент записан несколько раз с небольшими отличиями. Кто сведёт записи в одну, выберет надёжные значения полей и позволит отменить ошибочное объединение?",
+      "positive": "Строю обработку эталонных записей клиентов. Сопоставляю дубликаты из нескольких источников, задаю правила выбора сохраняемого значения, храню связи исходных записей с объединённой сущностью и обеспечиваю обратимость ошибочного слияния. Проверяю конфликтующие адреса и идентификаторы.",
+      "nearNegative": "Переношу клиентские таблицы между хранилищами с уже готовыми уникальными идентификаторами. Проверяю число записей и типы полей. Сопоставление похожих сущностей, выбор значения при конфликте и отмену объединения не выполнял.",
+      "labelRationale": "Copying records with known IDs does not solve entity resolution and survivorship.",
+      "salaryFrom": 170000
+    },
+    {
+      "id": "control-geospatial-coordinate-ingestion",
+      "specialization": "DataEngineering",
+      "novelTask": "Coordinate reference transformation and validity of geospatial ingestion.",
+      "nearestExistingFamily": "v2-data-daily-ingestion",
+      "distinction": "Coordinate systems, geometry repair and spatial bounds differ from ordinary incremental ingestion.",
+      "query": "Получаем файлы с границами участков в разных системах координат. Нужен инженер, который приведёт геометрию к одной проекции и отсеет сломанные многоугольники перед загрузкой.",
+      "positive": "Разрабатываю загрузку геопространственных данных. Определяю исходную систему координат, преобразую геометрию в целевую проекцию и проверяю диапазоны координат. Исправляю самопересечения многоугольников либо отправляю повреждённые объекты в отдельную очередь до загрузки в пространственное хранилище.",
+      "nearNegative": "Загружаю адреса и готовые пары широты и долготы в аналитическую таблицу. Проверяю заполненность числовых полей и объём партии. Преобразование геометрических проекций, многоугольники и пространственную валидность не обрабатывал.",
+      "labelRationale": "Scalar coordinate ingestion does not perform projection or polygon validity handling.",
+      "salaryFrom": 165000
+    },
+    {
+      "id": "control-property-based-roundtrips",
+      "specialization": "QA",
+      "novelTask": "Generated property-based round-trip testing with failure shrinking.",
+      "nearestExistingFamily": "v2-qa-requirement-design",
+      "distinction": "Generating and shrinking examples from invariants differs from enumerating fixed boundary cases.",
+      "query": "Есть преобразование структуры в строку и обратно. Нужен тестировщик, который будет автоматически порождать входы, проверять сохранение значений и сокращать найденный пример до причины сбоя.",
+      "positive": "Пишу проверки свойств сериализации и обратного преобразования. Генерирую вложенные структуры, формулирую инвариант сохранения значения при round-trip и уменьшаю провалившийся вход через shrinking. Фиксирую воспроизводимый seed и отделяю недопустимые данные от настоящего нарушения свойства.",
+      "nearNegative": "Проверяю сериализацию по вручную составленному списку объектов и ожидаемых строк. Сверяю результат для нескольких типовых значений. Генерацию произвольных структур, свойства round-trip и автоматическое уменьшение сбойного примера не применял.",
+      "labelRationale": "A fixed example list does not satisfy automatic property-based generation and shrinking.",
+      "salaryFrom": 155000
+    },
+    {
+      "id": "control-virtual-clock-expiration",
+      "specialization": "QA",
+      "novelTask": "Deterministic tests of expiration using a controllable virtual clock.",
+      "nearestExistingFamily": "v2-qa-api-regression",
+      "distinction": "Virtual clock advancement and timer execution are distinct from ordinary API regression examples.",
+      "query": "Проверки истечения временного доступа занимают минуты и иногда падают. Кто заменит реальное ожидание управляемым временем и воспроизведёт точную границу срока?",
+      "positive": "Делаю детерминированные тесты функций с истечением срока. Подменяю источник времени виртуальными часами, управляю очередью таймеров и продвигаю время до и после точной границы доступа. Исключаю реальное ожидание и проверяю поведение при скачке часов.",
+      "nearNegative": "Проверяю временный доступ реальными запросами с паузами между обращениями. Записываю длительность ожидания и повторяю нестабильные проверки. Подмену часов, управляемые таймеры и детерминированный переход через границу срока не реализовывал.",
+      "labelRationale": "Retrying wall-clock tests does not remove real-time waiting or nondeterminism.",
+      "salaryFrom": 150000
+    },
+    {
+      "id": "control-individual-treatment-uplift",
+      "specialization": "ML",
+      "novelTask": "Learning individual treatment effect rather than propensity to buy.",
+      "nearestExistingFamily": "v2-analysis-ab",
+      "distinction": "Per-person incremental treatment effects are distinct from aggregate experiment comparison.",
+      "query": "Нужно выбирать, кому отправлять предложение: одни и так купят, а другим оно изменит решение. Кто обучит оценку добавочного эффекта сообщения для каждого клиента?",
+      "positive": "Обучаю модели индивидуального эффекта воздействия. Разделяю вероятность покупки без сообщения и прирост от сообщения, использую рандомизированные группы воздействия и контроля. Проверяю uplift на отдельной выборке и сравниваю стратегию выбора получателей с простыми правилами.",
+      "nearNegative": "Обучаю модель вероятности покупки клиента по его поведению. Сортирую аудиторию по ожидаемой конверсии и проверяю классификационные ошибки. Различие между покупкой без предложения и дополнительным эффектом воздействия не моделировал.",
+      "labelRationale": "Purchase propensity is not individual incremental effect of an intervention.",
+      "salaryFrom": 190000
+    },
+    {
+      "id": "control-predictive-confidence-calibration",
+      "specialization": "ML",
+      "novelTask": "Calibrating classifier confidence for a reliable reject decision.",
+      "nearestExistingFamily": "v3-ml-active-labeling",
+      "distinction": "Correcting predicted confidence for operational rejection differs from selecting labels for an annotator.",
+      "query": "Алгоритм часто уверен в ошибочном ответе. Нужен специалист, который проверит связь уверенности с реальной частотой ошибок и даст безопасно передавать сомнительные ответы человеку.",
+      "positive": "Калибрую уверенность обученного классификатора на отдельном наборе. Проверяю соответствие вероятностей фактической частоте правильных ответов, применяю температурное масштабирование и выбираю правило передачи неопределённых случаев человеку. Оценку делаю на данных, не использованных при калибровке.",
+      "nearNegative": "Измеряю обычную точность классификатора и показываю исходный максимальный score пользователю. Сравниваю версии по числу верных ответов. Калибровку уверенности и правило отказа при ненадёжном предсказании не разрабатывал.",
+      "labelRationale": "Reporting raw confidence and accuracy does not calibrate a reject option.",
+      "salaryFrom": 195000
+    }
+  ],
+  "extraCases": [
+    {
+      "id": "control-budget-at-boundary",
+      "family": "control-map-marker-clusters",
+      "query": "Нужен человек, который объединит географические точки на карте в группы по масштабу и покажет отдельные точки при увеличении. Зарплата до 200 тысяч рублей в месяц.",
+      "filters": { "specialization": "Frontend" },
+      "expected": { "relevant": ["control-map-marker-clusters-positive"], "salaryMax": 200000, "interpretedSalaryMax": 200000 },
+      "labelRationale": "An expectation exactly on the parsed budget boundary is admissible; every returned profile must satisfy the cap."
+    },
+    {
+      "id": "control-budget-below-boundary",
+      "family": "control-map-marker-clusters",
+      "query": "Нужен человек, который объединит точки на карте в группы по масштабу. Зарплата до 199 тысяч рублей в месяц.",
+      "filters": { "specialization": "Frontend" },
+      "expected": { "forbiddenEverywhere": ["control-map-marker-clusters-positive"], "salaryMax": 199000, "interpretedSalaryMax": 199000 },
+      "labelRationale": "The relevant but over-budget profile must never be returned, including as an approximate result."
+    },
+    {
+      "id": "control-budget-manual-stricter",
+      "family": "control-mobile-audio-focus",
+      "query": "Нужен разработчик, который обработает звонок во время музыки и медиакнопки гарнитуры. Зарплата до 200 тысяч рублей в месяц.",
+      "filters": { "specialization": "Mobile", "salaryMax": 164000 },
+      "expected": { "forbiddenEverywhere": ["control-mobile-audio-focus-positive"], "salaryMax": 164000, "interpretedSalaryMax": 200000 },
+      "labelRationale": "An explicit stricter employer filter remains authoritative over the parsed budget."
+    },
+    {
+      "id": "control-unsupported-piano-tuning",
+      "family": "control-unsupported-piano-tuning",
+      "query": "Ищу настройщика фортепиано: проверить строй акустического инструмента, подтянуть колки и исправить звучание клавиш.",
+      "filters": {},
+      "expected": { "empty": true },
+      "labelRationale": "The task is outside the supported digital professions. Returning unrelated IT candidates is not a correct semantic match."
+    },
+    {
+      "id": "control-unknown-ritual",
+      "family": "control-unknown-ritual",
+      "query": "Нужен человек для составления нового ритуала приветствия делегации по символическим оттенкам лент и легендам о созвездиях.",
+      "filters": {},
+      "expected": { "empty": true },
+      "labelRationale": "A fluent but unsupported need without a known role keyword must not be equated to an IT task."
+    }
+  ]
+}

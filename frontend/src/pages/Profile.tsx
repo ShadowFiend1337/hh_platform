@@ -1,11 +1,12 @@
 import { useState, type FormEvent } from 'react';
 import { BadgeCheck, Eye, FileText, Medal, UserRound } from 'lucide-react';
-import { dateLabel, gradeLabels, gradeOptions, industryOptions, isGrade, isSpecialization, specializationOptions, specializationLabels, type Grade, type PlatformState, type Specialization } from '../model';
+import { gradeLabels, gradeOptions, industryOptions, isGrade, isSpecialization, specializationOptions, specializationLabels, type Grade, type PlatformState, type Specialization } from '../model';
 import { FormHeader } from './Company';
 import { MAX_STACK_SKILLS, resumeTextLimits } from '../../../shared/resume-limits';
 import { employmentTypes } from '../../../shared/search.ts';
 import { deriveExperienceMonths, deriveLanguageCodes } from '../candidate-preferences';
 import { SoftSkillsField } from '../components/SoftSkillsField';
+import { CandidateHistory } from '../components/CandidateHistory';
 
 function sameValues(left: string[], right: string[]) {
   const leftValues = new Set(left);
@@ -125,7 +126,7 @@ export function Profile({ state, update, notify, onTest, onPreview }: {
           {profile.confirmed && <div className="category-score" aria-label={'Результат теста: ' + profile.confirmed.score + ' из 100'}><strong>{profile.confirmed.score}<span>/100</span></strong></div>}
           <button className="button primary full-width" onClick={onTest}>{profile.confirmed ? 'Пройти тест' : 'Подтвердить грейд'}</button>
         </section>
-        <section className="panel test-history"><h2>История тестов</h2>{state.history.length ? state.history.slice(0, 5).map(result => <div className="history-item" key={result.id}><div><strong>{result.specialization} · {gradeLabels[result.grade]}</strong><span>{dateLabel(result.date)}</span></div><span className={'history-score ' + (result.passed ? 'passed' : 'failed')}>{result.score}/100</span></div>) : <p className="muted">Тестов пока нет</p>}</section>
+        <CandidateHistory state={state} />
       </aside>
     </div>
   </>;
