@@ -15,7 +15,9 @@ const fixture = {
   vacancy: 'Инженер интерфейсов ' + runId,
   closedVacancy: 'Закрытая тестовая позиция ' + runId,
 };
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({ headless: true,
+  ...(process.env.PLAYWRIGHT_CHROMIUM_CHANNEL ? { channel: process.env.PLAYWRIGHT_CHROMIUM_CHANNEL } : {}),
+});
 const contexts = [];
 const errors = [];
 
@@ -58,10 +60,10 @@ async function publish(page, title) {
   await dialog.getByLabel('Описание предложения', { exact: true }).fill('Разработка интерфейсов, проверка форм и доступности. Вымышленная учебная позиция.');
   await dialog.getByLabel('Зарплата от, ₽', { exact: true }).fill('120000');
   await dialog.getByLabel('Зарплата до, ₽', { exact: true }).fill('160000');
-  await dialog.getByLabel('Специализация', { exact: true }).selectOption('Frontend');
-  await dialog.getByLabel('Грейд', { exact: true }).selectOption('Junior');
+  await dialog.getByRole('combobox', { name: 'Специализация', exact: true }).selectOption('Frontend');
+  await dialog.getByRole('combobox', { name: 'Грейд', exact: true }).selectOption('Junior');
   await dialog.getByLabel('Город', { exact: true }).fill('Москва');
-  await dialog.getByLabel('Формат работы', { exact: true }).selectOption('Удалённо');
+  await dialog.getByRole('combobox', { name: 'Формат работы', exact: true }).selectOption('Удалённо');
   await dialog.getByLabel('Стек', { exact: true }).fill('React, TypeScript');
   const created = apiResponse(page, '/api/vacancies', 'POST');
   await dialog.getByRole('button', { name: 'Опубликовать', exact: true }).click();
@@ -78,10 +80,10 @@ async function candidateProfile({ page, context }) {
   await page.locator('.onboarding-form').waitFor(); await synced(page);
   await page.getByLabel('Имя и фамилия', { exact: true }).fill(fixture.candidate);
   await page.getByLabel('Email', { exact: true }).fill(fixture.candidateEmail);
-  await page.getByLabel('Отрасль', { exact: true }).selectOption('ИТ');
+  await page.getByRole('combobox', { name: 'Отрасль', exact: true }).selectOption('ИТ');
   await page.getByLabel('Роль в команде', { exact: true }).fill('Разработчик интерфейсов');
-  await page.getByLabel('Специализация', { exact: true }).selectOption('Frontend');
-  await page.getByLabel('Предполагаемый грейд', { exact: true }).selectOption('Junior');
+  await page.getByRole('combobox', { name: 'Специализация', exact: true }).selectOption('Frontend');
+  await page.getByRole('combobox', { name: 'Предполагаемый грейд', exact: true }).selectOption('Junior');
   await page.getByLabel('Стек', { exact: true }).fill('React, TypeScript');
   await page.getByLabel('Общий стаж', { exact: true }).fill('Без опыта');
   await page.getByLabel('Согласен на обработку персональных данных', { exact: true }).check();

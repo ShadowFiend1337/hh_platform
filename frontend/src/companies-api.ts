@@ -97,6 +97,7 @@ export function listCompanies(paramsOrSignal: CompaniesQuery | AbortSignal = {},
   return request<CompanyPage>('/companies' + (query.size ? '?' + query : ''), 'GET', undefined, requestSignal);
 }
 export const readCompanies = listCompanies;
+export const listVacancies = (signal?: AbortSignal) => request<{ items: Vacancy[] }>('/vacancies', 'GET', undefined, signal);
 export const listOwnVacancies = (signal?: AbortSignal) => request<{ items: Vacancy[] }>('/vacancies?own=1', 'GET', undefined, signal);
 export const createVacancy = (input: VacancyInput) => request<Vacancy>('/vacancies', 'POST', input);
 export const updateVacancy = (id: string, input: VacancyInput) => request<Vacancy>('/vacancies/' + encodeURIComponent(id), 'PATCH', input);

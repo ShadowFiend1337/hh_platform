@@ -1,17 +1,29 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { ArrowUpRight, Building2, Check, MapPin, Search, Send } from 'lucide-react';
-import { applyToVacancy, listApplications, listCompanies, type CompanyDirectoryItem, type Vacancy } from '../companies-api';
+import { applyToVacancy, listApplications, listCompanies, listVacancies, type CompanyDirectoryItem, type Vacancy } from '../companies-api';
 import { gradeLabels, initials, money, specializationLabels } from '../model';
 import { Dialog } from './Dialog';
+import { VacancyDeck } from './VacancyDeck';
+
+function readMode(): 'list' | 'deck' {
+  try { return sessionStorage.getItem('predel:company-mode') === 'deck' ? 'deck' : 'list'; }
+  catch { return 'list'; }
+}
 
 export function CompanyDirectory({ notify, onApplied, syncStatus }: {
   notify: (message: string) => void; onApplied: () => void;
   syncStatus: 'loading' | 'saving' | 'saved' | 'error';
 }) {
   const [companies, setCompanies] = useState<CompanyDirectoryItem[]>([]);
+  const [vacancies, setVacancies] = useState<Vacancy[]>([]);
+  const [mode, setMode] = useState(readMode);
   const [applied, setApplied] = useState(new Set<string>());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [offersLoading, setOffersLoading] = useState(true);
+  const [offersError, setOffersError] = useState('');
+  const [applicationsLoading, setApplicationsLoading] = useState(true);
+  const [applicationsError, setApplicationsError] = useState('');
   const [retry, setRetry] = useState(0);
   const [query, setQuery] = useState('');
   const [limit, setLimit] = useState(12);
@@ -21,16 +33,38 @@ export function CompanyDirectory({ notify, onApplied, syncStatus }: {
   const [applyError, setApplyError] = useState('');
 
   useEffect(() => {
-    let active = true;
+    const controller = new AbortController();
     setLoading(true); setError('');
-    Promise.all([listCompanies(), listApplications('candidate')]).then(([catalog, applications]) => {
-      if (!active) return;
+    listCompanies(controller.signal).then(catalog => {
+      if (controller.signal.aborted) return;
       setCompanies(catalog.items);
-      setApplied(new Set(applications.items.map(item => item.vacancyId)));
-    }).catch(cause => { if (active) setError(cause.message); })
-      .finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
+    }).catch(cause => { if (!controller.signal.aborted) setError(cause.message); })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
   }, [retry]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setApplicationsLoading(true); setApplicationsError('');
+    listApplications('candidate', controller.signal).then(applications => {
+      if (!controller.signal.aborted) setApplied(new Set(applications.items.map(item => item.vacancyId)));
+    }).catch(cause => { if (!controller.signal.aborted) setApplicationsError(cause.message); })
+      .finally(() => { if (!controller.signal.aborted) setApplicationsLoading(false); });
+    return () => controller.abort();
+  }, [retry]);
+
+  useEffect(() => {
+    try { sessionStorage.setItem('predel:company-mode', mode); }
+    catch { /* The selected view remains usable without browser storage. */ }
+    if (mode !== 'deck') return;
+    const controller = new AbortController();
+    setOffersLoading(true); setOffersError('');
+    listVacancies(controller.signal).then(result => {
+      if (!controller.signal.aborted) setVacancies(result.items);
+    }).catch(cause => { if (!controller.signal.aborted) setOffersError(cause.message); })
+      .finally(() => { if (!controller.signal.aborted) setOffersLoading(false); });
+    return () => controller.abort();
+  }, [mode, retry]);
 
   const filtered = useMemo(() => {
     const text = query.trim().toLocaleLowerCase('ru');
@@ -38,6 +72,15 @@ export function CompanyDirectory({ notify, onApplied, syncStatus }: {
       ...company.vacancies.map(item => [item.title, specializationLabels[item.specialization], item.city].join(' ')),
     ].join(' ').toLocaleLowerCase('ru').includes(text));
   }, [companies, query]);
+
+  const filteredOffers = useMemo(() => {
+    const text = query.trim().toLocaleLowerCase('ru');
+    return vacancies.filter(item => !text || [item.company, item.title, item.description,
+      specializationLabels[item.specialization], gradeLabels[item.grade], item.city, item.format, ...item.stack,
+    ].join(' ').toLocaleLowerCase('ru').includes(text));
+  }, [vacancies, query]);
+  const busy = applicationsLoading || (mode === 'deck' ? offersLoading : loading);
+  const loadError = applicationsError || (mode === 'deck' ? offersError : error);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -54,11 +97,22 @@ export function CompanyDirectory({ notify, onApplied, syncStatus }: {
   }
 
   return <>
-    <div className="page-heading"><h1>Найти компании</h1>{!loading && !error && <span className="muted">{filtered.length}</span>}</div>
+    <div className="page-heading company-directory-heading"><h1>{mode === 'deck' ? 'Найти предложения' : 'Найти компании'}</h1>
+      <div className="directory-view-controls">
+        {!busy && !loadError && <span className="muted">{mode === 'deck' ? filteredOffers.length : filtered.length}</span>}
+        <div className="directory-view-switch" role="group" aria-label="Вид предложений">
+          <button aria-pressed={mode === 'list'} onClick={() => setMode('list')}>Обычный режим</button>
+          <button aria-pressed={mode === 'deck'} onClick={() => setMode('deck')}>Предельный режим</button>
+        </div>
+      </div>
+    </div>
     <label className="search-panel company-search"><Search size={20} /><span className="sr-only">Компания или направление</span>
       <input value={query} placeholder="Компания или направление" onChange={event => { setQuery(event.target.value); setLimit(12); }} /></label>
-    {loading ? <div className="empty-state"><p role="status">Загружаем компании…</p></div>
-      : error ? <div className="empty-state"><p role="alert">{error}</p><button className="button secondary" onClick={() => setRetry(value => value + 1)}>Повторить</button></div>
+    {busy ? <div className="empty-state"><p role="status">{mode === 'deck' ? 'Загружаем предложения…' : 'Загружаем компании…'}</p></div>
+      : loadError ? <div className="empty-state"><p role="alert">{loadError}</p><button className="button secondary" onClick={() => setRetry(value => value + 1)}>Повторить</button></div>
+        : mode === 'deck' ? filteredOffers.length ? <VacancyDeck key={query.trim().toLocaleLowerCase('ru')} items={filteredOffers} applied={applied}
+          onApply={item => { setSelected(null); setVacancy(item); setApplyError(''); }} />
+          : <div className="empty-state"><Building2 size={32} /><h2>Предложения не найдены</h2>{query && <button className="text-button" onClick={() => setQuery('')}>Сбросить поиск</button>}</div>
         : filtered.length ? <div className="company-directory">
           {filtered.slice(0, limit).map(company => <article className="company-card" key={company.id}>
             <div className="company-card-top"><div className="company-avatar">{initials(company.name)}</div>{company.synthetic && <span className="demo-label" title="Вымышленная компания и демонстрационные предложения">Демо</span>}</div>
@@ -69,9 +123,9 @@ export function CompanyDirectory({ notify, onApplied, syncStatus }: {
           </article>)}
           {filtered.length > limit && <button className="button secondary company-load-more" onClick={() => setLimit(value => value + 12)}>Показать ещё</button>}
         </div> : <div className="empty-state"><Building2 size={32} /><h2>Компании не найдены</h2>{query && <button className="text-button" onClick={() => setQuery('')}>Сбросить поиск</button>}</div>}
-    {selected && <Dialog title={vacancy ? 'Отклик на предложение' : selected.name} wide onClose={() => { if (!sending) { if (vacancy) { setVacancy(null); setApplyError(''); } else setSelected(null); } }}>
+    {(selected || vacancy) && <Dialog title={vacancy ? 'Отклик на предложение' : selected?.name || 'Предложения'} wide onClose={() => { if (!sending) { if (vacancy) { setVacancy(null); setApplyError(''); } else setSelected(null); } }}>
       {vacancy ? <form className="company-apply-form" onSubmit={submit}>
-        <button type="button" className="text-button" disabled={sending} onClick={() => { setVacancy(null); setApplyError(''); }}>← К предложениям</button>
+        <button type="button" className="text-button" disabled={sending} onClick={() => { setVacancy(null); setApplyError(''); }}>{selected ? '← К предложениям' : '← К карточке'}</button>
         <h3>{vacancy.title}</h3><Salary vacancy={vacancy} />
         <label className="field"><span>Сообщение</span><textarea name="message" rows={4} maxLength={2000} placeholder="Необязательно" disabled={sending} /></label>
         <p className="privacy-note">Компания получит ваш профиль и контакты.</p>
@@ -79,7 +133,7 @@ export function CompanyDirectory({ notify, onApplied, syncStatus }: {
         {applyError && <p className="offer-error" role="alert">{applyError}</p>}
         {syncStatus !== 'saved' && <p className="muted" role="status">{syncStatus === 'error' ? 'Сначала сохраните профиль.' : 'Сохраняем профиль…'}</p>}
         <div className="form-actions"><button className="button primary" type="submit" disabled={sending || syncStatus !== 'saved'}><Send size={16} />{sending ? 'Отправляем…' : 'Отправить отклик'}</button></div>
-      </form> : <div className="company-detail">
+      </form> : selected && <div className="company-detail">
         <p className="muted">{selected.industry}</p><p className="company-detail-description">{selected.description}</p>
         {selected.synthetic && <p className="muted company-demo-note">Вымышленная компания. Предложения для демонстрации.</p>}
         <div className="vacancy-list">{selected.vacancies.map(item => <article className="vacancy-card" key={item.id}>

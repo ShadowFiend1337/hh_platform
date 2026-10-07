@@ -19,7 +19,8 @@
     "test:directions": "node tests/directions.mjs",
     "test:grades": "node tests/grades.mjs",
     "test:search": "node tests/search.mjs",
-    "test:swipe": "node tests/swipe.mjs"
+    "test:swipe": "node tests/swipe.mjs",
+    "test:offers": "node tests/vacancy-deck.mjs"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",
