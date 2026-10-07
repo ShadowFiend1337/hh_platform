@@ -1,4 +1,4 @@
-import { cp, mkdir, readFile, readdir, unlink, writeFile } from 'node:fs/promises';
+import { cp, mkdir, readFile, readdir, stat, unlink, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { gzipSync, gunzipSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
@@ -13,6 +13,16 @@ const models = {
 };
 const modelRelease = '4.1.0';
 const sha256 = data => createHash('sha256').update(data).digest('hex');
+async function sameContents(target, data) {
+  try { return data.equals(await readFile(target)); }
+  catch (error) { if (error.code === 'ENOENT') return false; throw error; }
+}
+async function copyChanged(source, target) {
+  // Avoid replacing identical files while the development server watches them.
+  await cp(source, target, { recursive: true, filter: async (file, destination) =>
+    (await stat(file)).isDirectory() || !await sameContents(destination, await readFile(file)),
+  });
+}
 await mkdir(assets, { recursive: true });
 
 for (const [name, source] of Object.entries({
@@ -30,10 +40,10 @@ for (const [name, source] of Object.entries({
 })) {
   const target = path.join(assets, name);
   await mkdir(path.dirname(target), { recursive: true });
-  await cp(path.join(modules, source), target, { recursive: true });
+  await copyChanged(path.join(modules, source), target);
 }
 
-await cp(new URL('./resume-document-worker.js', import.meta.url), path.join(assets, 'resume-document-worker.js'));
+await copyChanged(new URL('./resume-document-worker.js', import.meta.url), path.join(assets, 'resume-document-worker.js'));
 const coreDir = path.join(modules, 'tesseract.js-core');
 const coreTarget = path.join(assets, 'tesseract', 'core');
 await mkdir(coreTarget, { recursive: true });
@@ -42,7 +52,7 @@ const currentCoreFiles = (await readdir(coreDir)).filter(file => /^tesseract-cor
 for (const file of await readdir(coreTarget)) {
   if (/^tesseract-core.*\.(?:js|wasm)$/.test(file) && !currentCoreFiles.includes(file)) await unlink(path.join(coreTarget, file));
 }
-for (const file of currentCoreFiles) await cp(path.join(coreDir, file), path.join(coreTarget, file));
+for (const file of currentCoreFiles) await copyChanged(path.join(coreDir, file), path.join(coreTarget, file));
 
 const modelTarget = path.join(assets, 'tesseract', 'lang');
 await mkdir(modelTarget, { recursive: true });
@@ -60,13 +70,15 @@ for (const [language, hash] of Object.entries(models)) {
   await writeFile(target, gzipSync(data, { level: 9 }));
 }
 // Model files share Apache-2.0 with the Tesseract core; include a separate copy.
-await cp(path.join(modules, 'tesseract.js-core', 'LICENSE'), path.join(assets, 'licenses', 'tessdata_best.txt'));
+await copyChanged(path.join(modules, 'tesseract.js-core', 'LICENSE'), path.join(assets, 'licenses', 'tessdata_best.txt'));
 const versions = {};
 for (const name of ['pdfjs-dist', 'tesseract.js', 'tesseract.js-core', 'mammoth']) {
   versions[name] = JSON.parse(await readFile(path.join(modules, name, 'package.json'), 'utf8')).version;
 }
-await writeFile(path.join(assets, 'manifest.json'), JSON.stringify({
+const manifest = Buffer.from(JSON.stringify({
   versions, models: { repository: 'https://github.com/tesseract-ocr/tessdata_best', release: modelRelease, sha256: models },
   runtime: 'same origin only',
 }, null, 2));
+const manifestTarget = path.join(assets, 'manifest.json');
+if (!await sameContents(manifestTarget, manifest)) await writeFile(manifestTarget, manifest);
 console.log('Local resume assets prepared (PDF, DOCX, Russian and English OCR).');
