@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
+import { parseEnv } from 'node:util';
 import { chromium } from 'playwright';
 // Node-only fixtures; they are never served or bundled with the browser app.
 import { programs } from '../../server/bank.mjs';
@@ -10,6 +11,18 @@ import { defaultSearchFilters, normalizeSearchFilters } from '../../shared/searc
 
 const require = createRequire(import.meta.url);
 const base = process.env.PREDEL_URL || 'http://127.0.0.1:5173';
+const targetUrl = new URL(base);
+if (['127.0.0.1', 'localhost'].includes(targetUrl.hostname) && ['5173', '8787'].includes(targetUrl.port)) {
+  let configured = {};
+  try { configured = parseEnv(await readFile(new URL('../../.env', import.meta.url), 'utf8')); }
+  catch (error) {
+    if (error.code !== 'ENOENT') throw new Error('Не удалось безопасно проверить почтовые настройки перед smoke. Запустите тест в изолированной среде без SMTP.');
+  }
+  const smtpKeys = ['SMTP_HOST', 'SMTP_USER', 'SMTP_PASSWORD', 'SMTP_FROM'];
+  if (smtpKeys.some(key => [configured[key], process.env[key]].some(value => typeof value === 'string' && value.trim()))) {
+    throw new Error('Browser smoke остановлен: для основного локального сервиса настроен SMTP. Тест создаёт вымышленные аккаунты; запустите изолированные API и интерфейс без SMTP через PREDEL_URL.');
+  }
+}
 const output = resolve('test-results');
 const storageKey = 'predel:platform:v2';
 await mkdir(output, { recursive: true });
