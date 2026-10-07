@@ -1,0 +1,58 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, existsSync, unlinkSync, rmdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { prepareLocalAccounts, localAccountPassword } from '../../scripts/local-accounts.mjs';
+import { AuthService } from '../auth.mjs';
+import { DirectoryStore } from '../directory-store.mjs';
+import { openStore } from '../store.mjs';
+import { PlatformService } from '../platform.mjs';
+import { MarketplaceService } from '../marketplace.mjs';
+import { currentSurvey } from '../../frontend/src/model.ts';
+
+test('local account setup prepares both cabinets on a fresh database and preserves edits on rerun', async t => {
+  const directoryPath = mkdtempSync(join(tmpdir(), 'predel-local-'));
+  const dbPath = join(directoryPath, 'accounts.sqlite');
+  let auth, directory, assessments;
+  t.after(() => {
+    auth?.close(); assessments?.close(); directory?.close();
+    for (const suffix of ['', '-wal', '-shm']) if (existsSync(dbPath + suffix)) unlinkSync(dbPath + suffix);
+    rmdirSync(directoryPath);
+  });
+  const credentials = await prepareLocalAccounts(dbPath);
+  assert.deepEqual(credentials.map(item => item.role), ['candidate', 'employer']);
+  auth = new AuthService(dbPath);
+  directory = new DirectoryStore(dbPath);
+  assessments = openStore(dbPath);
+  const platform = new PlatformService(directory, assessments);
+  const marketplace = new MarketplaceService(directory);
+  const candidate = await auth.login({ loginOrEmail: 'local_candidate', password: localAccountPassword });
+  const employer = await auth.login({ loginOrEmail: 'local_employer', password: localAccountPassword });
+  assert.equal(candidate.role, 'candidate'); assert.equal(employer.role, 'employer');
+  assert.notEqual(candidate.platform_owner, employer.platform_owner);
+  const candidateState = platform.read(candidate.platform_owner);
+  const employerState = platform.read(employer.platform_owner);
+  assert(currentSurvey(candidateState.state));
+  assert.equal(candidateState.state.profile.confirmed.grade, 'Junior');
+  assert.equal(candidateState.state.history.length, 1);
+  assert.equal(assessments.get(candidateState.state.history[0].id).owner, candidate.platform_owner);
+  assert.equal(candidateState.state.invitations.length, 1);
+  assert.equal(candidateState.state.invitations[0].status, 'sent');
+  assert.equal(employerState.state.profile.consent, false);
+  assert.equal(employerState.state.surveys.length, 0);
+  const proposal = marketplace.vacancies(employer.platform_owner, { own: true }).items;
+  assert.equal(proposal.length, 1);
+  assert.equal(proposal[0].company, 'Тестовая компания');
+
+  candidateState.state.profile.bio = 'Изменённый тестовый профиль';
+  candidateState.state.invitations[0].status = 'accepted';
+  platform.save(candidate.platform_owner, candidateState.state, candidateState.revision, 'candidate');
+  const savedCandidate = platform.read(candidate.platform_owner);
+  const savedEmployer = platform.read(employer.platform_owner);
+  await prepareLocalAccounts(dbPath);
+  assert.deepEqual(platform.read(candidate.platform_owner), savedCandidate);
+  assert.deepEqual(platform.read(employer.platform_owner), savedEmployer);
+  assert.deepEqual(marketplace.vacancies(employer.platform_owner, { own: true }).items, proposal);
+  assert.equal(auth.store.db.prepare('SELECT COUNT(*) AS n FROM auth_accounts').get().n, 2);
+});
