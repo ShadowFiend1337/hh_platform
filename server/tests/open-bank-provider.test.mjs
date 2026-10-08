@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { getOpenProgram, openFamilies } from '../open-bank.mjs';
+import { getOpenProgram } from '../open-bank.mjs';
 import { openGrades, openSpecializations } from '../open-bank/schema.mjs';
 import { createOpenAssessmentProvider, defaultOpenAssessmentModel } from '../open-assessment-provider.mjs';
 
@@ -28,9 +28,6 @@ test('Every compiled question supplies a compatible private draft without turnin
     assert.equal(Object.hasOwn(result, 'passed'), false);
     assert.ok(result.criteria.every(item => item.score === null));
     assert.deepEqual(captured.question.rubric.map(item => item.anchors), question.rubric.map(item => item.anchors));
-    const family = openFamilies.find(item => item.id === question.familyId);
-    if (family.levels[grade].criteria) {
-      assert.equal(captured.question.referenceAnswer.scenario, family.levels[grade].referenceAnswer || family.levels[grade].expected);
-    }
+    assert.deepEqual(captured.question.referenceAnswer, question.referenceAnswer);
   }
 });

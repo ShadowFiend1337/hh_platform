@@ -13,8 +13,8 @@ import { openCompetencies } from './open-bank/competencies.mjs';
 import { deepFreeze, openGrades, openGroups, openSpecializations, validateOpenBank } from './open-bank/schema.mjs';
 import { extraPracticalGroup, isPracticalFamily, practicalQuota } from './open-bank/policy.mjs';
 
-export const openBankVersion = '2026.10.08-open-v3';
-export const openRubricVersion = '2026.10.08-rubric-v3';
+export const openBankVersion = '2026.10.08-open-v4';
+export const openRubricVersion = '2026.10.08-rubric-v4';
 export const openBankReview = deepFreeze({ status: 'author-draft', independentlyReviewed: false,
   empiricallyCalibrated: false, approvedForCertification: false });
 
@@ -40,7 +40,9 @@ function compileQuestion(family, grade) {
     title: family.title, prompt: family.prompt + '\n\nЗадание выбранного уровня:\n' + level.task,
     answerFormat: family.answerFormat, language: family.language, tags: family.tags, practical: isPracticalFamily(family),
     referenceAnswer: {
-      scenario: level.referenceAnswer || (level.criteria ? level.expected : family.referenceAnswer),
+      scenario: level.referenceAnswer || (level.criteria
+        ? criteria.map(criterion => criterion.meets).join(' ') + ' ' + level.expected
+        : family.referenceAnswer),
       level: level.expected,
     },
     criterionScope: 'family-local',

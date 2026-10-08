@@ -15,7 +15,7 @@ function F(specialization, group, slug, title, prompt, language, sources, criter
       id: 'criterion-' + (index + 1), label,
       missing: 'Не рассматривает: ' + label + '.',
       partial: 'Обозначает ' + label + ', но не обосновывает требуемое действие: ' + meets,
-      meets, strong,
+      meets, strong: meets + ' Дополнительно: ' + strong,
     })),
     levels: Object.fromEntries(grades.map((grade, index) => [grade, {
       task: (grade === 'Intern' ? 'Объём этого уровня ограничен следующим заданием: ' : '')

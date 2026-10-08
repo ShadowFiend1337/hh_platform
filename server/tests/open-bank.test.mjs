@@ -14,7 +14,13 @@ test('Each catalog program has balanced authoring coverage with actual tier cond
       const subjectCriteria = family.levels[grade].criteria || family.criteria;
       assert.equal(question.rubricOrigin, family.levels[grade].criteria ? 'grade-specific-author-draft' : 'shared-family-requires-grade-review');
       assert.deepEqual(question.rubric.filter(item => item.id !== 'level-depth').map(item => item.anchors[2]), subjectCriteria.map(item => item.meets));
-      if (family.levels[grade].criteria) assert.equal(question.referenceAnswer.scenario, family.levels[grade].referenceAnswer || family.levels[grade].expected);
+      if (family.levels[grade].criteria) {
+        if (family.levels[grade].referenceAnswer) assert.equal(question.referenceAnswer.scenario, family.levels[grade].referenceAnswer);
+        else {
+          for (const criterion of subjectCriteria) assert.ok(question.referenceAnswer.scenario.includes(criterion.meets));
+          assert.ok(question.referenceAnswer.scenario.includes(family.levels[grade].expected));
+        }
+      }
       assert.ok(question.referenceAnswer.level.length);
       assert.deepEqual(Object.keys(question.rubric.find(criterion => criterion.id === 'level-depth').anchors), ['0', '1', '2', '3']);
       assert.ok(question.acceptableAlternatives.length && question.criticalErrors.length);
@@ -23,6 +29,35 @@ test('Each catalog program has balanced authoring coverage with actual tier cond
   }
   assert.equal(openBankReview.independentlyReviewed, false);
   assert.equal(openBankReview.empiricallyCalibrated, false);
+});
+
+test('An ADC Intern reference includes the actual result and only the requested grade evidence', () => {
+  const question = getOpenProgram('Embedded', 'Intern').questions.find(item => item.familyId === 'open-embedded-adc-scale');
+  assert.ok(question.referenceAnswer.scenario.includes('1.6504 В'), 'The reference must solve 2048*3.3/4095, not just name an action');
+  assert.ok(question.referenceAnswer.scenario.includes('code=0 даёт 0 В'));
+  assert.ok(!question.referenceAnswer.scenario.includes('датчик 2% не обеспечивают'), 'Do not inject the Middle accuracy-budget task');
+});
+
+test('A stronger anchor keeps the required result and adds evidence instead of replacing it', () => {
+  for (const family of openFamilies) {
+    const criteria = [...family.criteria, ...Object.values(family.levels).flatMap(level => level.criteria || [])];
+    for (const criterion of criteria) assert.ok(criterion.strong.includes(criterion.meets), family.id + '/' + criterion.id);
+  }
+  const range = getOpenProgram('Backend', 'Junior').questions
+    .find(item => item.familyId === 'open-backend-quantity-validation').rubric.find(item => item.label === 'Диапазон');
+  assert.ok(range.anchors[3].includes('конечные целые 1..99'));
+  assert.ok(range.anchors[3].includes('0,99,100 и дробь'));
+});
+
+test('The normalization Intern case supplies an input and checks preservation of internal spaces', () => {
+  const question = getOpenProgram('QA', 'Intern').questions.find(item => item.familyId === 'open-qa-normalization-properties');
+  assert.ok(question.prompt.includes('normalize("  Ab C  ")'));
+  const normalize = value => value.replace(/^ +| +$/gu, '').replace(/[A-Z]/gu, character => character.toLowerCase());
+  const result = normalize('  Ab C  ');
+  assert.equal(result, 'ab c');
+  assert.ok(question.referenceAnswer.level.includes('"' + result + '"'));
+  assert.equal(normalize(result), result);
+  assert.equal(normalize('  АБ C  '), 'АБ c', 'The authored contract only lowercases ASCII letters');
 });
 
 test('Both independent forms retain practical coverage in every competency and the program extra group', () => {

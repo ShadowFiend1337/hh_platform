@@ -27,7 +27,7 @@ function F(group, slug, title, prompt, code, sources, skills, levels, alternativ
         label: skills[position][1],
         missing: `Отсутствует свидетельство по критерию «${skills[position][1]}» в заданном объёме уровня ${grade}.`,
         partial: `Есть относящееся к задаче действие, но не выполнен проверяемый результат: ${anchor.meets}`,
-        meets: anchor.meets, strong: anchor.strong,
+        meets: anchor.meets, strong: anchor.meets + ' Дополнительно: ' + anchor.strong,
       })),
     }];
   }));
