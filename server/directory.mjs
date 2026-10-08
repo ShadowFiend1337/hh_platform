@@ -514,7 +514,7 @@ export class DirectoryService {
     const categories=recommendCategories(items,{semantic:Boolean(embeddingQuery)});
     const selected=category?items.filter(item=>item.person.confirmed?.specialization===category.specialization
       && item.person.confirmed?.grade===category.grade):items;
-    return {items:selected.slice(offset,offset+limit).map(({testScore,fsp,sourceId,documentHash,publicPayload,taskSections,reasonSuffix,roleLabel,evidenceText,...item})=>item),
+    return {items:selected.slice(offset,offset+limit).map(({testScore,fsp,sourceId,documentHash,publicPayload,taskSections,reasonSuffix,roleLabel,evidenceText,rankingTrace,...item})=>item),
       categories,selectedCategory:category,total:selected.length,offset,limit,query,interpreted,effectiveFilters:filters,
       model:{...this.encoder.info,indexPolicy:PROFILE_INDEX_POLICY,taskEvidencePolicy:TASK_EVIDENCE_POLICY,
         categoryRecommendationPolicy:CATEGORY_RECOMMENDATION_POLICY,

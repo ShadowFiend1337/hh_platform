@@ -1,9 +1,9 @@
 import { isSpecialization, specializationLabels } from '../shared/catalog.ts';
 import { isGrade, gradeLabels } from '../shared/grading.ts';
 import { languageOptions } from '../shared/search.ts';
-import { CATEGORY_RANKING_POLICY, rankingFspEvidence, normalizeRankingFspEvidence, semanticOrder } from './search-ranking.mjs';
+import { rankingFspEvidence, normalizeRankingFspEvidence, rankingTraceFor } from './search-ranking.mjs';
 
-export const SEARCH_EXPLANATION_POLICY = 'public-evidence-and-actual-order-v1';
+export const SEARCH_EXPLANATION_POLICY = 'public-evidence-and-executed-order-v2';
 
 const validScore = value => Number.isFinite(value) && value >= 0 && value <= 100;
 const publicText = value => String(value || '').replace(/[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/gu, '[контакт скрыт]')
@@ -30,34 +30,6 @@ function categoryExplanation(person, category) {
   return { status: 'unconfirmed', specialization, grade: null,
     label: specialization ? specializationLabels[specialization] : 'Специализация не указана',
     explanation: 'Грейд не подтверждён. Желаемый грейд не считается результатом теста.' };
-}
-
-// Read the same anchor-bounded comparison groups as the current ordering rule.
-// This helper neither admits candidates nor sorts the returned list. In
-// particular, comparison metadata does not become a new ranking policy.
-function comparisonBands(items, scoreKind) {
-  const semantic = [...items].sort(semanticOrder), categories = new Map(), bands = new Map();
-  const gap = scoreKind === 'cosine' ? CATEGORY_RANKING_POLICY.cosineMaximumGap : CATEGORY_RANKING_POLICY.logitMaximumGap;
-  for (const item of semantic) {
-    const category = confirmedCategory(item);
-    if (!category || !Number.isFinite(item.rank)) continue;
-    const key = `${category.specialization}:${category.grade}:${item.approximate === true ? 'nearest' : 'strong'}`;
-    if (!categories.has(key)) categories.set(key, []);
-    categories.get(key).push(item);
-  }
-  for (const group of categories.values()) {
-    let first = 0;
-    while (first < group.length) {
-      let end = first + 1;
-      while (end < group.length && group[first].rank - group[end].rank <= gap + 1e-12) end++;
-      const members = group.slice(first, end);
-      const finalOrder = items.filter(item => members.includes(item));
-      for (const item of members) bands.set(item, { count: members.length,
-        moved: members.indexOf(item) !== finalOrder.indexOf(item) });
-      first = end;
-    }
-  }
-  return bands;
 }
 
 function matchedConditions(person, category, filters) {
@@ -127,11 +99,11 @@ export function explainSearchResults(items, { semantic = false, scoreKind = 'log
   if (!Array.isArray(items)) throw new TypeError('Expected search results');
   if (scoreKind !== 'logit' && scoreKind !== 'cosine') throw new TypeError('Unknown semantic score kind');
   if (typeof fspEvidence !== 'function') throw new TypeError('Expected a trusted FSP evidence resolver');
-  const bands = semantic ? comparisonBands(items, scoreKind) : new Map();
   return items.map(item => {
-    const person = item.person || {}, category = confirmedCategory(item), band = bands.get(item);
-    const comparable = semantic && (band?.count || 0) > 1;
-    const source = fspEvidence(person);
+    const person = item.person || {}, category = confirmedCategory(item);
+    const trace = semantic ? rankingTraceFor(item, scoreKind) : null;
+    const comparable = Boolean(category && trace && trace.comparableCount > 1);
+    const source = trace ? trace.fspSource : fspEvidence(person);
     // Filtering-only search really sorts by test then FSP, whereas semantic
     // search only allows evidence to exchange positions within close bands.
     const testContribution = !category ? 'none' : !semantic ? 'filter-order' : comparable ? 'comparison' : 'none';
@@ -140,7 +112,8 @@ export function explainSearchResults(items, { semantic = false, scoreKind = 'log
       explanation: !category ? 'Серверного результата теста нет.'
         : !semantic ? 'Сначала учитывается результат теста; ФСП используется при равенстве результата.'
           : comparable ? 'Результат теста учитывается среди близких по задачам профилей той же категории.'
-            : 'В этой выдаче нет близких профилей той же категории для сравнения по тесту.' };
+            : trace ? 'В этой выдаче нет близких профилей той же категории для сравнения по тесту.'
+              : 'Влияние результата теста на смысловой порядок не подтверждено выполненным ранжированием.' };
     const fsp = fspExplanation(person, source, !category ? 'none' : semantic
       ? comparable ? 'comparison' : 'none' : 'filter-tiebreak');
     const categoryInfo = categoryExplanation(person, category);
@@ -149,10 +122,10 @@ export function explainSearchResults(items, { semantic = false, scoreKind = 'log
     if (filters.fsp && ['demo', 'verified'].includes(fsp.status)) conditions.push({ key: 'fsp', label: 'ФСП',
       value: fsp.status === 'demo' ? 'Учебный пример достижений ФСП.' : 'Есть подтверждённые достижения ФСП.' });
     const mode = !category ? 'unconfirmed' : !semantic ? 'filter-score' : comparable ? 'category-evidence-band' : 'semantic-only';
-    const ordering = { mode, comparableCount: band?.count ?? 0, changedWithinBand: band?.moved === true,
+    const ordering = { mode, comparableCount: trace?.comparableCount ?? 0, changedWithinBand: trace?.changedWithinBand === true,
       explanation: !category ? (verifiedFirst ? 'Профиль показан после кандидатов с подтверждённой категорией.' : 'Желаемый грейд и неподтверждённые достижения не повышают профиль.')
         : !semantic ? 'Порядок определяется результатом теста, затем достижениями ФСП; равные профили упорядочиваются стабильно.'
-          : comparable ? (band?.moved ? 'Положение изменилось при сравнении теста и достижений внутри группы близких профилей той же подтверждённой категории.'
+          : comparable ? (trace.changedWithinBand ? 'Положение изменилось при сравнении теста и достижений внутри группы близких профилей той же подтверждённой категории.'
             : 'Сравнение по тесту и достижениям сохранило положение среди близких профилей той же подтверждённой категории.')
             : 'Порядок определяется смысловым соответствием задачам; тест и ФСП здесь не меняют положение.' };
     const relevance = item.approximate === true ? 'nearest' : semantic ? 'semantic' : 'filters';

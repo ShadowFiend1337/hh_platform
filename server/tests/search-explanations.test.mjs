@@ -46,7 +46,8 @@ test('band explanations respect anchors, categories and the nearest-match bounda
 });
 
 test('cosine explanations use the actual smaller comparison interval', () => {
-  const result = explainSearchResults([candidate('first', 0.9), candidate('close', 0.89), candidate('outside', 0.87)],
+  const ranked = rankComparableCandidates([candidate('first', 0.9), candidate('close', 0.89), candidate('outside', 0.87)], { scoreKind: 'cosine' });
+  const result = explainSearchResults(ranked,
     { semantic: true, scoreKind: 'cosine' });
   assert.equal(result[0].explanation.ordering.comparableCount, 2);
   assert.equal(result[2].explanation.test.contribution, 'none');
@@ -77,10 +78,12 @@ test('untrusted achievement flags and IDs are never called verified or credited'
 });
 
 test('a trusted resolver names verified provenance without exporting its external identifier', () => {
-  const result = explainSearchResults([candidate('first', 6.2), candidate('verified', 6.1)],
-    { semantic: true, fspEvidence: person => person.id === 'verified' ? 'verified-fsp' : null });
-  assert.equal(result[1].explanation.fsp.status, 'verified');
-  assert.equal(result[1].explanation.fsp.contribution, 'comparison');
+  const ranked = rankComparableCandidates([candidate('first', 6.2), candidate('verified', 6.1)],
+    { fspEvidence: person => person.id === 'verified' ? 'verified-fsp' : null });
+  const result = explainSearchResults(ranked, { semantic: true });
+  const verified = result.find(item => item.person.id === 'verified');
+  assert.equal(verified.explanation.fsp.status, 'verified');
+  assert.equal(verified.explanation.fsp.contribution, 'comparison');
   const invalidForDemo = explainSearchResults([candidate('demo', 6, 80, { synthetic: true })],
     { fspEvidence: () => 'verified-fsp' });
   assert.equal(invalidForDemo[0].explanation.fsp.status, 'none');
@@ -90,9 +93,10 @@ test('server-managed demo achievements on a real profile retain explicit demonst
   const person = { fspEvidence: { provider: 'fsp-demo', mode: 'demo', identityVerified: false,
     activeCount: 1, revokedCount: 0, lastSyncedAt: '2026-10-08T10:00:00Z' }, achievements: [{ title: 'Демо' }] };
   const source = [candidate('first', 6.2), candidate('real-demo-link', 6.1, 80, person)];
-  const result = explainSearchResults(source, { semantic: true,
+  const ranked = rankComparableCandidates(source, {
     fspEvidence: value => value.id === 'real-demo-link' ? 'synthetic-demo' : null });
-  const explanation = result[1].explanation;
+  const result = explainSearchResults(ranked, { semantic: true });
+  const explanation = result.find(item => item.person.id === 'real-demo-link').explanation;
   assert.equal(explanation.category.status, 'confirmed');
   assert.equal(explanation.fsp.status, 'demo');
   assert.equal(explanation.fsp.contribution, 'comparison');
@@ -135,6 +139,40 @@ test('empty demo achievements and unknown resolver sources cannot claim a public
     assert.equal(explanation.status, 'unverified');
     assert.equal(explanation.contribution, 'none');
   }
+});
+
+test('unexecuted and copied ranking traces never claim comparison by test or federation', () => {
+  const source = [candidate('weaker', 6.2, 60), candidate('stronger', 6.1, 100,
+    { synthetic: true, achievements: [{ title: 'Демо' }] })];
+  const ranked = rankComparableCandidates(source);
+  const copied = source.map((item, index) => ({ ...item, rankingTrace: ranked[index].rankingTrace }));
+  for (const items of [source, copied]) {
+    const result = explainSearchResults(items, { semantic: true });
+    assert.deepEqual(result.map(item => item.person.id), ['weaker', 'stronger']);
+    for (const item of result) {
+      assert.equal(item.explanation.test.contribution, 'none');
+      assert.equal(item.explanation.fsp.contribution, 'none');
+      assert.equal(item.explanation.ordering.comparableCount, 0);
+      assert.equal(item.explanation.ordering.changedWithinBand, false);
+      assert.match(item.explanation.test.explanation, /не подтверждено выполненным ранжированием/u);
+    }
+  }
+});
+
+test('explanation consumes executed provenance without a second resolver call', () => {
+  const calls = [];
+  const resolver = person => { calls.push(person.id); return person.id === 'verified' ? 'verified-fsp' : null; };
+  const ranked = rankComparableCandidates([candidate('first', 6.2, 80), candidate('verified', 6.1, 80), candidate('distant', 5, 100)],
+    { fspEvidence: resolver });
+  const result = explainSearchResults(ranked, { semantic: true, fspEvidence: () => { throw new Error('Provenance must not be resolved again'); } });
+  assert.deepEqual(calls, ['first', 'verified', 'distant']);
+  assert.deepEqual(result.map(item => item.person.id), ['verified', 'first', 'distant']);
+  assert.equal(result[0].explanation.fsp.status, 'verified');
+  assert.equal(result[0].explanation.fsp.contribution, 'comparison');
+  assert.equal(result[0].explanation.ordering.changedWithinBand, true);
+  assert.equal(result[2].explanation.ordering.comparableCount, 1);
+  const wrongScale = explainSearchResults(ranked, { semantic: true, scoreKind: 'cosine' });
+  assert(wrongScale.every(item => item.explanation.test.contribution === 'none'));
 });
 
 test('conditions cite actual matches and never pretend unknown or mismatched fields match', () => {
