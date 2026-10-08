@@ -330,6 +330,28 @@
     "note": "Прочитан официальный технический материал; задача и числовые условия авторские. Не источник официальных вопросов компании."
   },
   {
+    "id": "eng-owasp-csrf",
+    "title": "Cross-Site Request Forgery Prevention Cheat Sheet",
+    "url": "https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html",
+    "publisher": "OWASP",
+    "kind": "technical-reference",
+    "accessedOn": "2026-10-08",
+    "usage": "original-scenario-no-verbatim-copy",
+    "verification": "opened",
+    "note": "Прочитаны способы защиты запросов, меняющих состояние, и ограничения SameSite. Техническая опора авторских Fullstack-сценариев, не официальный вопрос собеседования."
+  },
+  {
+    "id": "eng-owasp-auth",
+    "title": "Authentication Cheat Sheet",
+    "url": "https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html",
+    "publisher": "OWASP",
+    "kind": "technical-reference",
+    "accessedOn": "2026-10-08",
+    "usage": "original-scenario-no-verbatim-copy",
+    "verification": "opened",
+    "note": "Прочитаны границы authentication, identity proofing и управления сессией. Техническая опора авторских Fullstack-сценариев; полные тексты источника не копируются."
+  },
+  {
     "id": "eng-rwb-rate-limit",
     "title": "Быстро — не всегда хорошо: рейтлимиты в мультикластерном окружении",
     "url": "https://habr.com/ru/companies/rwb/articles/932050/",
