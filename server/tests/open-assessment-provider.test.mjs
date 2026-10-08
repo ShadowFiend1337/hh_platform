@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createOpenAssessmentProvider, defaultOpenAssessmentModel, OpenAssessmentProviderError } from '../open-assessment-provider.mjs';
+import { createOpenAssessmentProvider, defaultOpenAssessmentModel, qwenOpenAssessmentModel,
+  openAssessmentProviderVersion, OpenAssessmentProviderError } from '../open-assessment-provider.mjs';
 
 const apiKey = 'mock-key-must-never-be-reported';
 const env = { OPENROUTER_API_KEY: apiKey };
@@ -29,6 +30,9 @@ const completion = (result, { status = 200, headers = {}, model = defaultOpenAss
 }), { status, headers });
 const expectCode = code => error => error instanceof OpenAssessmentProviderError && error.code === code && error.needsReview === true;
 const provider = (fetchImpl, options = {}) => createOpenAssessmentProvider({ env, fetchImpl, ...options });
+const qwenProvider = (fetchImpl, options = {}) => provider(fetchImpl, {
+  env: { ...env, OPENROUTER_ASSESSMENT_MODEL: qwenOpenAssessmentModel }, ...options,
+});
 
 test('Configuration and construction do not call OpenRouter or disclose credentials', async () => {
   let calls = 0;
@@ -45,16 +49,127 @@ test('Configuration and construction do not call OpenRouter or disclose credenti
   assert.ok(Object.isFrozen(configured));
 });
 
-test('Only an explicitly selected Haiku ID is accepted; no automatic other-model fallback', () => {
-  for (const model of ['', 'openrouter/auto', 'anthropic/claude-sonnet-5.5', 'anthropic/claude-haiku-5.5:free', 'bad-secret-model']) {
-    assert.throws(() => createOpenAssessmentProvider({ env: { ...env, OPENROUTER_ASSESSMENT_MODEL: model } }), expectCode('configuration'));
+test('Only an explicitly selected Haiku ID or the reviewed Qwen ID is accepted; defaults stay unchanged', () => {
+  for (const model of ['', 'openrouter/auto', 'anthropic/claude-sonnet-5.5', 'anthropic/claude-haiku-5.5:free',
+    'qwen/qwen3.8-max', 'qwen/qwen3.8-27b:free', 'qwen/qwen3.8-27b-20261008', 'qwen/custom', 'qwen/qwen3.8-235b', 'bad-secret-model']) {
+    assert.throws(() => createOpenAssessmentProvider({ env: { ...env, OPENROUTER_ASSESSMENT_MODEL: model } }), error =>
+      expectCode('configuration')(error) && !error.message.includes('Haiku'));
   }
   assert.equal(createOpenAssessmentProvider({ env: { ...env, OPENROUTER_ASSESSMENT_MODEL: 'anthropic/claude-haiku-4.5' } }).configuration().model,
     'anthropic/claude-haiku-4.5');
+  assert.equal(createOpenAssessmentProvider({ env: { ...env, OPENROUTER_ASSESSMENT_MODEL: 'anthropic/claude-haiku-5.5-20261007' } })
+    .configuration().model, 'anthropic/claude-haiku-5.5-20261007');
+  let calls = 0;
+  const qwen = qwenProvider(async () => { calls++; });
+  assert.equal(qwen.configuration().model, 'qwen/qwen3.8-27b');
+  assert.equal(qwen.configuration().configured, true);
+  assert.equal(qwen.configuration().approvedForCertification, false);
+  assert.equal(calls, 0);
+  assert.equal(createOpenAssessmentProvider({ env }).configuration().model, defaultOpenAssessmentModel);
   for (const options of [{ timeoutMs: 0 }, { timeoutMs: 60_001 }, { maxRetries: 3 }, { maxRetryDelayMs: 5001 }]) {
     assert.throws(() => createOpenAssessmentProvider({ env, ...options }), expectCode('configuration'));
   }
   assert.throws(() => createOpenAssessmentProvider({ env: { OPENROUTER_API_KEY: 'unsafe\nheader' } }), expectCode('configuration'));
+});
+
+test('Selected Qwen evaluates literal evidence and generates only a preview under the same strict constraints', async () => {
+  const requests = [];
+  const adapter = qwenProvider(async (_url, options) => {
+    const body = JSON.parse(options.body);
+    requests.push(body);
+    return completion(requests.length === 1 ? scored() : { contextIntroduction: 'Контекст: обработка заказов.' },
+      { model: qwenOpenAssessmentModel });
+  });
+  const evaluation = await adapter.evaluateDraft({ question: { ...question, email: 'PRIVATE CONTACT' }, answer });
+  const variant = await adapter.generateVariantPreview({ question, context: {
+    domain: 'Обработка заказов', rawResume: 'PRIVATE CV', email: 'PRIVATE CONTACT',
+  } });
+  for (const body of requests) {
+    assert.equal(body.model, 'qwen/qwen3.8-27b');
+    assert.equal(body.models, undefined);
+    assert.equal(body.route, undefined);
+    assert.equal(body.stream, false);
+    assert.deepEqual(body.provider, { require_parameters: true, allow_fallbacks: false, data_collection: 'deny' });
+    assert.equal(body.response_format.type, 'json_schema');
+    assert.equal(body.response_format.json_schema.strict, true);
+    assert.equal(body.response_format.json_schema.schema.additionalProperties, false);
+    assert.equal(JSON.stringify(body).includes('PRIVATE CONTACT'), false);
+    assert.equal(JSON.stringify(body).includes('PRIVATE CV'), false);
+  }
+  assert.equal(requests[0].max_tokens, 4096);
+  assert.equal(requests[1].max_tokens, 1024);
+  const evaluationInput = JSON.parse(requests[0].messages[1].content);
+  assert.deepEqual(evaluationInput.question.rubric, question.rubric);
+  assert.equal(evaluationInput.candidateAnswer, answer);
+  assert.equal(evaluation.model, qwenOpenAssessmentModel);
+  assert.equal(evaluation.providerVersion, openAssessmentProviderVersion);
+  assert.equal(evaluation.bankVersion, question.bankVersion);
+  assert.equal(evaluation.rubricVersion, question.rubricVersion);
+  assert.equal(evaluation.approvedForCertification, false);
+  assert.equal(evaluation.needsReview, false);
+  assert.equal(evaluation.grade, undefined);
+  assert.equal(evaluation.passed, undefined);
+  assert.equal(evaluation.score, undefined);
+  assert.ok(evaluation.criteria.every(item => item.evidence.every(quote => answer.includes(quote))));
+  const generationInput = JSON.parse(requests[1].messages[1].content);
+  assert.deepEqual(generationInput.curatedContext, { domain: 'Обработка заказов' });
+  assert.equal(generationInput.referenceAnswer, undefined);
+  assert.equal(generationInput.rubric, undefined);
+  assert.equal(variant.model, qwenOpenAssessmentModel);
+  assert.equal(variant.basePrompt, question.prompt);
+  assert.equal(variant.prompt, variant.contextIntroduction + '\n\n' + question.prompt);
+  assert.equal(variant.requiresEditorialReview, true);
+  assert.equal(variant.approvedForCertification, false);
+});
+
+test('Qwen output with another model, invented evidence or altered JSON never falls back or assigns a grade', async () => {
+  const fabricated = scored();
+  fabricated.criteria[0].evidence = [question.referenceAnswer.scenario];
+  const fakeGrade = scored(); fakeGrade.grade = 'Lead';
+  for (const reply of [
+    () => completion(scored(), { model: defaultOpenAssessmentModel }),
+    () => completion(scored(), { model: 'qwen/qwen3.8-max' }),
+    () => completion(scored(), { model: qwenOpenAssessmentModel + ':free' }),
+    () => completion(scored(), { model: qwenOpenAssessmentModel + '-20261008' }),
+    () => completion(scored(), { model: qwenOpenAssessmentModel, finish: 'length' }),
+    () => completion(fabricated, { model: qwenOpenAssessmentModel }),
+    () => completion(fakeGrade, { model: qwenOpenAssessmentModel }),
+    () => completion('{bad json', { model: qwenOpenAssessmentModel }),
+  ]) {
+    let calls = 0;
+    const adapter = qwenProvider(async () => { calls++; return reply(); });
+    await assert.rejects(adapter.evaluateDraft({ question, answer }), error => {
+      assert.ok(expectCode('invalid_response')(error));
+      assert.equal(error.grade, undefined);
+      assert.equal(error.passed, undefined);
+      assert.equal(error.score, undefined);
+      return true;
+    });
+    assert.equal(calls, 1);
+  }
+  for (const reply of [
+    () => completion({ contextIntroduction: 'Контекст' }, { model: defaultOpenAssessmentModel }),
+    () => completion({ contextIntroduction: 'Контекст', prompt: 'Подменённая задача' }, { model: qwenOpenAssessmentModel }),
+  ]) {
+    await assert.rejects(qwenProvider(async () => reply()).generateVariantPreview({ question }), expectCode('invalid_response'));
+  }
+});
+
+test('Qwen retries only the selected model; failure and deadline remain review states', async () => {
+  const models = [];
+  const adapter = qwenProvider(async (_url, options) => {
+    models.push(JSON.parse(options.body).model);
+    return models.length === 1 ? new Response('ignored', { status: 429, headers: { 'Retry-After': '0' } })
+      : completion(scored(), { model: qwenOpenAssessmentModel });
+  });
+  assert.equal((await adapter.evaluateDraft({ question, answer })).model, qwenOpenAssessmentModel);
+  assert.deepEqual(models, [qwenOpenAssessmentModel, qwenOpenAssessmentModel]);
+  await assert.rejects(qwenProvider(async () => new Response(apiKey + answer, { status: 503 }), { maxRetries: 0 })
+    .evaluateDraft({ question, answer }), error => expectCode('unavailable')(error)
+      && error.grade === undefined && error.passed === undefined && !String(error).includes(apiKey));
+  await assert.rejects(qwenProvider(async () => new Promise(() => {}), { timeoutMs: 10 })
+    .evaluateDraft({ question, answer }), error => expectCode('timeout')(error)
+      && error.grade === undefined && error.passed === undefined);
 });
 
 test('Evaluation uses a strict server rubric, bounded request, single model and literal evidence', async () => {
