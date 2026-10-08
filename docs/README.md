@@ -20,6 +20,7 @@
 | [resume_validation.md](resume_validation.md) | Результаты проверки импорта четырёх резюме, OCR и сценариев приватности |
 | [directions_validation.md](directions_validation.md) | Справочник 14 специализаций, 25 отраслей и результаты проверки полного пути ML-кандидата |
 | [assessment_validation.md](assessment_validation.md) | Проверки структуры 70 программ, формирования из вакансий и скрытых ответов |
+| [assessment_design.md](assessment_design.md) | Проект открытого адаптивного теста: компетенции, рубрики, персонализация, пересдачи и план валидации; ещё не реализован |
 | [assessment_integrity.md](assessment_integrity.md) | Контроль фокуса и копирования во время теста, серверный журнал и границы защиты |
 | [ats_integration.md](ats_integration.md) | Концепция ATS: синхронизация вакансий, откликов и статусов, повторы, конфликты и ограничения передачи данных |
 | [Предлагаемый ATS OpenAPI](contracts/ats.openapi.json) и [примеры](examples/ats/README.md) | Проект будущего контракта; описанные маршруты в сервере пока отсутствуют |
