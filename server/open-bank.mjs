@@ -8,12 +8,13 @@ import { operationsProductFamilies } from './open-bank/operations-product.mjs';
 import { businessAnalysisFamilies } from './open-bank/business-analysis.mjs';
 import { productManagementFamilies } from './open-bank/product-management.mjs';
 import { embeddedFamilies } from './open-bank/embedded.mjs';
+import { mlAdditionalFamilies } from './open-bank/ml-additional.mjs';
 import { openCompetencies } from './open-bank/competencies.mjs';
 import { deepFreeze, openGrades, openGroups, openSpecializations, validateOpenBank } from './open-bank/schema.mjs';
 import { extraPracticalGroup, isPracticalFamily, practicalQuota } from './open-bank/policy.mjs';
 
-export const openBankVersion = '2026.10.08-open-v2';
-export const openRubricVersion = '2026.10.08-rubric-v2';
+export const openBankVersion = '2026.10.08-open-v3';
+export const openRubricVersion = '2026.10.08-rubric-v3';
 export const openBankReview = deepFreeze({ status: 'author-draft', independentlyReviewed: false,
   empiricallyCalibrated: false, approvedForCertification: false });
 
@@ -21,9 +22,10 @@ const sourceFile = name => JSON.parse(readFileSync(new URL('./open-bank/' + name
 export const openSources = deepFreeze([
   ...sourceFile('sources-engineering.json'), ...sourceFile('sources-data.json'), ...sourceFile('sources-operations-product.json'),
   ...sourceFile('sources-business-analysis.json'), ...sourceFile('sources-product-management.json'), ...sourceFile('sources-embedded.json'),
+  ...sourceFile('sources-ml-additional.json'),
 ]);
 export const openFamilies = deepFreeze([...engineeringFamilies, ...dataFamilies, ...operationsProductFamilies,
-  ...businessAnalysisFamilies, ...productManagementFamilies, ...embeddedFamilies]);
+  ...businessAnalysisFamilies, ...productManagementFamilies, ...embeddedFamilies, ...mlAdditionalFamilies]);
 const structuralErrors = validateOpenBank(openFamilies, openSources);
 if (structuralErrors.length) throw new Error('Invalid open authoring corpus:\n' + structuralErrors.join('\n'));
 const sourcesById = new Map(openSources.map(source => [source.id, source]));

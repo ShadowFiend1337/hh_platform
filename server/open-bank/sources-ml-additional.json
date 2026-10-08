@@ -1,0 +1,233 @@
+[
+  {
+    "id": "ml-add-ozon-prod2vec",
+    "title": "Векторное представление товаров Prod2Vec: как мы улучшили матчинг и избавились от кучи эмбеддингов",
+    "publisher": "Ozon Tech, Александр Голубев; корпоративный блог на Хабре",
+    "url": "https://habr.com/ru/companies/ozontech/articles/648231/",
+    "kind": "technical-reference",
+    "verification": "opened",
+    "accessedOn": "2026-10-08",
+    "usage": "original-scenario-no-verbatim-copy",
+    "note": "Первичный опыт команды: мультимодальные представления, атрибуты, несколько голов и цель матчинга. Поддерживает тему авторских сценариев, не является источником официальных вопросов собеседования. Условия и рубрики созданных задач не приписываются Ozon."
+  },
+  {
+    "id": "ml-add-wb-compression",
+    "title": "Сжатие без потерь: уменьшаем эмбеддинги для онлайн-ранжирования рекламы",
+    "publisher": "Wildberries & Russ / RWB, Илья Бадекин; корпоративный блог на Хабре",
+    "url": "https://habr.com/ru/companies/rwb/articles/987386/",
+    "kind": "technical-reference",
+    "verification": "opened",
+    "accessedOn": "2026-10-08",
+    "usage": "original-scenario-no-verbatim-copy",
+    "note": "Первичный технический материал про контрастивное обучение, контентные embeddings, уменьшение размерности и downstream проверку. Название статьи не принимается как универсальная гарантия отсутствия потери качества. Авторские числовые примеры и рубрики не копируют кейс и не являются интервью WB."
+  },
+  {
+    "id": "ml-add-yandex-ranking",
+    "title": "Задача ранжирования",
+    "publisher": "Яндекс Образование, учебник машинного обучения",
+    "url": "https://education.yandex.ru/handbook/ml/article/zadacha-ranzhirovaniya",
+    "kind": "technical-reference",
+    "verification": "search-index",
+    "accessedOn": "2026-10-08",
+    "usage": "original-scenario-no-verbatim-copy",
+    "note": "Официальный учебный источник подтверждает тему ranking-метрик и способов обучения. Поисковый индекс прочитан; прямое открытие на дату проверки завершилось недоступным редиректом. Формула конкретного примера дополнительно проверена по документации scikit-learn. Задача и грейды авторские, не вопросы Яндекса."
+  },
+  {
+    "id": "ml-add-clip",
+    "title": "Learning Transferable Visual Models From Natural Language Supervision",
+    "publisher": "Alec Radford и соавторы, OpenAI; оригинальная исследовательская статья",
+    "url": "https://arxiv.org/abs/2103.00020",
+    "kind": "technical-reference",
+    "verification": "opened",
+    "accessedOn": "2026-10-08",
+    "usage": "original-scenario-no-verbatim-copy",
+    "note": "Первичный источник о согласованных текстово-визуальных парах и контрастивном представлении. Не доказывает корректность любого автоматического matching и не является эталонной разметкой нашего банка."
+  },
+  {
+    "id": "ml-add-pytorch-padding",
+    "title": "torch.nn.utils.rnn.pad_sequence",
+    "publisher": "PyTorch, официальная документация",
+    "url": "https://docs.pytorch.org/docs/2.14/generated/torch.nn.utils.rnn.pad_sequence.html",
+    "kind": "technical-reference",
+    "verification": "opened",
+    "accessedOn": "2026-10-08",
+    "usage": "original-scenario-no-verbatim-copy",
+    "note": "Поддерживает представление последовательностей разной длины и padding. Контракт pooling, пустых последовательностей и конкретные тесты сформулированы автором отдельно."
+  },
+  {
+    "id": "ml-add-tfx-validation",
+    "title": "Get started with TensorFlow Data Validation",
+    "publisher": "TensorFlow / Google, официальная документация",
+    "url": "https://www.tensorflow.org/tfx/data_validation/get_started",
+    "kind": "technical-reference",
+    "verification": "opened",
+    "accessedOn": "2026-10-08",
+    "usage": "original-scenario-no-verbatim-copy",
+    "note": "Поддерживает проверяемую схему и поиск аномалий входных данных. Примеры физических единиц и смысловой нормализации авторские; валидатор формы сам по себе не подтверждает смысл признака."
+  },
+  {
+    "id": "ml-add-cohen-kappa",
+    "title": "cohen_kappa_score",
+    "publisher": "scikit-learn, официальная документация",
+    "url": "https://scikit-learn.org/stable/modules/generated/sklearn.metrics.cohen_kappa_score.html",
+    "kind": "technical-reference",
+    "verification": "opened",
+    "accessedOn": "2026-10-08",
+    "usage": "original-scenario-no-verbatim-copy",
+    "note": "Поддерживает измерение согласованности двух разметчиков с поправкой на случайное согласие. Авторский сценарий требует анализа таблицы и типов разногласий; одна κ не утверждается достаточной гарантией качественного эталона."
+  },
+  {
+    "id": "ml-add-ndcg",
+    "title": "ndcg_score",
+    "publisher": "scikit-learn, официальная документация",
+    "url": "https://scikit-learn.org/stable/modules/generated/sklearn.metrics.ndcg_score.html",
+    "kind": "technical-reference",
+    "verification": "opened",
+    "accessedOn": "2026-10-08",
+    "usage": "original-scenario-no-verbatim-copy",
+    "note": "Поддерживает discount и нормирование по идеальному порядку. В авторской задаче явно выбран exponential gain 2^rel-1; это отдельный договорённый вариант, его нельзя молча подменять стандартным линейным gain библиотечной функции."
+  },
+  {
+    "id": "ml-add-microsoft-experiments",
+    "title": "Patterns of Trustworthy Experimentation: During-Experiment Stage",
+    "publisher": "Microsoft Research / Experimentation Platform, авторы материала",
+    "url": "https://www.microsoft.com/en-us/research/articles/patterns-of-trustworthy-experimentation-during-experiment-stage/",
+    "kind": "technical-reference",
+    "verification": "opened",
+    "accessedOn": "2026-10-08",
+    "usage": "original-scenario-no-verbatim-copy",
+    "note": "Первичный опыт экспериментальной платформы: стабильные сегменты, guardrails, повторные просмотры и несколько гипотез. Числа и протокол конкретной задачи авторские; историческая практика компании не устанавливает обязательный горизонт нашего продукта."
+  },
+  {
+    "id": "ml-add-microsoft-interference",
+    "title": "Causal Inference in the Presence of Interference in Sponsored Search Advertising",
+    "publisher": "Microsoft Research, оригинальная исследовательская публикация",
+    "url": "https://www.microsoft.com/en-us/research/publication/causal-inference-in-the-presence-of-interference-in-sponsored-search-advertising/",
+    "kind": "technical-reference",
+    "verification": "opened",
+    "accessedOn": "2026-10-08",
+    "usage": "original-scenario-no-verbatim-copy",
+    "note": "Поддерживает постановку причинного эффекта при взаимном влиянии участников рекламного аукциона. Авторские схемы кластеров и временных блоков требуют проверки конкретных предпосылок и не объявляются универсально несмещёнными."
+  },
+  {
+    "id": "ml-add-permutation",
+    "title": "permutation_test_score",
+    "publisher": "scikit-learn, официальная документация",
+    "url": "https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.permutation_test_score.html",
+    "kind": "technical-reference",
+    "verification": "opened",
+    "accessedOn": "2026-10-08",
+    "usage": "original-scenario-no-verbatim-copy",
+    "note": "Поддерживает нулевой контроль через перестановку target и определение permutation p-value. Дополнительная проверка полной процедуры подбора и зависимых объектов задана явно в авторских уровнях."
+  },
+  {
+    "id": "ml-add-quantile",
+    "title": "Quantile regression",
+    "publisher": "scikit-learn, официальный пример",
+    "url": "https://scikit-learn.org/stable/auto_examples/linear_model/plot_quantile_regression.html",
+    "kind": "technical-reference",
+    "verification": "opened",
+    "accessedOn": "2026-10-08",
+    "usage": "original-scenario-no-verbatim-copy",
+    "note": "Поддерживает условный квантиль и pinball loss. Задача, числовые тесты и требования по складам авторские; коммерческий эффект и гарантированное покрытие будущих данных источником не приписываются."
+  },
+  {
+    "id": "ml-add-gradient-surgery",
+    "title": "Gradient Surgery for Multi-Task Learning",
+    "publisher": "Tianhe Yu и соавторы, оригинальная исследовательская статья",
+    "url": "https://arxiv.org/abs/2001.06782",
+    "kind": "technical-reference",
+    "verification": "opened",
+    "accessedOn": "2026-10-08",
+    "usage": "original-scenario-no-verbatim-copy",
+    "note": "Поддерживает анализ конфликта градиентов в совместном обучении. Название PCGrad не обязательно для решения; коррекция не считается гарантией улучшения каждой задачи. Векторы и уровневые условия созданы отдельно."
+  },
+  {
+    "id": "ml-add-faiss-metric",
+    "title": "MetricType and distances",
+    "publisher": "Faiss / Meta AI, документация авторов библиотеки",
+    "url": "https://github.com/facebookresearch/faiss/wiki/MetricType-and-distances",
+    "kind": "technical-reference",
+    "verification": "opened",
+    "accessedOn": "2026-10-08",
+    "usage": "original-scenario-no-verbatim-copy",
+    "note": "Поддерживает различие inner product и cosine, нормировку входов и контракт расстояния. Авторский сценарий выбора сходства не заявляет превосходство cosine для всех представлений."
+  },
+  {
+    "id": "ml-add-pytorch-transfer",
+    "title": "Transfer Learning for Computer Vision Tutorial",
+    "publisher": "PyTorch, официальный tutorial",
+    "url": "https://docs.pytorch.org/tutorials/beginner/transfer_learning_tutorial.html",
+    "kind": "technical-reference",
+    "verification": "opened",
+    "accessedOn": "2026-10-08",
+    "usage": "original-scenario-no-verbatim-copy",
+    "note": "Поддерживает distinction feature extraction/fine-tuning и контроль requires_grad. Конкретные проверки weights, buffers, param groups и восстановления сформулированы как авторские задачи."
+  },
+  {
+    "id": "ml-add-triton-cache",
+    "title": "Triton Response Cache",
+    "publisher": "NVIDIA, официальная документация Triton Inference Server",
+    "url": "https://docs.nvidia.com/deeplearning/triton-inference-server/user-guide/docs/user_guide/response_cache.html",
+    "kind": "technical-reference",
+    "verification": "opened",
+    "accessedOn": "2026-10-08",
+    "usage": "original-scenario-no-verbatim-copy",
+    "note": "Поддерживает кэширование результата по значимым model inputs и версии. Дополнительная граница актуальных прав и feature revision описана отдельно в авторском сервисном сценарии."
+  },
+  {
+    "id": "ml-add-google-test-score",
+    "title": "The ML Test Score: A Rubric for ML Production Readiness and Technical Debt Reduction",
+    "publisher": "Eric Breck и соавторы, Google Research",
+    "url": "https://research.google/pubs/the-ml-test-score-a-rubric-for-ml-production-readiness-and-technical-debt-reduction/",
+    "kind": "technical-reference",
+    "verification": "opened",
+    "accessedOn": "2026-10-08",
+    "usage": "original-scenario-no-verbatim-copy",
+    "note": "Первичный источник о проверках входов, инфраструктуры и production readiness ML. Общие инженерные принципы поддерживают темы авторских сценариев; материал не считается валидацией нашего экзамена."
+  },
+  {
+    "id": "ml-add-kserve-graph",
+    "title": "Inference Graph",
+    "publisher": "KServe, официальная документация",
+    "url": "https://kserve.github.io/website/docs/concepts/resources/inferencegraph",
+    "kind": "technical-reference",
+    "verification": "opened",
+    "accessedOn": "2026-10-08",
+    "usage": "original-scenario-no-verbatim-copy",
+    "note": "Поддерживает явное разделение этапов inference, маршрутизацию и несколько модельных веток. Авторский запрет бизнес-побочных действий в shadow не приписывается этому API как автоматическая гарантия."
+  },
+  {
+    "id": "ml-add-faiss-ram",
+    "title": "Indexes that do not fit in RAM",
+    "publisher": "Faiss / Meta AI, документация авторов библиотеки",
+    "url": "https://github.com/facebookresearch/faiss/wiki/Indexes-that-do-not-fit-in-RAM",
+    "kind": "technical-reference",
+    "verification": "opened",
+    "accessedOn": "2026-10-08",
+    "usage": "original-scenario-no-verbatim-copy",
+    "note": "Поддерживает учёт физического представления и памяти индекса. Арифметика 1024 float32/128 float16 и сравнение сжатия с ANN-ошибкой — самостоятельный учебный пример."
+  },
+  {
+    "id": "ml-add-faiss-operations",
+    "title": "Special operations on indexes",
+    "publisher": "Faiss / Meta AI, документация авторов библиотеки",
+    "url": "https://github.com/facebookresearch/faiss/wiki/Special-operations-on-indexes",
+    "kind": "technical-reference",
+    "verification": "opened",
+    "accessedOn": "2026-10-08",
+    "usage": "original-scenario-no-verbatim-copy",
+    "note": "Поддерживает различие стабильных ID, позиций, удаления и поддержанных операций конкретного индекса. Журнал delta и барьер переключения — авторская инженерная постановка, а не обещание встроенной транзакционности Faiss."
+  },
+  {
+    "id": "ml-add-triton-batching",
+    "title": "Model Configuration: dynamic batching",
+    "publisher": "NVIDIA, официальная документация Triton Inference Server",
+    "url": "https://docs.nvidia.com/deeplearning/triton-inference-server/user-guide/docs/user_guide/model_configuration.html",
+    "kind": "technical-reference",
+    "verification": "opened",
+    "accessedOn": "2026-10-08",
+    "usage": "original-scenario-no-verbatim-copy",
+    "note": "Поддерживает batch/scheduler и настройку порядка ответов. Перестановка по длине, request generation и partial errors в задаче авторские, не утверждаются ошибкой самого Triton."
+  }
+]

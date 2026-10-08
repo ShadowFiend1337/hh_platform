@@ -4,7 +4,7 @@ import { getOpenProgram, openFamilies } from '../open-bank.mjs';
 import { openGrades, openSpecializations } from '../open-bank/schema.mjs';
 import { createOpenAssessmentProvider, defaultOpenAssessmentModel } from '../open-assessment-provider.mjs';
 
-test('Every program supplies a compatible private question to the draft provider without turning uncertainty into a grade', async () => {
+test('Every compiled question supplies a compatible private draft without turning uncertainty into a grade', async () => {
   let captured;
   const provider = createOpenAssessmentProvider({
     env: { OPENROUTER_API_KEY: 'test-only-key' },
@@ -18,8 +18,7 @@ test('Every program supplies a compatible private question to the draft provider
       { status: 200, headers: { 'Content-Type': 'application/json' } });
     },
   });
-  for (const specialization of openSpecializations) for (const grade of openGrades) {
-    const question = getOpenProgram(specialization, grade).questions[0];
+  for (const specialization of openSpecializations) for (const grade of openGrades) for (const question of getOpenProgram(specialization, grade).questions) {
     const result = await provider.evaluateDraft({ question, answer: 'Контроль технического контракта, не эталон навыков.' });
     assert.equal(result.questionId, question.id);
     assert.equal(result.bankVersion, question.bankVersion);

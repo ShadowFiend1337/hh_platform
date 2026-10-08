@@ -97,6 +97,24 @@ test('A private snapshot cannot mutate the source corpus or another preview', ()
   assert.equal(getOpenProgram('ML', 'Middle').questions.find(item => item.id === question.id).referenceAnswer.level, question.referenceAnswer.level);
 });
 
+test('ML retains the planned ten unseen continuation families in any one competency and three distinct author forms', () => {
+  for (const grade of openGrades) {
+    const first = sampleOpenQuestions('ML', grade);
+    const disclosed = new Set(first.questions.map(item => item.familyId));
+    const program = getOpenProgram('ML', grade);
+    for (const group of openGroups) {
+      assert.ok(program.questions.filter(item => item.group === group && !disclosed.has(item.familyId)).length >= 10);
+    }
+    const second = sampleOpenQuestions('ML', grade, { excludedFamilyIds: [...disclosed] });
+    second.questions.forEach(item => disclosed.add(item.familyId));
+    const third = sampleOpenQuestions('ML', grade, { excludedFamilyIds: [...disclosed] });
+    const all = [...first.questions, ...second.questions, ...third.questions];
+    assert.equal(all.length, 60);
+    assert.equal(new Set(all.map(item => item.familyId)).size, 60);
+    for (const form of [first, second, third]) assert.ok(form.questions.filter(item => item.practical).length >= 5);
+  }
+});
+
 test('Provenance, concrete tier expectations and scenario deduplication reject corrupt authoring imports', () => {
   const missingSource = structuredClone(openFamilies);
   missingSource[0].sourceIds = ['invented-unverified-source'];
