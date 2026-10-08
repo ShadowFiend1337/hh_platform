@@ -225,7 +225,7 @@ export function Employer({ state, update, onProfile, onInvite, notify, directory
       .map(([key, values]) => 'Без: ' + values.map(value => constraintLabel(key, value)).join(', ')),
   ].filter(Boolean);
   const unavailable = Boolean(query && response?.model.status === 'unavailable');
-  return <>
+  return <div className="employer-directory">
     <div className="page-heading employer-heading"><h1>Кандидаты</h1><div className="button-group">
       <button className="button secondary compact" aria-expanded={showNeeds} aria-controls="hiring-needs" onClick={() => setShowNeeds(!showNeeds)}>Потребности<ChevronDown size={15} /></button>
       </div></div>
@@ -345,5 +345,5 @@ export function Employer({ state, update, onProfile, onInvite, notify, directory
         {pageError && <div className="directory-error" role="alert"><p>{pageError}</p><button className="button secondary compact" disabled={loading || loadingMore} onClick={() => void loadMore()}>Повторить загрузку</button></div>}
       </section>
     </div>
-  </>;
+  </div>;
 }
