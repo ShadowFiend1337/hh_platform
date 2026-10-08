@@ -340,7 +340,11 @@ test('HTTP rejects unsupported inputs, oversized bodies, cross-origin requests a
   assert.equal((await request('/api/assessment/attempts', { method: 'POST', body: { survey: survey(), questions: [] } })).status, 400);
   assert.equal((await request('/api/assessment/attempts', { method: 'POST', body: { survey: survey(), vacancyDescription: 'x'.repeat(22000) } })).status, 413);
   assert.equal((await request('/api/assessment/attempts', { method: 'POST', body: { survey: survey() }, headers: { Origin: 'https://untrusted.example' } })).status, 403);
-  for (const path of ['/server/bank.mjs', '/bank.mjs', '/server/data/assessment.sqlite', '/api/bank', '/%2e%2e/server/bank.mjs']) {
+  for (const path of [
+    '/server/bank.mjs', '/bank.mjs', '/server/data/assessment.sqlite', '/api/bank', '/%2e%2e/server/bank.mjs',
+    '/server/open-bank.mjs', '/server/open-bank/data.mjs', '/server/open-bank/sources-data.json',
+    '/server/data/open-bank/open-bank.json', '/server/data/open-bank/preview-ML-Middle.json', '/api/open-bank',
+  ]) {
     assert.equal((await request(path)).status, 404);
   }
 });

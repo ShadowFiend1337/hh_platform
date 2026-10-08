@@ -19,6 +19,7 @@
     "test:unconfirmed": "node frontend/tests/unconfirmed-directory.mjs",
     "test:assessment-guard": "node frontend/tests/assessment-guard.mjs",
     "test:code-editor": "node frontend/tests/code-editor.mjs",
+    "test:open-bank": "node --test server/tests/open-bank.test.mjs",
     "test:contact-privacy": "node frontend/tests/application-privacy.mjs",
     "test:profile-privacy": "node frontend/tests/profile-privacy.mjs",
     "test:browser": "npm --prefix frontend run test:browser",
@@ -42,6 +43,9 @@
     "check:search-model": "node scripts/ml.mjs check",
     "activate:search-model": "node scripts/ml.mjs activate",
     "test:search-quality": "node ml/search-regression.mjs --run --strict",
-    "validate:assessment": "node server/validate.mjs"
+    "validate:assessment": "node server/validate.mjs",
+    "validate:open-bank": "node scripts/open-bank.mjs validate",
+    "sample:open-bank": "node scripts/open-bank.mjs sample",
+    "export:open-bank": "node scripts/open-bank.mjs export"
   }
 }
