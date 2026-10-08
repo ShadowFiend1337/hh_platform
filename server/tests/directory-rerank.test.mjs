@@ -121,7 +121,8 @@ test('a sparse profile can match its actual role and skills without claiming des
   assert.equal(result.items[0].evidenceKind,'competencies');
   assert.equal(encoder.info.reranker.threshold,0.5,'The existing stage cutoff is unchanged');
   assert.equal(result.model.profileEvidencePolicy,'professional-sections-with-strict-sparse-competencies-v2');
-  assert.doesNotMatch(JSON.stringify(result.items),/"kind"|taskSections|private@example|79990000000/u);
+  assert.doesNotMatch(JSON.stringify(result.items),/taskSections|private@example|79990000000/u);
+  assert.equal(result.items[0].explanation.evidence.kind,'competencies');
 });
 
 test('sparse competency evidence below the frozen cutoff is rejected even with perfect recall', async t => {

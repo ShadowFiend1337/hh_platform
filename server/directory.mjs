@@ -11,6 +11,7 @@ import { accountsShareRealm, isLocalFixtureAccount } from './local-fixtures.mjs'
 import { isDemoCatalogProfile } from './demo-catalog.mjs';
 import { CATEGORY_RANKING_POLICY, rankComparableCandidates, semanticOrder } from './search-ranking.mjs';
 import { CATEGORY_RECOMMENDATION_POLICY, recommendCategories } from './category-recommendations.mjs';
+import { SEARCH_EXPLANATION_POLICY, explainSearchResults } from './search-explanations.mjs';
 
 function validateFilters(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new RequestError(400,'Некорректные фильтры.');
@@ -397,6 +398,7 @@ export class DirectoryService {
       if (person.synthetic) reasons.push(`Баллы теста ${row.score}/100.`);
       else reasons.push(`Результат серверного теста ${row.score}/100.`);
       return {person,semanticScore,rank:semanticScore??row.score,reason:reasons.join(' '),testScore:row.score,fsp:row.fsp,
+        evidenceText:evidence,evidenceKind:semanticRerankingSections(person).some(section=>section.text.replace(/^Вымышленный проект /u, 'Проект ')===evidence && section.kind==='professional')?'professional':'competencies',
         sourceId:row.id,documentHash:row.document_hash,publicPayload:row.public_payload,
         taskSections:stage?semanticRerankingSections(person):[],reasonSuffix:reasons.slice(1),
         roleLabel:specializationLabels[row.specialization] || row.specialization};
@@ -483,7 +485,7 @@ export class DirectoryService {
             || !this.currentVector(row,vectors.get(row.id))) return [];
           const section=item.taskSections[winning];
           const label=section.kind==='competencies'?'Роль и навыки в профиле':'Похожие задачи в профиле';
-          return [{...item,rerankerScore:sectionScores[winning],rank:maximum,evidenceKind:section.kind,
+          return [{...item,rerankerScore:sectionScores[winning],rank:maximum,evidenceKind:section.kind,evidenceText:section.text,
             reason:[`${label}: ${section.text.replace(/^Вымышленный проект /u, 'Проект ').slice(0,350)}`,...item.reasonSuffix].join(' ')}];
         });
         items=eligible.filter(item=>item.rank>=(fusion?.threshold??stage.threshold));
@@ -506,13 +508,15 @@ export class DirectoryService {
     else items.sort(filterOrder);
     // Category navigation narrows the current recommendation; it never changes
     // employer constraints, neural admission, or recommendations for other groups.
+    items=explainSearchResults(items,{semantic:Boolean(embeddingQuery),scoreKind:stage?'logit':'cosine',filters});
     const categories=recommendCategories(items,{semantic:Boolean(embeddingQuery)});
     const selected=category?items.filter(item=>item.person.confirmed?.specialization===category.specialization
       && item.person.confirmed?.grade===category.grade):items;
-    return {items:selected.slice(offset,offset+limit).map(({testScore,fsp,sourceId,documentHash,publicPayload,taskSections,reasonSuffix,roleLabel,...item})=>item),
+    return {items:selected.slice(offset,offset+limit).map(({testScore,fsp,sourceId,documentHash,publicPayload,taskSections,reasonSuffix,roleLabel,evidenceText,...item})=>item),
       categories,selectedCategory:category,total:selected.length,offset,limit,query,interpreted,effectiveFilters:filters,
       model:{...this.encoder.info,indexPolicy:PROFILE_INDEX_POLICY,taskEvidencePolicy:TASK_EVIDENCE_POLICY,
         categoryRecommendationPolicy:CATEGORY_RECOMMENDATION_POLICY,
+        searchExplanationPolicy:SEARCH_EXPLANATION_POLICY,
         ...(embeddingQuery?{categoryRankingPolicy:CATEGORY_RANKING_POLICY}:{}),...(stage?{stage:structuredClone(stage),
         profileEvidencePolicy:PROFILE_EVIDENCE_POLICY,
         rerankerAggregation:stage.scoreCalibration?'max-fused-professional-sections-v2':'max-professional-sections-v2'}:{})},warnings};
