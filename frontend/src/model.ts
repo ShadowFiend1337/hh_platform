@@ -2,6 +2,8 @@ import { industryOptions, isSpecialization, softSkillOptions, type Specializatio
 import { resumeTextLimits } from '../../shared/resume-limits.ts';
 import type { Grade } from '../../shared/grading.ts';
 import { defaultSearchFilters, type SearchFilters } from '../../shared/search.ts';
+import { normalizeHiringNeeds, type HiringNeed } from '../../shared/hiring-needs.ts';
+export type { HiringNeed } from '../../shared/hiring-needs.ts';
 export { gradeOptions, gradeLabels, isGrade } from '../../shared/grading.ts';
 export type { Grade } from '../../shared/grading.ts';
 export { defaultStackOptions, industryOptions, isSpecialization, professionalRoleOptions, softSkillOptions, specializationLabels, specializationNames, specializationOptions, specializationStacks } from '../../shared/catalog.ts';
@@ -110,6 +112,7 @@ export interface PlatformState {
   history: TestResult[];
   surveys: CandidateSurvey[];
   savedSearches: { id: string; title: string; query: string; filters: Filters }[];
+  hiringNeeds?: HiringNeed[];
   candidateDecisions?: CandidateDecision[];
 }
 
@@ -167,6 +170,7 @@ export function createInitialState(): PlatformState {
     company: { id: 'company-line', name: 'Линия', industry: 'Продуктовая разработка', website: 'https://example.com', contact: 'team@example.com', description: 'Разрабатываем цифровые продукты для бизнеса.' },
     invitations: [], history: [], surveys: [],
     savedSearches: [],
+    hiringNeeds: [],
     candidateDecisions: [],
   };
 }
@@ -203,6 +207,7 @@ export function readState(): PlatformState {
         ...stored, version: 2, profile, history,
         invitations: legacy ? stored.invitations.filter((item: Invitation) => item.id !== 'invitation-initial') : stored.invitations,
         surveys: !legacy && Array.isArray(stored.surveys) ? stored.surveys : [],
+        hiringNeeds: normalizeHiringNeeds(stored.hiringNeeds),
         candidateDecisions: Array.isArray(stored.candidateDecisions) ? stored.candidateDecisions.filter((item: CandidateDecision) =>
           item && typeof item.candidateId === 'string' && item.candidateId.length > 0 && item.candidateId.length <= 100
           && ['liked', 'passed'].includes(item.decision) && typeof item.date === 'string' && Number.isFinite(Date.parse(item.date))).slice(0, 2000) : [],

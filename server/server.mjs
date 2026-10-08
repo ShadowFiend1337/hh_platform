@@ -175,8 +175,11 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
           let filters;
           try { filters = JSON.parse(url.searchParams.get('filters') || '{}'); }
           catch { throw new RequestError(400, 'Некорректные фильтры.'); }
+          let category;
+          try { category = JSON.parse(url.searchParams.get('category') || 'null'); }
+          catch { throw new RequestError(400, 'Некорректная категория подборки.'); }
           return send(response, 200, await directory.search(url.searchParams.get('q') || '', filters,
-            { owner: session, limit: Number(url.searchParams.get('limit') || 30), offset: Number(url.searchParams.get('offset') || 0) }));
+            { owner: session, category, limit: Number(url.searchParams.get('limit') || 30), offset: Number(url.searchParams.get('offset') || 0) }));
         }
         if (request.method === 'GET' && url.pathname === '/api/companies') return send(response, 200, marketplace.companies({ owner: session,
           offset: Number(url.searchParams.get('offset') || 0), limit: Number(url.searchParams.get('limit') || 12), q: url.searchParams.get('q') || '' }));

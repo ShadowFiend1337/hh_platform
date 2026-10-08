@@ -166,6 +166,11 @@ export class DirectoryStore {
         owner TEXT NOT NULL REFERENCES platform_accounts(owner) ON DELETE CASCADE, id TEXT NOT NULL,
         position INTEGER NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(owner,id)
       ) STRICT;
+      CREATE TABLE IF NOT EXISTS platform_hiring_needs (
+        owner TEXT NOT NULL REFERENCES platform_accounts(owner) ON DELETE CASCADE, id TEXT NOT NULL,
+        position INTEGER NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(owner,id)
+      ) STRICT;
+      CREATE INDEX IF NOT EXISTS platform_hiring_need_owner_position ON platform_hiring_needs(owner,position);
       CREATE TABLE IF NOT EXISTS platform_candidate_decisions (
         owner TEXT NOT NULL REFERENCES platform_accounts(owner) ON DELETE CASCADE,
         candidate_id TEXT NOT NULL REFERENCES directory_candidates(id) ON DELETE CASCADE,

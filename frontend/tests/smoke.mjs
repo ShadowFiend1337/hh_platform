@@ -6,6 +6,7 @@ import { resolve } from 'node:path';
 import { chromium } from 'playwright';
 // Node-only fixtures; they are never served or bundled with the browser app.
 import { programs } from '../../server/bank.mjs';
+import { directoryCandidates } from '../../server/directory-seed.mjs';
 import { normalizeSearchFilters } from '../../shared/search.ts';
 import { createInitialState } from '../src/model.ts';
 import { startIsolatedService } from './helpers/isolated-service.mjs';
@@ -83,7 +84,7 @@ async function persist(action, target = page) {
 }
 async function directoryResults(target = page, expectedTotal) {
   const search = await target.evaluate(() => JSON.parse(sessionStorage.getItem('predel:search') || '{}'));
-  const response = await target.request.get(base + '/api/directory/search?' + new URLSearchParams({ q: search.query || '', filters: JSON.stringify(normalizeSearchFilters(search.filters)), limit: '30', offset: '0' }));
+  const response = await target.request.get(base + '/api/directory/search?' + new URLSearchParams({ q: search.query || '', filters: JSON.stringify(normalizeSearchFilters(search.filters)), limit: '30', offset: '0' }), { timeout: 130000 });
   assert.equal(response.status(), 200, 'Directory data must come from the actual server');
   const result = await response.json();
   if (expectedTotal !== undefined) assert.equal(result.total, expectedTotal);
@@ -91,9 +92,11 @@ async function directoryResults(target = page, expectedTotal) {
   await target.waitForFunction(({ expected, total }) => {
     const list = document.querySelector('.candidate-list');
     const names = [...document.querySelectorAll('.person-link')].map(element => element.textContent);
-    return list?.getAttribute('aria-busy') === 'false' && JSON.stringify(names) === JSON.stringify(expected)
+    return Boolean(document.querySelector('.directory-error')) || list?.getAttribute('aria-busy') === 'false' && JSON.stringify(names) === JSON.stringify(expected)
       && document.querySelector('.list-heading > span')?.textContent.startsWith(total + ' ');
-  }, { expected, total: result.total });
+  }, { expected, total: result.total }, { timeout: 130000 });
+  assert.equal(await target.locator('.directory-error').count(), 0,
+    'A successful directory API response must also reach the UI: ' + (await target.locator('.directory-error').allTextContents()).join(' '));
   return result;
 }
 async function role(next) {
@@ -187,6 +190,24 @@ async function registeredActor(role, label, name, suppliedContext) {
   return actor;
 }
 
+async function localFixture(role) {
+  const fixtureContext = await browser.newContext();
+  contexts.push(fixtureContext);
+  const email = role === 'candidate' ? 'candidate@local.example.test' : 'employer@local.example.test';
+  const input = { role, login: 'local_' + role, email, password: 'LocalFixture927!', consent: true,
+    ...(role === 'candidate' ? { name: 'Изолированный локальный профиль' } : { companyName: 'Изолированная локальная команда' }) };
+  const requested = await fixtureContext.request.post(base + '/api/auth/register/request-code', { data: input });
+  assert.equal(requested.status(), 202, await requested.text());
+  const verified = await fixtureContext.request.post(base + '/api/auth/register/verify', {
+    data: { email, code: isolated.codes.get(email) },
+  });
+  assert.equal(verified.status(), 201, await verified.text());
+  const token = (await fixtureContext.cookies(base + '/api/platform/state')).find(cookie => cookie.name === 'predel_account_session')?.value;
+  const identity = isolated.service.auth.accountForToken(token);
+  assert(identity?.platformOwner);
+  return { context: fixtureContext, owner: identity.platformOwner };
+}
+
 try {
   assert.equal((await context.request.get(base + '/api/platform/state')).status(), 401);
   assert.equal((await context.request.get(base + '/api/directory/search')).status(), 401);
@@ -229,17 +250,52 @@ try {
   await persist(() => page.getByRole('button', { name: 'Сохранить изменения', exact: true }).click());
   const candidateActor = await registeredActor('candidate', 'smoke.candidate', candidateName);
   const employerActor = await registeredActor('employer', 'smoke.employer', 'Компания проверки');
+  const localCandidate = await localFixture('candidate');
+  const localEmployer = await localFixture('employer');
+  const localProfile = { ...directoryCandidates[0], id: 'smoke-local-candidate', name: 'Изолированный локальный профиль',
+    city: 'Учебный город локальных аккаунтов', synthetic: true, visible: true, consent: true };
+  isolated.service.directory.store.upsert(localProfile, localCandidate.owner, true);
+  const localDirectory = await localEmployer.context.request.get(base + '/api/directory/search');
+  assert.equal(localDirectory.status(), 200);
+  const localResult = await localDirectory.json();
+  assert.deepEqual(localResult.items.map(item => item.person.id), [localProfile.id], 'Local teaching accounts have a separate interactive pool.');
   actors.set('Кандидат', candidateActor);
   actors.set('Работодатель', employerActor);
   page = employerActor.page;
   const baseline = await directoryResults();
-  assert.ok(baseline.items.every(item => !item.person.synthetic), 'Verified employers use the real registered pool without fictional profiles.');
-  assert.ok(baseline.items.some(item => item.person.name === otherName));
+  const registeredPoolResponse = await employerActor.context.request.get(base + '/api/directory/search?' + new URLSearchParams({
+    filters: JSON.stringify({ specialization: 'Frontend', grade: 'Middle', stack: ['React', 'TypeScript'] }),
+    limit: '50', offset: '0',
+  }));
+  assert.equal(registeredPoolResponse.status(), 200);
+  const registeredPool = await registeredPoolResponse.json();
+  assert.ok(registeredPool.total <= registeredPool.items.length, 'The targeted fixture category fits in one full page.');
+  const publishedOther = registeredPool.items.find(item => item.person.name === otherName);
+  assert.ok(publishedOther && !publishedOther.person.synthetic && !publishedOther.person.demoProfile,
+    'The registered and consenting candidate remains available alongside labelled catalog examples.');
+  assert.ok(baseline.items.some(item => item.person.demoProfile), 'The built-in demo catalog is available after employer registration.');
+  assert.ok(baseline.items.every(item => !item.person.synthetic || item.person.demoProfile === true),
+    'Only server-marked ownerless catalog examples may be synthetic in the ordinary employer pool.');
+  assert.ok(baseline.items.every(item => !item.person.email && !item.person.phone), 'The directory omits unrevealed contacts.');
+  const outsideRealm = await employerActor.context.request.get(base + '/api/directory/search?' + new URLSearchParams({
+    filters: JSON.stringify({ city: localProfile.city }), limit: '30', offset: '0',
+  }));
+  assert.equal(outsideRealm.status(), 200);
+  assert.equal((await outsideRealm.json()).total, 0,
+    'An ordinary verified employer cannot enter the interactive local-account pool.');
+  for (const item of baseline.items.filter(item => item.person.demoProfile)) {
+    const row = page.locator('.candidate-row').filter({ has: page.locator('.person-link', { hasText: item.person.name }) });
+    assert.equal(await row.getByText('Демо', { exact: true }).count(), 1);
+    assert.equal(await row.getByRole('button', { name: 'Пригласить', exact: true }).count(), 0, 'Catalog examples cannot receive invitations.');
+  }
+  const demo = baseline.items.find(item => item.person.demoProfile).person;
+  assert.equal((await employerActor.context.request.get(base + '/api/directory/' + encodeURIComponent(demo.id) + '/contacts')).status(), 404,
+    'A catalog example has no disclosable contacts.');
   assert.equal((await candidateActor.context.request.get(base + '/api/directory/search')).status(), 403, 'A candidate account cannot read another candidate directory.');
   await candidateActor.page.goto(base + '/app?role=employer&tab=candidates');
   await candidateActor.page.waitForURL(url => url.searchParams.get('role') === 'candidate');
   assert.equal(await candidateActor.page.locator('.role-control').count(), 0, 'The candidate URL cannot change the verified account role.');
-  console.log('PASS Verified account roles and authenticated registered directory');
+  console.log('PASS Verified roles, registered candidates, protected demo catalog and isolated local accounts');
   await page.evaluate(() => document.fonts.ready);
   await noOverflow(page); await audit(page);
   const explanation = page.locator('.match-details').first();
@@ -252,10 +308,49 @@ try {
   await page.getByRole('button', { name: 'Подобрать', exact: true }).click();
   const selected = await directoryResults();
   assert.ok(selected.total > 0 && selected.items.every(item => item.person.confirmed.specialization === 'Frontend' && item.person.confirmed.grade === 'Middle'));
+  assert.equal(selected.model.trained, true, 'Category recommendations in this smoke use the actual trained search pipeline.');
+  assert.equal(selected.total, selected.items.length, 'The targeted semantic category fits in one page for an exhaustive admission check.');
+  const admittedCategories = new Map();
+  for (const item of selected.items) {
+    const confirmed = item.person.confirmed;
+    const key = confirmed.specialization + ':' + confirmed.grade;
+    admittedCategories.set(key, (admittedCategories.get(key) || 0) + 1);
+  }
+  assert.deepEqual(selected.categories.map(category => [category.specialization + ':' + category.grade, category.count]),
+    [...admittedCategories], 'Recommendations use the confirmed categories of exactly the model-admitted profiles.');
+  for (const category of selected.categories) {
+    assert(category.candidateIds.length > 0 && category.candidateIds.length <= 3);
+    assert(category.candidateIds.every(id => selected.items.some(item => item.person.id === id
+      && item.person.confirmed.specialization === category.specialization && item.person.confirmed.grade === category.grade)));
+  }
+  const semanticCategory = selected.categories[0];
+  const categoryRequested = page.waitForResponse(response => {
+    const url = new URL(response.url());
+    const category = JSON.parse(url.searchParams.get('category') || 'null');
+    return url.pathname === '/api/directory/search' && category?.specialization === semanticCategory.specialization
+      && category.grade === semanticCategory.grade;
+  });
+  await page.getByRole('region', { name: 'Рекомендованные категории', exact: true }).getByRole('button', {
+    name: /^Frontend-разработчик · Middle ·/u,
+  }).click();
+  const categoryResponse = await categoryRequested;
+  assert.equal(categoryResponse.status(), 200);
+  const categoryResult = await categoryResponse.json();
+  assert.deepEqual(categoryResult.selectedCategory, { specialization: semanticCategory.specialization, grade: semanticCategory.grade });
+  assert.deepEqual(categoryResult.effectiveFilters, selected.effectiveFilters, 'Choosing a recommendation preserves the original hard constraints.');
+  assert.equal(categoryResult.total, semanticCategory.count);
+  const clearCategory = page.waitForResponse(response => new URL(response.url()).pathname === '/api/directory/search'
+    && !new URL(response.url()).searchParams.has('category'));
+  await page.getByRole('button', { name: 'Все категории', exact: true }).click();
+  assert.equal((await clearCategory).status(), 200);
+  await directoryResults(page, selected.total);
   await persist(() => page.getByRole('button', { name: 'Сохранить подборку', exact: true }).click());
   await page.getByLabel('Есть достижения ФСП').check();
   const fspSelected = await directoryResults();
-  assert.equal(fspSelected.total, 0, 'An entered profile does not manufacture a verified federation achievement.');
+  assert.ok(fspSelected.total > 0, 'The FSP filter retains clearly labelled fictional achievements in the demo catalog.');
+  assert.ok(fspSelected.items.every(item => item.person.demoProfile && item.person.synthetic && item.person.achievements.length > 0));
+  assert.equal(fspSelected.items.some(item => item.person.id === publishedOther.person.id), false,
+    'An entered real profile does not manufacture a verified federation achievement.');
   await page.getByRole('button', { name: 'Подборки', exact: true }).click();
   await page.locator('.saved-item').getByRole('button', { name: 'Frontend Middle React TypeScript', exact: true }).click();
   await directoryResults(page, selected.total);
@@ -417,7 +512,7 @@ try {
   assert.equal((await state()).profile.consent, false);
   assert.equal((await employerActor.context.request.get(contactUrl)).status(), 403, 'Revoking consent immediately closes previously accepted contacts.');
   await role('Работодатель');
-  await directoryResults(page, baseline.total);
+  await directoryResults(page, inviteSelection.total - 1);
   assert.equal(await page.locator('.person-link').filter({ hasText: candidateName }).count(), 0);
   await role('Кандидат');
   await page.getByLabel('Согласен на обработку персональных данных', { exact: true }).check();
@@ -488,9 +583,10 @@ try {
   await mobile.locator('.filter-group').getByRole('button', { name: 'Middle', exact: true }).click();
   const mobileSelection = await directoryResults(mobile);
   assert.ok(mobileSelection.total > 0 && mobileSelection.items.every(item => item.person.confirmed.specialization === 'Frontend' && item.person.confirmed.grade === 'Middle'));
+  assert.ok(mobileSelection.items.some(item => item.person.name === otherName), 'The registered candidate remains available through the mobile category filter.');
   await noOverflow(mobile);
   await audit(mobile);
-  await mobile.getByRole('button', { name: /^Михаил Соколов/ }).click();
+  await mobile.locator('.person-link').filter({ hasText: otherName }).click();
   await noOverflow(mobile);
   await mobile.screenshot({ path: resolve(output, 'mobile-profile.png'), fullPage: true });
   await mobile.keyboard.press('Escape');

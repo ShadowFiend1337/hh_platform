@@ -10,6 +10,7 @@ import { unsupportedRequestedRoles } from './query-role-scope.mjs';
 import { accountsShareRealm, isLocalFixtureAccount } from './local-fixtures.mjs';
 import { isDemoCatalogProfile } from './demo-catalog.mjs';
 import { CATEGORY_RANKING_POLICY, rankComparableCandidates, semanticOrder } from './search-ranking.mjs';
+import { CATEGORY_RECOMMENDATION_POLICY, recommendCategories } from './category-recommendations.mjs';
 
 function validateFilters(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new RequestError(400,'Некорректные фильтры.');
@@ -309,9 +310,14 @@ export class DirectoryService {
     })().finally(()=>{this.indexing=null;});
     return this.indexing;
   }
-  async search(query, inputFilters={}, {offset=0,limit=30,owner}={}) {
+  async search(query, inputFilters={}, {offset=0,limit=30,owner,category=null}={}) {
     if (typeof query!=='string'||query.length>1200 || !Number.isInteger(offset)||offset<0||offset>100000 || !Number.isInteger(limit)||limit<1||limit>50) throw new RequestError(400,'Некорректный запрос подбора.');
     query=query.trim();
+    if (category!==null && (typeof category!=='object' || Array.isArray(category)
+      || Object.keys(category).some(key=>!['specialization','grade'].includes(key))
+      || !isSpecialization(category.specialization) || !isGrade(category.grade))) {
+      throw new RequestError(400,'Некорректная категория подборки.');
+    }
     const filters=validateFilters(inputFilters);
     const interpreted=interpretQuery(query,this.options(owner));
     const embeddingQuery=semanticQuery(query,interpreted);
@@ -326,8 +332,8 @@ export class DirectoryService {
     // An explicitly requested profession outside our catalog has no eligible
     // profiles. This is a structural scope constraint, independent of neural
     // similarity, the model's availability or approximate admission scores.
-    if (interpreted.unsupportedRole?.length) return {items:[],total:0,offset,limit,query,interpreted,effectiveFilters:filters,
-      model:{...this.encoder.info,indexPolicy:PROFILE_INDEX_POLICY},warnings:[]};
+    if (interpreted.unsupportedRole?.length) return {items:[],categories:[],selectedCategory:category,total:0,offset,limit,query,interpreted,effectiveFilters:filters,
+      model:{...this.encoder.info,indexPolicy:PROFILE_INDEX_POLICY,categoryRecommendationPolicy:CATEGORY_RECOMMENDATION_POLICY},warnings:[]};
     // A specific requested method needs an affirmative professional claim.
     // Apply this to each fresh snapshot, before both strong and approximate
     // admission; a large neural score cannot turn a denial into experience.
@@ -498,8 +504,15 @@ export class DirectoryService {
     // within the same confirmed category, before response pagination.
     if (embeddingQuery) items=rankComparableCandidates(items,{scoreKind:stage?'logit':'cosine'});
     else items.sort(filterOrder);
-    return {items:items.slice(offset,offset+limit).map(({testScore,fsp,sourceId,documentHash,publicPayload,taskSections,reasonSuffix,roleLabel,...item})=>item),total:items.length,offset,limit,query,interpreted,effectiveFilters:filters,
+    // Category navigation narrows the current recommendation; it never changes
+    // employer constraints, neural admission, or recommendations for other groups.
+    const categories=recommendCategories(items,{semantic:Boolean(embeddingQuery)});
+    const selected=category?items.filter(item=>item.person.confirmed?.specialization===category.specialization
+      && item.person.confirmed?.grade===category.grade):items;
+    return {items:selected.slice(offset,offset+limit).map(({testScore,fsp,sourceId,documentHash,publicPayload,taskSections,reasonSuffix,roleLabel,...item})=>item),
+      categories,selectedCategory:category,total:selected.length,offset,limit,query,interpreted,effectiveFilters:filters,
       model:{...this.encoder.info,indexPolicy:PROFILE_INDEX_POLICY,taskEvidencePolicy:TASK_EVIDENCE_POLICY,
+        categoryRecommendationPolicy:CATEGORY_RECOMMENDATION_POLICY,
         ...(embeddingQuery?{categoryRankingPolicy:CATEGORY_RANKING_POLICY}:{}),...(stage?{stage:structuredClone(stage),
         profileEvidencePolicy:PROFILE_EVIDENCE_POLICY,
         rerankerAggregation:stage.scoreCalibration?'max-fused-professional-sections-v2':'max-professional-sections-v2'}:{})},warnings};

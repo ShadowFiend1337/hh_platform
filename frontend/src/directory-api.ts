@@ -1,5 +1,16 @@
 import type { Candidate } from './model';
 import { normalizeSearchFilters, type SearchFilters } from '../../shared/search.ts';
+import type { Specialization } from '../../shared/catalog.ts';
+import type { Grade } from '../../shared/grading.ts';
+
+export interface DirectoryCategorySelection { specialization: Specialization; grade: Grade }
+export interface DirectoryCategory extends DirectoryCategorySelection {
+  count: number;
+  demoCount?: number;
+  candidateIds: string[];
+  reason: string;
+  approximate: boolean;
+}
 
 export interface DirectoryCandidate extends Candidate {
   salaryFrom?: number | null;
@@ -43,6 +54,8 @@ export interface DirectoryReranker {
 }
 export interface DirectorySearch {
   items: DirectoryItem[];
+  categories?: DirectoryCategory[];
+  selectedCategory?: DirectoryCategorySelection | null;
   total: number;
   offset: number;
   limit: number;
@@ -53,7 +66,7 @@ export interface DirectorySearch {
       groups?: Record<string, string[][]> } };
   effectiveFilters?: SearchFilters;
   model: { status: 'ready' | 'unavailable'; name: string; version: string; dimension: number; trained: boolean;
-    indexPolicy?: string; profileEvidencePolicy?: string; taskEvidencePolicy?: string;
+    indexPolicy?: string; profileEvidencePolicy?: string; taskEvidencePolicy?: string; categoryRecommendationPolicy?: string;
     reranker?: DirectoryReranker; stage?: DirectoryReranker;
     rerankerAggregation?: 'max-task-sections-v1' | 'max-fused-task-sections-v1'
       | 'max-professional-sections-v2' | 'max-fused-professional-sections-v2' };
@@ -66,11 +79,11 @@ export interface DirectoryOptions {
   employmentTypes: string[];
 }
 
-async function request<T>(path: string, signal?: AbortSignal): Promise<T> {
+async function request<T>(path: string, signal?: AbortSignal, timeoutMs = 30_000): Promise<T> {
   let response: Response;
   try {
     response = await fetch('/api/directory' + path, {
-      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30_000)]) : AbortSignal.timeout(30_000),
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs),
       credentials: 'same-origin', cache: 'no-store',
     });
   } catch (cause) {
@@ -87,9 +100,12 @@ async function request<T>(path: string, signal?: AbortSignal): Promise<T> {
   return value as T;
 }
 
-export function searchDirectory(query: string, filters: SearchFilters, offset = 0, signal?: AbortSignal): Promise<DirectorySearch> {
+export function searchDirectory(query: string, filters: SearchFilters, offset = 0, signal?: AbortSignal, category?: DirectoryCategorySelection | null): Promise<DirectorySearch> {
   const params = new URLSearchParams({ q: query, filters: JSON.stringify(normalizeSearchFilters(filters)), limit: '30', offset: String(offset) });
-  return request<DirectorySearch>('/search?' + params, signal);
+  if (category) params.set('category', JSON.stringify(category));
+  // A cold local model must load and index profiles before answering. Keep
+  // this wait bounded while allowing a newer query to cancel it immediately.
+  return request<DirectorySearch>('/search?' + params, signal, 120_000);
 }
 export function directoryOptions(signal?: AbortSignal): Promise<DirectoryOptions> {
   return request<DirectoryOptions>('/options', signal);

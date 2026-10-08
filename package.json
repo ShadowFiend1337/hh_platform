@@ -14,6 +14,7 @@
     "test:auth": "node frontend/tests/auth.mjs",
     "test:access": "node frontend/tests/access-gate.mjs",
     "test:demo-catalog": "node frontend/tests/demo-catalog.mjs",
+    "test:hiring-needs": "node frontend/tests/hiring-needs.mjs",
     "test:assessment-guard": "node frontend/tests/assessment-guard.mjs",
     "test:contact-privacy": "node frontend/tests/application-privacy.mjs",
     "test:profile-privacy": "node frontend/tests/profile-privacy.mjs",

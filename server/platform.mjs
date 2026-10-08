@@ -2,6 +2,7 @@ import { industryOptions, isSpecialization } from '../shared/catalog.ts';
 import { isGrade } from '../shared/grading.ts';
 import { MAX_STACK_SKILLS, resumeTextLimits } from '../shared/resume-limits.ts';
 import { defaultSearchFilters, employmentTypes, languageOptions, normalizeSearchFilters } from '../shared/search.ts';
+import { HIRING_NEED_LIMITS, MAX_HIRING_NEEDS } from '../shared/hiring-needs.ts';
 import { publicDirectoryCandidate } from './directory-store.mjs';
 import { isDemoCatalogProfile } from './demo-catalog.mjs';
 import { RequestError, threshold } from './assessment.mjs';
@@ -169,9 +170,8 @@ function survey(input) {
   return result;
 }
 
-function search(input) {
-  const value = object(input, 'сохранённый поиск');
-  const filters = object(value.filters, 'фильтры поиска');
+function searchFilters(input) {
+  const filters = object(input, 'фильтры поиска');
   if (Object.keys(filters).some(key => !Object.hasOwn(defaultSearchFilters, key))) fail('Неизвестный фильтр.');
   const checked = {};
   // Role dictionaries are predicates because their IDs differ from public labels.
@@ -185,9 +185,24 @@ function search(input) {
   checked.fsp = flag(filters.fsp, 'Достижения ФСП'); checked.hasPortfolio = flag(filters.hasPortfolio, 'Портфолио');
   checked.city = text(filters.city, 100, 'Город поиска');
   if (checked.experienceMin !== null && checked.experienceMax !== null && checked.experienceMin > checked.experienceMax) fail('Проверьте диапазон стажа.');
+  return normalizeSearchFilters({ ...filters, ...checked });
+}
+
+function search(input) {
+  const value = object(input, 'сохранённый поиск');
   const result = { id: text(value.id, 100, 'ID поиска'), title: text(value.title, 200, 'Название поиска'),
-    query: text(value.query, 1200, 'Запрос'), filters: normalizeSearchFilters({ ...filters, ...checked }) };
+    query: text(value.query, 1200, 'Запрос'), filters: searchFilters(value.filters) };
   if (!result.id || !result.title) fail('Укажите название сохранённого поиска.');
+  return result;
+}
+
+function hiringNeed(input) {
+  const value = object(input, 'потребность в специалистах');
+  if (Object.keys(value).some(key => !['id', 'title', 'team', 'tasks', 'filters'].includes(key))) fail('Неизвестное поле потребности в специалистах.');
+  const result = { id: text(value.id, HIRING_NEED_LIMITS.id, 'ID потребности'), title: text(value.title, HIRING_NEED_LIMITS.title, 'Название потребности'),
+    team: text(value.team, HIRING_NEED_LIMITS.team, 'Команда'), tasks: text(value.tasks, HIRING_NEED_LIMITS.tasks, 'Задачи'), filters: searchFilters(value.filters) };
+  if (!result.id || !result.title) fail('Укажите название потребности в специалистах.');
+  if (!result.tasks && !result.filters.specialization && !result.filters.stack.length) fail('Опишите задачи, специализацию или необходимые навыки.');
   return result;
 }
 
@@ -299,6 +314,7 @@ export class PlatformService {
       history: this.history(owner),
       surveys: this.store.db.prepare('SELECT payload FROM platform_surveys WHERE owner=? ORDER BY created_at DESC,id').all(owner).map(row => JSON.parse(row.payload)),
       savedSearches: this.store.db.prepare('SELECT payload FROM platform_searches WHERE owner=? ORDER BY position').all(owner).map(row => JSON.parse(row.payload)),
+      hiringNeeds: this.store.db.prepare('SELECT payload FROM platform_hiring_needs WHERE owner=? ORDER BY position').all(owner).map(row => JSON.parse(row.payload)),
       candidateDecisions: this.candidateDecisions(owner) };
     const applicants = this.store.db.prepare(`SELECT DISTINCT a.candidate_id FROM marketplace_applications a
       JOIN marketplace_companies c ON c.id=a.company_id WHERE c.owner=?`).all(owner).map(row => row.candidate_id);
@@ -323,20 +339,25 @@ export class PlatformService {
     if (role !== null && role !== 'candidate' && role !== 'employer') throw new RequestError(403, 'Роль аккаунта недоступна.');
     if (!Number.isSafeInteger(baseRevision) || baseRevision < 0) fail('Некорректная версия данных.');
     const value = object(input, 'состояние');
-    if (value.version !== 2 || Object.keys(value).some(key => !['version', 'profile', 'company', 'invitations', 'history', 'surveys', 'savedSearches', 'candidateDecisions'].includes(key))) fail('Неподдерживаемый формат состояния.');
+    if (value.version !== 2 || Object.keys(value).some(key => !['version', 'profile', 'company', 'invitations', 'history', 'surveys', 'savedSearches', 'hiringNeeds', 'candidateDecisions'].includes(key))) fail('Неподдерживаемый формат состояния.');
     if (Buffer.byteLength(JSON.stringify(value), 'utf8') > 1000000) throw new RequestError(413, 'Данные профиля слишком велики.');
     // History is validated as a collection but its values never grant authority.
     const incomingHistory = list(value.history, 500, 'история тестов');
     const incomingInvites = unique(list(value.invitations, 500, 'приглашения').map(proposal), 'приглашения');
     const savedSearches = unique(list(value.savedSearches, 100, 'поиски').map(search), 'поиски');
+    const hiringNeeds = value.hiringNeeds === undefined ? null : unique(list(value.hiringNeeds, MAX_HIRING_NEEDS, 'потребности в специалистах').map(hiringNeed), 'потребности в специалистах');
     const incomingSurveys = unique(list(value.surveys, 100, 'анкеты').map(survey), 'анкеты');
     const incomingDecisions = value.candidateDecisions === undefined ? null : candidateDecisions(value.candidateDecisions);
     const employer = company(value.company);
     if (role === 'candidate' && savedSearches.length) throw new RequestError(403, 'Сохранённые поиски доступны работодателю.');
+    if (role === 'candidate' && hiringNeeds?.length) throw new RequestError(403, 'Потребности в специалистах доступны работодателю.');
     if (role === 'candidate' && incomingDecisions?.length) throw new RequestError(403, 'Подбор кандидатов доступен работодателю.');
     return this.store.transaction(() => {
       const account = this.store.db.prepare('SELECT * FROM platform_accounts WHERE owner=?').get(owner);
       if ((account?.revision || 0) !== baseRevision) throw new RequestError(409, 'Данные изменились в другой вкладке. Обновите страницу.');
+      if (role === 'candidate' && hiringNeeds !== null && this.store.db.prepare('SELECT 1 FROM platform_hiring_needs WHERE owner=? LIMIT 1').get(owner)) {
+        throw new RequestError(403, 'Изменять потребности в специалистах может только работодатель.');
+      }
       const oldProfile = account ? JSON.parse(account.profile) : null;
       const person = profile(value.profile, oldProfile);
       if (this.accountForOwner) person.synthetic = isLocalFixtureAccount(this.accountForOwner(owner));
@@ -405,6 +426,11 @@ export class PlatformService {
       for (const item of incomingSurveys) this.store.db.prepare('INSERT INTO platform_surveys VALUES(?,?,?,?)').run(owner, item.id, item.date, JSON.stringify(item));
       this.store.db.prepare('DELETE FROM platform_searches WHERE owner=?').run(owner);
       savedSearches.forEach((item, position) => this.store.db.prepare('INSERT INTO platform_searches VALUES(?,?,?,?)').run(owner, item.id, position, JSON.stringify(item)));
+      if (hiringNeeds !== null) {
+        this.store.db.prepare('DELETE FROM platform_hiring_needs WHERE owner=?').run(owner);
+        const saveNeed = this.store.db.prepare('INSERT INTO platform_hiring_needs VALUES(?,?,?,?)');
+        hiringNeeds.forEach((item, position) => saveNeed.run(owner, item.id, position, JSON.stringify(item)));
+      }
       const keptDecisions = new Set(decisions.map(item => item.candidateId));
       const removeDecision = this.store.db.prepare('DELETE FROM platform_candidate_decisions WHERE owner=? AND candidate_id=?');
       for (const candidateId of storedDecisions.keys()) if (!keptDecisions.has(candidateId)) removeDecision.run(owner, candidateId);

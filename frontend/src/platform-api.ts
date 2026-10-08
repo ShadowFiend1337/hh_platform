@@ -71,6 +71,14 @@ export function rebaseState(local: PlatformState, base: PlatformState | null, re
     if (key !== 'invitations') for (const id of old.keys()) if (!current.has(id)) combined.delete(id);
     Object.assign(result, { [key]: [...combined.values()] });
   }
+  // An older client/server may omit this optional collection. Preserve the
+  // baseline then, while an explicit empty array still means local deletion.
+  const oldNeeds = new Map((base?.hiringNeeds || []).map(item => [item.id, item]));
+  const currentNeeds = new Map((local.hiringNeeds ?? base?.hiringNeeds ?? []).map(item => [item.id, item]));
+  const combinedNeeds = new Map((remote.hiringNeeds || []).map(item => [item.id, item]));
+  for (const [id, item] of currentNeeds) if (hash(item) !== hash(oldNeeds.get(id))) combinedNeeds.set(id, item);
+  for (const id of oldNeeds.keys()) if (!currentNeeds.has(id)) combinedNeeds.delete(id);
+  result.hiringNeeds = [...combinedNeeds.values()];
   const oldDecisions = new Map((base?.candidateDecisions || []).map(item => [item.candidateId, item]));
   const currentDecisions = new Map((local.candidateDecisions ?? base?.candidateDecisions ?? []).map(item => [item.candidateId, item]));
   const combinedDecisions = new Map((remote.candidateDecisions || []).map(item => [item.candidateId, item]));
