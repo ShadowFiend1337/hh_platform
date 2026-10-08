@@ -1,0 +1,23 @@
+{
+  "items": [
+    {
+      "event": {
+        "schemaVersion": "1",
+        "eventId": "77777777-7777-4777-8777-777777777777",
+        "type": "candidate.contacts_revoked",
+        "sequence": 5,
+        "occurredAt": "2026-10-08T10:12:00Z",
+        "origin": "predel",
+        "syncRevision": 1,
+        "data": {
+          "candidateRef": "candidate-ref-example",
+          "reason": "consent_revoked"
+        }
+      },
+      "deliveryToken": "illustrative-token-not-a-secret-revocation-1",
+      "tokenExpiresAt": "2026-10-08T10:22:00Z"
+    }
+  ],
+  "nextCursor": "illustrative-cursor-after-sequence-5",
+  "hasMore": false
+}

@@ -1,0 +1,6 @@
+{
+  "eventId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  "status": "cancelled",
+  "ack": null,
+  "cancelReason": "consent_revoked"
+}

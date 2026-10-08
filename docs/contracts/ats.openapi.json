@@ -1,0 +1,344 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Предлагаемый контракт ATS для predel",
+    "version": "0.1.0-proposed",
+    "description": "Концепция будущей интеграции, не реализованный API. Все указанные маршруты сейчас отсутствуют. Требуется отдельный адаптер, хранилище сопоставлений, версии сущностей, inbox/outbox и отзыв доступа. Обычная авторизация сайта не предоставляет интеграционный доступ. Подробности: ../ats_integration.md."
+  },
+  "servers": [{ "url": "https://ats-api.predel.example.invalid", "description": "Не существующий стенд: адрес только для примеров" }],
+  "security": [{ "ConnectionBearer": [] }],
+  "tags": [{ "name": "Proposed ATS", "description": "Не реализованные маршруты" }],
+  "paths": {
+    "/api/ats/v1/connections/{connectionId}/events": {
+      "parameters": [{ "$ref": "#/components/parameters/ConnectionId" }],
+      "post": {
+        "tags": ["Proposed ATS"],
+        "operationId": "proposedReceiveAtsEvent",
+        "summary": "Принять изменение ATS",
+        "description": "Токен ограничен одной компанией и connectionId. Событие, сопоставление, синхронизационная версия сущности и outbox фиксируются одной транзакцией. Повтор eventId с тем же каноническим содержимым возвращает исходную квитанцию без повторного изменения; другое содержимое даёт idempotency_conflict. Первый sequence внешней сущности равен 1, последующий точно на единицу больше последнего принятого: старый даёт stale_sequence, пропуск даёт sequence_gap; ошибки не меняют данные и последовательность. baseRevision сравнивается точно с НОВОЙ версией синхронизации конкретной сущности, не с revision платформенного снимка. ATS изменяет только связанные открытые вакансии и решение работодателя по существующему экспортированному отклику. Закрытие окончательное, повторное открытие вне v1. Запрещены импорт кандидатов, создание откликов от их имени, изменение согласия, результата теста и ответа кандидата на приглашение.",
+        "x-required-scopes": ["ats:events:write"],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/InboundEvent" } } }
+        },
+        "responses": {
+          "200": { "description": "Изменение применено или возвращена исходная квитанция повтора", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EventReceipt" } } } },
+          "400": { "$ref": "#/components/responses/InvalidRequest" },
+          "401": { "$ref": "#/components/responses/Unauthenticated" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "422": { "$ref": "#/components/responses/InvalidTransition" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "503": { "$ref": "#/components/responses/Unavailable" }
+        }
+      }
+    },
+    "/api/ats/v1/connections/{connectionId}/deliveries": {
+      "parameters": [{ "$ref": "#/components/parameters/ConnectionId" }],
+      "get": {
+        "tags": ["Proposed ATS"],
+        "operationId": "proposedPullAtsDeliveries",
+        "summary": "Получить страницу исходящих событий",
+        "description": "Неразрушающее чтение упорядоченной очереди одной компании. GET не подтверждает доставку. after отсутствует для первой страницы; далее это непрозрачный nextCursor. Адаптер сохраняет cursor только после своего устойчивого commit и ACK всех выданных элементов страницы. Сервер не разрешает cursor, пропускающий более раннее неподтверждённое разрешённое событие; терминальное cancelled разрешено пропустить. Повторное чтение может выдать новый deliveryToken; eventId и содержимое события сохраняются. Нет ФИО, контактов, резюме, свободного сообщения кандидата, ответов теста или полей обычного companyDTO. Публичный текст вакансии проверяется перед экспортом, в нём не должно быть контактов кандидата или рекрутерского email/телефона. Основание передачи конкретной ATS проверяется перед каждым экспортом любых кандидатских данных, включая candidateRef: текущий consent профиля не заменяет разрешение на передачу. При отзыве недопустимые невыданные/неподтверждённые события переходят в cancelled без изменения исходного payload или eventId. Для ранее переданного candidateRef создаётся отдельное новое candidate.contacts_revoked. Пустая страница может продвинуть nextCursor через cancelled; это не означает ACK прежних событий.",
+        "x-required-scopes": ["ats:deliveries:read"],
+        "parameters": [
+          { "name": "after", "in": "query", "schema": { "type": "string", "minLength": 1, "maxLength": 512 }, "description": "Непрозрачный cursor, выданный этой связи; не внешний sequence" },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 50 } }
+        ],
+        "responses": {
+          "200": { "description": "Упорядоченная страница без персональных контактов", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DeliveryPage" } } } },
+          "400": { "$ref": "#/components/responses/InvalidRequest" },
+          "401": { "$ref": "#/components/responses/Unauthenticated" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "410": { "$ref": "#/components/responses/ExpiredCursor" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "503": { "$ref": "#/components/responses/Unavailable" }
+        }
+      }
+    },
+    "/api/ats/v1/connections/{connectionId}/deliveries/{eventId}": {
+      "parameters": [{ "$ref": "#/components/parameters/ConnectionId" }, { "$ref": "#/components/parameters/EventId" }],
+      "get": {
+        "tags": ["Proposed ATS"],
+        "operationId": "proposedReadAtsDeliveryStatus",
+        "summary": "Проверить подтверждение доставки",
+        "description": "Состояние конкретного исходящего события этой связи. Не возвращает содержимое события и не подтверждает его обработку. Чужой или отсутствующий eventId не раскрывается.",
+        "x-required-scopes": ["ats:deliveries:read"],
+        "responses": {
+          "200": { "description": "Состояние квитанции", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DeliveryStatus" } } } },
+          "401": { "$ref": "#/components/responses/Unauthenticated" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "410": { "$ref": "#/components/responses/ExpiredCursor" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "503": { "$ref": "#/components/responses/Unavailable" }
+        }
+      }
+    },
+    "/api/ats/v1/connections/{connectionId}/deliveries/{eventId}/ack": {
+      "parameters": [{ "$ref": "#/components/parameters/ConnectionId" }, { "$ref": "#/components/parameters/EventId" }],
+      "post": {
+        "tags": ["Proposed ATS"],
+        "operationId": "proposedAcknowledgeAtsDelivery",
+        "summary": "Подтвердить устойчивую обработку события",
+        "description": "ACK выполняется после устойчивого сохранения в ATS. Для первого ACK application.created externalId обязателен: атомарно создаётся уникальное сопоставление внешнего отклика с уже существующим applicationId. Для других типов externalId запрещён. ACK не изменяет статус отклика и не создаёт кандидата. Повтор того же ackId с тем же externalId возвращает исходную квитанцию. deliveryToken может обновляться при GET и не входит в семантическое содержимое повтора. После проверки действующей авторизации проверяются сохранённая квитанция и неизменность привязки, затем срок токена: старый токен допустим только для подтверждённого совпадающего повтора в пределах хранения квитанции. Такой повтор после более позднего отзыва согласия не экспортирует payload, не восстанавливает доступ и не создаёт новое сопоставление. Иное внешнее сопоставление даёт conflict. Новый ACK требует действующий токен этой связи и события, актуальное разрешение передачи и pending; cancelled даёт 410 delivery_cancelled даже с ранее выданным свежим токеном.",
+        "x-required-scopes": ["ats:deliveries:ack"],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Acknowledgement" } } } },
+        "responses": {
+          "200": { "description": "Квитанция подтверждения или её исходный повтор", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AckReceipt" } } } },
+          "400": { "$ref": "#/components/responses/InvalidRequest" },
+          "401": { "$ref": "#/components/responses/Unauthenticated" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "410": { "$ref": "#/components/responses/ExpiredCursor" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "503": { "$ref": "#/components/responses/Unavailable" }
+        }
+      }
+    },
+    "/api/ats/v1/connections/{connectionId}/applications/{applicationId}/contacts": {
+      "parameters": [{ "$ref": "#/components/parameters/ConnectionId" }, { "name": "applicationId", "in": "path", "required": true, "schema": { "$ref": "#/components/schemas/ApplicationId" } }],
+      "get": {
+        "tags": ["Proposed ATS"],
+        "operationId": "proposedReadAtsApplicationContacts",
+        "summary": "Запросить разрешённые контакты отдельным каналом",
+        "description": "Не включён по умолчанию. Нужны отдельный scope, явное разрешение владельца связи на экспорт контактов и известное сопоставление отклика с ATS. В момент каждого запроса заново проверяются активность связи, принадлежность вакансии работодателю, действующее согласие кандидата, отдельное основание/разрешение передачи именно этой ATS, наличие настоящего отклика и отсутствие удаления аккаунта. Текущий consent профиля и принятие решения ATS не заменяют разрешение на передачу. До согласования и фиксации основания экспорт выключен. Ответ не кешируется и не попадает в outbox, трассировки или журнал тела. Отзыв согласия немедленно запрещает следующие запросы; callback или событие не является гарантией удаления копии в чужой ATS.",
+        "x-required-scopes": ["ats:contacts:read"],
+        "responses": {
+          "200": {
+            "description": "Только актуально разрешённые контакты",
+            "headers": { "Cache-Control": { "description": "Обязательный запрет кеширования", "schema": { "type": "string", "const": "no-store" } } },
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AllowedContacts" } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthenticated" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "503": { "$ref": "#/components/responses/Unavailable" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "ConnectionBearer": { "type": "http", "scheme": "bearer", "description": "Будущий отдельный случайный отзывной токен TLS: принадлежит одному employer + connectionId, содержит разрешённые scopes в серверной записи. Хранится хеш токена; обычные браузерные cookies не подходят. Управление связью и выдача токена — будущая операция владельца компании, не публичный маршрут данного контракта." }
+    },
+    "parameters": {
+      "ConnectionId": { "name": "connectionId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" }, "description": "Идентификатор связи, привязанный к компании в серверном хранилище; companyId из тела не принимается" },
+      "EventId": { "name": "eventId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+    },
+    "responses": {
+      "InvalidRequest": { "description": "Некорректная схема, неизвестные поля или недопустимый cursor", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "Unauthenticated": { "description": "Отсутствующий, отозванный или просроченный токен", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "Forbidden": { "description": "Нет scope, экспорт запрещён или согласие больше не действует", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "NotFound": { "description": "Нет сопоставления, объект отсутствует или принадлежит иной компании; чужие ID не раскрываются", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "Conflict": { "description": "stale_revision, stale_sequence, sequence_gap, idempotency_conflict, mapping_conflict или unacknowledged_cursor; никаких частичных изменений", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "InvalidTransition": { "description": "Недопустимый переход финального состояния или некорректная RUB-вилка", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "ExpiredCursor": { "description": "cursor_expired, delivery_expired или resync_required требуют контролируемой сверки. delivery_cancelled запрещает новый ACK отменённого события; восстановление его payload недопустимо. Автоматический полный экспорт запрещён", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "RateLimited": { "description": "Лимит связи; повтор с задержкой и тем же eventId/ackId", "headers": { "Retry-After": { "schema": { "type": "integer", "minimum": 1 }, "description": "Секунды до повтора" } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "Unavailable": { "description": "Временная недоступность; безопасный повтор с тем же идентификатором", "headers": { "Retry-After": { "schema": { "type": "integer", "minimum": 1 } } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+    },
+    "schemas": {
+      "ExternalId": { "type": "string", "minLength": 1, "maxLength": 200, "pattern": "\\S", "description": "Непустой непрозрачный ID ATS; уникальность (companyId, connectionId, entityType, externalId). Не email и не имя кандидата." },
+      "ApplicationId": { "type": "string", "pattern": "^application-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$" },
+      "VacancyId": { "type": "string", "pattern": "^vacancy-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$" },
+      "OpaqueId": { "type": "string", "minLength": 1, "maxLength": 100, "description": "Платформенный идентификатор существующей сущности, не контакт и не имя" },
+      "SyncRevision": { "type": "integer", "minimum": 1, "description": "Новая монотонная версия конкретной синхронизируемой сущности; этого поля пока нет в действующем домене" },
+      "Specialization": { "type": "string", "enum": ["Frontend", "Backend", "Fullstack", "Mobile", "ML", "DataAnalysis", "DataEngineering", "DevOps", "QA", "Security", "UXUI", "BusinessAnalysis", "ProductManagement", "Embedded"] },
+      "Grade": { "type": "string", "enum": ["Intern", "Junior", "Middle", "Senior", "Lead"], "description": "В вакансии — запрошенный уровень; не подтверждённый результат кандидата" },
+      "Vacancy": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["title", "description", "specialization", "grade", "stack", "city", "format", "salaryFrom", "salaryTo", "currency"],
+        "description": "Согласовано с validateVacancy marketplace: salaryFrom <= salaryTo дополнительно проверяется сервером. Только публичное описание работы, без полей контактов и скрытых данных кандидата.",
+        "properties": {
+          "title": { "type": "string", "minLength": 1, "maxLength": 200, "pattern": "\\S" },
+          "description": { "type": "string", "minLength": 1, "maxLength": 4000, "pattern": "\\S" },
+          "specialization": { "$ref": "#/components/schemas/Specialization" },
+          "grade": { "$ref": "#/components/schemas/Grade" },
+          "stack": { "type": "array", "maxItems": 100, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 80, "pattern": "\\S" } },
+          "city": { "type": "string", "maxLength": 100 },
+          "format": { "type": "string", "enum": ["", "Удалённо", "Гибрид", "Офис"] },
+          "salaryFrom": { "type": "integer", "minimum": 1, "maximum": 10000000 },
+          "salaryTo": { "type": "integer", "minimum": 1, "maximum": 10000000 },
+          "currency": { "type": "string", "const": "RUB" }
+        }
+      },
+      "InboundBase": {
+        "type": "object",
+        "required": ["schemaVersion", "eventId", "type", "sequence", "occurredAt", "data"],
+        "properties": {
+          "schemaVersion": { "type": "string", "const": "1" },
+          "eventId": { "type": "string", "format": "uuid" },
+          "type": { "type": "string" },
+          "sequence": { "type": "integer", "minimum": 1, "description": "Первое изменение внешней сущности = 1, последующее = последний принятый sequence + 1; пропуск отклоняется без продвижения. Время occurredAt не определяет порядок." },
+          "occurredAt": { "type": "string", "format": "date-time" },
+          "data": { "type": "object" }
+        }
+      },
+      "InboundEvent": { "oneOf": [{ "$ref": "#/components/schemas/JobUpsert" }, { "$ref": "#/components/schemas/JobClose" }, { "$ref": "#/components/schemas/ApplicationDecision" }] },
+      "JobUpsert": {
+        "allOf": [{ "$ref": "#/components/schemas/InboundBase" }, { "properties": { "type": { "const": "job.upsert" }, "data": { "$ref": "#/components/schemas/JobUpsertData" } } }],
+        "unevaluatedProperties": false
+      },
+      "JobUpsertData": {
+        "type": "object", "additionalProperties": false, "required": ["externalId", "baseRevision", "vacancy"],
+        "description": "Создание публикует open; обновление допускается только для уже связанной открытой вакансии. Закрытая вакансия не обновляется и не переоткрывается. Для нового набора требуется новая внешняя идентичность.",
+        "properties": {
+          "externalId": { "$ref": "#/components/schemas/ExternalId" },
+          "baseRevision": { "type": "integer", "minimum": 0, "description": "0 допустим только при первой публикации и отсутствии сопоставления; иначе точная syncRevision связанной вакансии" },
+          "vacancy": { "$ref": "#/components/schemas/Vacancy" }
+        }
+      },
+      "JobClose": {
+        "allOf": [{ "$ref": "#/components/schemas/InboundBase" }, { "properties": { "type": { "const": "job.close" }, "data": { "$ref": "#/components/schemas/JobCloseData" } } }],
+        "unevaluatedProperties": false
+      },
+      "JobCloseData": {
+        "type": "object", "additionalProperties": false, "required": ["externalId", "baseRevision"],
+        "properties": { "externalId": { "$ref": "#/components/schemas/ExternalId" }, "baseRevision": { "$ref": "#/components/schemas/SyncRevision" } }
+      },
+      "ApplicationDecision": {
+        "allOf": [{ "$ref": "#/components/schemas/InboundBase" }, { "properties": { "type": { "const": "application.decision" }, "data": { "$ref": "#/components/schemas/ApplicationDecisionData" } } }],
+        "unevaluatedProperties": false
+      },
+      "ApplicationDecisionData": {
+        "type": "object", "additionalProperties": false, "required": ["externalId", "applicationId", "baseRevision", "status"],
+        "description": "Оба ID обязаны указывать на сопоставление, созданное ACK application.created. Допустимо только sent -> accepted/rejected после повторной проверки актуального согласия. Новый eventId с тем же финальным статусом не меняет данные при согласованной версии; противоположное финальное решение отклоняется.",
+        "properties": {
+          "externalId": { "$ref": "#/components/schemas/ExternalId" },
+          "applicationId": { "$ref": "#/components/schemas/ApplicationId" },
+          "baseRevision": { "$ref": "#/components/schemas/SyncRevision" },
+          "status": { "type": "string", "enum": ["accepted", "rejected"] }
+        }
+      },
+      "EventReceipt": {
+        "type": "object", "additionalProperties": false, "required": ["eventId", "outcome", "resourceId", "syncRevision", "receivedAt"],
+        "properties": {
+          "eventId": { "type": "string", "format": "uuid" },
+          "outcome": { "type": "string", "enum": ["applied", "unchanged"] },
+          "resourceId": { "$ref": "#/components/schemas/OpaqueId" },
+          "syncRevision": { "$ref": "#/components/schemas/SyncRevision" },
+          "receivedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "OutboundBase": {
+        "type": "object", "required": ["schemaVersion", "eventId", "type", "sequence", "occurredAt", "origin", "syncRevision", "data"],
+        "allOf": [{ "if": { "properties": { "origin": { "const": "ats" } } }, "then": { "required": ["causeEventId"] } }],
+        "properties": {
+          "schemaVersion": { "type": "string", "const": "1" },
+          "eventId": { "type": "string", "format": "uuid" },
+          "type": { "type": "string" },
+          "sequence": { "type": "integer", "minimum": 1, "description": "Порядок outbox этой связи, отличается от sequence входных событий" },
+          "occurredAt": { "type": "string", "format": "date-time" },
+          "origin": { "type": "string", "enum": ["predel", "ats"] },
+          "causeEventId": { "type": "string", "format": "uuid", "description": "ID входного события для подавления циклического повторного импорта изменений ATS" },
+          "syncRevision": { "$ref": "#/components/schemas/SyncRevision" },
+          "data": { "type": "object" }
+        }
+      },
+      "OutboundEvent": {
+        "oneOf": [{ "$ref": "#/components/schemas/VacancyChanged" }, { "$ref": "#/components/schemas/ApplicationCreated" }, { "$ref": "#/components/schemas/ApplicationDecided" }, { "$ref": "#/components/schemas/InvitationSent" }, { "$ref": "#/components/schemas/InvitationStatus" }, { "$ref": "#/components/schemas/ContactsRevoked" }]
+      },
+      "VacancyChanged": {
+        "allOf": [{ "$ref": "#/components/schemas/OutboundBase" }, { "properties": { "type": { "const": "vacancy.changed" }, "data": { "$ref": "#/components/schemas/VacancyChangedData" } } }], "unevaluatedProperties": false
+      },
+      "VacancyChangedData": {
+        "type": "object", "additionalProperties": false, "required": ["vacancyId", "externalId", "status", "vacancy"],
+        "properties": {
+          "vacancyId": { "$ref": "#/components/schemas/VacancyId" },
+          "externalId": { "$ref": "#/components/schemas/ExternalId" },
+          "status": { "type": "string", "enum": ["open", "closed"] },
+          "vacancy": { "$ref": "#/components/schemas/Vacancy" }
+        }
+      },
+      "ApplicationCreated": {
+        "allOf": [{ "$ref": "#/components/schemas/OutboundBase" }, { "properties": { "type": { "const": "application.created" }, "origin": { "const": "predel" }, "data": { "$ref": "#/components/schemas/ApplicationCreatedData" } } }], "unevaluatedProperties": false
+      },
+      "ApplicationCreatedData": {
+        "type": "object", "additionalProperties": false, "required": ["applicationId", "vacancyId", "candidateRef", "status"],
+        "description": "Настоящий отклик кандидата на связанную вакансию. candidateRef — псевдоним для этой связи, не ФИО и не общий идентификатор вне компании. Нет резюме, сообщения, ответов теста или контактов.",
+        "properties": {
+          "applicationId": { "$ref": "#/components/schemas/ApplicationId" },
+          "vacancyId": { "$ref": "#/components/schemas/VacancyId" },
+          "candidateRef": { "$ref": "#/components/schemas/OpaqueId" },
+          "status": { "type": "string", "const": "sent" }
+        }
+      },
+      "ApplicationDecided": {
+        "allOf": [{ "$ref": "#/components/schemas/OutboundBase" }, { "properties": { "type": { "const": "application.decision" }, "data": { "$ref": "#/components/schemas/ApplicationDecidedData" } } }], "unevaluatedProperties": false
+      },
+      "ApplicationDecidedData": {
+        "type": "object", "additionalProperties": false, "required": ["applicationId", "status"],
+        "description": "Решение может быть принято на сайте до ACK application.created. Поэтому неизменяемое исходящее событие содержит родной applicationId и не ждёт внешнего сопоставления. Адаптер связывает события по applicationId, сохраняет порядок и создаёт внешний отклик по application.created перед применением решения.",
+        "properties": {
+          "applicationId": { "$ref": "#/components/schemas/ApplicationId" },
+          "status": { "type": "string", "enum": ["accepted", "rejected"] }
+        }
+      },
+      "InvitationSent": {
+        "allOf": [{ "$ref": "#/components/schemas/OutboundBase" }, { "properties": { "type": { "const": "invitation.sent" }, "origin": { "const": "predel" }, "data": { "$ref": "#/components/schemas/InvitationSentData" } } }], "unevaluatedProperties": false
+      },
+      "InvitationSentData": {
+        "type": "object", "additionalProperties": false, "required": ["invitationId", "candidateRef", "status"],
+        "description": "Уведомление о реально отправленном платформой приглашении; описание и контакт работодателя не экспортируются через очередь.",
+        "properties": {
+          "invitationId": { "$ref": "#/components/schemas/OpaqueId" },
+          "candidateRef": { "$ref": "#/components/schemas/OpaqueId" },
+          "status": { "type": "string", "const": "sent" }
+        }
+      },
+      "InvitationStatus": {
+        "allOf": [{ "$ref": "#/components/schemas/OutboundBase" }, { "properties": { "type": { "const": "invitation.status" }, "origin": { "const": "predel" }, "data": { "$ref": "#/components/schemas/InvitationStatusData" } } }], "unevaluatedProperties": false
+      },
+      "InvitationStatusData": {
+        "type": "object", "additionalProperties": false, "required": ["invitationId", "status"],
+        "description": "Только фактический ответ получателя на платформе. ATS не может отправить входное событие этого типа.",
+        "properties": { "invitationId": { "$ref": "#/components/schemas/OpaqueId" }, "status": { "type": "string", "enum": ["viewed", "accepted", "rejected"] } }
+      },
+      "ContactsRevoked": {
+        "allOf": [{ "$ref": "#/components/schemas/OutboundBase" }, { "properties": { "type": { "const": "candidate.contacts_revoked" }, "origin": { "const": "predel" }, "data": { "$ref": "#/components/schemas/ContactsRevokedData" } } }], "unevaluatedProperties": false
+      },
+      "ContactsRevokedData": {
+        "type": "object", "additionalProperties": false, "required": ["candidateRef", "reason"],
+        "description": "Минимальное уведомление о запрете дальнейшего доступа и необходимости удалить копии в ATS. Не доказательство фактического удаления в чужой системе.",
+        "properties": { "candidateRef": { "$ref": "#/components/schemas/OpaqueId" }, "reason": { "type": "string", "enum": ["consent_revoked", "account_deleted", "access_revoked"] } }
+      },
+      "Delivery": {
+        "type": "object", "additionalProperties": false, "required": ["event", "deliveryToken", "tokenExpiresAt"],
+        "properties": { "event": { "$ref": "#/components/schemas/OutboundEvent" }, "deliveryToken": { "type": "string", "minLength": 16, "maxLength": 512 }, "tokenExpiresAt": { "type": "string", "format": "date-time" } }
+      },
+      "DeliveryPage": {
+        "type": "object", "additionalProperties": false, "required": ["items", "nextCursor", "hasMore"],
+        "properties": { "items": { "type": "array", "maxItems": 100, "items": { "$ref": "#/components/schemas/Delivery" } }, "nextCursor": { "type": ["string", "null"], "maxLength": 512, "description": "Cursor последней обработанной позиции, включая терминальные cancelled. Пустая страница может иметь cursor после отменённых событий; null если позиции пока нет. Не сохранять до ACK всех выданных items." }, "hasMore": { "type": "boolean" } }
+      },
+      "Acknowledgement": {
+        "type": "object", "additionalProperties": false, "required": ["ackId", "deliveryToken"],
+        "properties": { "ackId": { "type": "string", "format": "uuid" }, "deliveryToken": { "type": "string", "minLength": 16, "maxLength": 512 }, "externalId": { "$ref": "#/components/schemas/ExternalId" } }
+      },
+      "AckReceipt": {
+        "type": "object", "additionalProperties": false, "required": ["eventId", "ackId", "acknowledgedAt"],
+        "properties": { "eventId": { "type": "string", "format": "uuid" }, "ackId": { "type": "string", "format": "uuid" }, "acknowledgedAt": { "type": "string", "format": "date-time" }, "externalId": { "$ref": "#/components/schemas/ExternalId" } }
+      },
+      "DeliveryStatus": {
+        "type": "object", "additionalProperties": false, "required": ["eventId", "status", "ack"],
+        "properties": { "eventId": { "type": "string", "format": "uuid" }, "status": { "type": "string", "enum": ["pending", "acknowledged", "suspended", "cancelled"] }, "ack": { "oneOf": [{ "$ref": "#/components/schemas/AckReceipt" }, { "type": "null" }] }, "cancelReason": { "type": "string", "enum": ["consent_revoked", "account_deleted", "access_revoked"], "description": "Только для cancelled; отмена терминальна и не содержит исходного payload" } },
+        "allOf": [
+          { "if": { "properties": { "status": { "const": "acknowledged" } } }, "then": { "properties": { "ack": { "$ref": "#/components/schemas/AckReceipt" } } }, "else": { "properties": { "ack": { "type": "null" } } } },
+          { "if": { "properties": { "status": { "const": "cancelled" } } }, "then": { "required": ["cancelReason"] }, "else": { "not": { "required": ["cancelReason"] } } }
+        ]
+      },
+      "AllowedContacts": {
+        "type": "object", "additionalProperties": false, "required": ["applicationId", "candidateRef", "email", "phone", "consentCheckedAt"],
+        "properties": { "applicationId": { "$ref": "#/components/schemas/ApplicationId" }, "candidateRef": { "$ref": "#/components/schemas/OpaqueId" }, "email": { "type": "string", "format": "email", "maxLength": 254 }, "phone": { "type": "string", "maxLength": 30, "description": "Пустая строка, если телефон не указан" }, "consentCheckedAt": { "type": "string", "format": "date-time" } }
+      },
+      "Error": {
+        "type": "object", "additionalProperties": false, "required": ["code", "message", "requestId"],
+        "properties": { "code": { "type": "string", "enum": ["invalid_request", "unauthenticated", "forbidden", "not_found", "stale_revision", "stale_sequence", "sequence_gap", "idempotency_conflict", "mapping_conflict", "unacknowledged_cursor", "invalid_transition", "invalid_salary", "cursor_expired", "delivery_expired", "delivery_cancelled", "resync_required", "rate_limited", "unavailable"] }, "message": { "type": "string", "minLength": 1, "maxLength": 400 }, "requestId": { "type": "string", "format": "uuid" }, "currentRevision": { "$ref": "#/components/schemas/SyncRevision", "description": "Только для авторизованного конфликта своей сопоставленной сущности; не раскрывается для чужого или неизвестного ID" }, "expectedSequence": { "type": "integer", "minimum": 1, "description": "Следующий допустимый входной sequence; только для своей сопоставленной сущности" } }
+      }
+    }
+  }
+}

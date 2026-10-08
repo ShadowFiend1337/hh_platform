@@ -1,0 +1,23 @@
+{
+  "items": [
+    {
+      "event": {
+        "schemaVersion": "1",
+        "eventId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "type": "application.decision",
+        "sequence": 3,
+        "occurredAt": "2026-10-08T10:05:01Z",
+        "origin": "predel",
+        "syncRevision": 2,
+        "data": {
+          "applicationId": "application-33333333-3333-4333-8333-333333333333",
+          "status": "accepted"
+        }
+      },
+      "deliveryToken": "illustrative-token-not-a-secret-decision-1",
+      "tokenExpiresAt": "2026-10-08T10:15:03Z"
+    }
+  ],
+  "nextCursor": "illustrative-cursor-after-sequence-3",
+  "hasMore": false
+}

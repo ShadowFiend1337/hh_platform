@@ -1,0 +1,25 @@
+{
+  "items": [
+    {
+      "event": {
+        "schemaVersion": "1",
+        "eventId": "22222222-2222-4222-8222-222222222222",
+        "type": "application.created",
+        "sequence": 2,
+        "occurredAt": "2026-10-08T10:05:00Z",
+        "origin": "predel",
+        "syncRevision": 1,
+        "data": {
+          "applicationId": "application-33333333-3333-4333-8333-333333333333",
+          "vacancyId": "vacancy-44444444-4444-4444-8444-444444444444",
+          "candidateRef": "candidate-ref-example",
+          "status": "sent"
+        }
+      },
+      "deliveryToken": "illustrative-token-not-a-secret-application-1",
+      "tokenExpiresAt": "2026-10-08T10:15:00Z"
+    }
+  ],
+  "nextCursor": "illustrative-cursor-after-sequence-2",
+  "hasMore": false
+}
