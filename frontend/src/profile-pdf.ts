@@ -28,7 +28,7 @@ export async function createProfilePdf(person: Candidate, contacts: boolean, fon
   layout.section('Достижения', person.careerAchievements);
   layout.section('Образование', person.education);
   layout.section('Языки', person.languages);
-  layout.section(person.synthetic ? 'ФСП · демонстрационные сведения' : 'Достижения ФСП',
+  layout.section(person.synthetic ? 'ФСП · демо' : 'Достижения ФСП',
     person.achievements.length ? person.achievements.map(item => [item.title, item.result, item.year].filter(Boolean).join(' · ')).join('\n') : 'Истории ФСП пока нет');
   layout.section('Контакты', person.demoProfile ? 'Недоступны для демопрофиля' : showContacts ? [person.email, person.phone].filter(Boolean).join('\n') : 'Контакты скрыты');
   if (showContacts) layout.section('Портфолио', person.portfolio);

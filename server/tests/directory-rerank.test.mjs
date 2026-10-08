@@ -173,14 +173,53 @@ test('consent revocation and achievement changes after multi-section scoring dis
   }
 });
 
-test('raw reranker scores dominate cosine, test results and federation achievements; cosine breaks neural ties', async t => {
+test('test results reorder close neural matches before pagination without altering raw model scores', async t => {
   const encoder = new Encoder();
-  encoder.cosine = { strong: 0.2, tied: 0.3, weaker: 0.95 };
-  encoder.scores = { strong: 1.01, tied: 1.01, weaker: 1 };
-  const value = service(t, [profile('strong', { confirmed: { specialization: 'Embedded', grade: 'Middle', score: 100 }, achievements: [{ title: 'Demo' }] }),
-    profile('tied', { confirmed: { specialization: 'Embedded', grade: 'Middle', score: 60 } }),
-    profile('weaker', { confirmed: { specialization: 'Embedded', grade: 'Middle', score: 100 }, achievements: [{ title: 'Demo' }] })], encoder);
-  assert.deepEqual((await value.search(query)).items.map(item => item.person.id), ['tied', 'strong', 'weaker']);
+  encoder.cosine = { relevant: 0.95, tested: 0.2, distant: 0.99 };
+  encoder.scores = { relevant: 1.2, tested: 1.1, distant: 0.7 };
+  const value = service(t, [profile('relevant', { confirmed: { specialization: 'Embedded', grade: 'Middle', score: 83 } }),
+    profile('tested', { confirmed: { specialization: 'Embedded', grade: 'Middle', score: 100 } }),
+    profile('distant', { confirmed: { specialization: 'Embedded', grade: 'Middle', score: 100 }, achievements: [{ title: 'Demo' }] })], encoder);
+  const first = await value.search(query, {}, { limit: 1 });
+  assert.equal(first.total, 3);
+  assert.equal(first.items[0].person.id, 'tested');
+  assert.equal(first.items[0].rank, 1.1);
+  assert.equal(first.items[0].rerankerScore, 1.1);
+  assert.match(first.items[0].reason, /той же подтверждённой категории/u);
+  assert.equal(first.model.categoryRankingPolicy.version, 'category-evidence-bands-v1');
+  const rest = await value.search(query, {}, { offset: 1 });
+  assert.deepEqual(rest.items.map(item => item.person.id), ['relevant', 'distant']);
+  assert.equal(rest.items[0].rank, 1.2, 'A test bonus changes positions, not the reported neural relevance');
+  assert.equal(encoder.info.reranker.threshold, 0.5);
+});
+
+test('FSP provenance affects comparable matches but a real self-entered claim earns no bonus', async t => {
+  const encoder = new Encoder();
+  encoder.scores = { baseline: 1.2, federation: 1.1 };
+  const noMedal = profile('baseline');
+  const medal = profile('federation', { achievements: [{ title: 'Демонстрационный турнир ФСП', result: 'Вымышленный результат' }] });
+  const value = service(t, [noMedal, medal], encoder);
+  const demo = await value.search(query);
+  assert.deepEqual(demo.items.map(item => item.person.id), ['federation', 'baseline']);
+  assert.match(demo.items[0].reason, /Демонстрационные достижения ФСП.*учебный пример/u);
+  value.store.upsert({ ...noMedal, synthetic: false }, 'registered-baseline', true);
+  value.store.upsert({ ...medal, synthetic: false, fspId: 'SELF-ENTERED', achievements: [{ title: 'ФСП', verified: true }] }, 'registered-federation', true);
+  const real = await value.search(query);
+  assert.deepEqual(real.items.map(item => item.person.id), ['baseline', 'federation']);
+  assert.doesNotMatch(real.items.map(item => item.reason).join(' '), /достижения ФСП.*учтены/iu);
+});
+
+test('evidence preserves slots of other confirmed categories and cannot admit a below-cutoff profile', async t => {
+  const encoder = new Encoder();
+  encoder.scores = { first: 1.2, senior: 1.18, backend: 1.16, tested: 1.1, rejected: 0.49 };
+  const value = service(t, [profile('first', { confirmed: { specialization: 'Embedded', grade: 'Middle', score: 83 } }),
+    profile('senior', { confirmed: { specialization: 'Embedded', grade: 'Senior', score: 100 } }),
+    profile('backend', { specialization: 'Backend', confirmed: { specialization: 'Backend', grade: 'Middle', score: 100 } }),
+    profile('tested', { confirmed: { specialization: 'Embedded', grade: 'Middle', score: 100 } }),
+    profile('rejected', { confirmed: { specialization: 'Embedded', grade: 'Middle', score: 100 }, achievements: [{ title: 'Demo' }] })], encoder);
+  const result = await value.search(query);
+  assert.deepEqual(result.items.map(item => item.person.id), ['tested', 'senior', 'backend', 'first']);
+  assert.equal(result.total, 4, 'Evidence cannot bypass model admission');
 });
 
 test('recall evaluates all SQL matches and bounds neural scoring to the 50 most similar profiles', async t => {

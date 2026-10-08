@@ -141,10 +141,21 @@ try {
   assert.ok(semantic.items.length > 0 && semantic.items.every(item => item.person.demoProfile && item.semanticScore !== null));
   await assertDemoRows(ordinary.page);
 
-  await ordinary.page.locator('.candidate-row .person-link').first().click();
+  const demoWithAchievements = semantic.items.find(item => item.person.achievements.length > 0)?.person;
+  assert.ok(demoWithAchievements, 'The filtered catalog must include a demo with fictional FSP achievements');
+  const demoRow = ordinary.page.locator('.candidate-row').filter({ has: ordinary.page.locator('.person-link', { hasText: demoWithAchievements.name }) });
+  assert.equal(await demoRow.locator('.fsp-tag').count(), 1, 'The card medal has corresponding achievements');
+  assert.equal(await demoRow.locator('.fsp-tag').getAttribute('title'), 'ФСП · демо: вымышленные результаты');
+  await demoRow.locator('.person-link').click();
   const dialog = ordinary.page.getByRole('dialog');
   await dialog.waitFor();
   assert.equal(await dialog.getByText('Демо', { exact: true }).count(), 1);
+  assert.equal(await dialog.getByRole('heading', { name: 'ФСП · демо', exact: true }).count(), 1);
+  for (const achievement of demoWithAchievements.achievements) {
+    assert.equal(await dialog.getByText(achievement.title, { exact: true }).count(), 1);
+    assert.equal(await dialog.getByText(`${achievement.result} · ${achievement.year}`, { exact: true }).count(), 1);
+  }
+  assert.equal(await dialog.getByText('Истории ФСП пока нет', { exact: true }).count(), 0);
   assert.equal(await dialog.getByText('Недоступны для демопрофиля', { exact: true }).count(), 1);
   assert.equal(await dialog.getByRole('button', { name: 'Пригласить', exact: true }).count(), 0);
   assert.equal(await dialog.locator('a[href^="mailto:"],a[href^="tel:"]').count(), 0);
@@ -169,6 +180,11 @@ try {
     } finally { await task.destroy(); }
   }, [...bytes]);
   assert.match(pdfText, /демонстрацион/iu);
+  assert.match(pdfText, /ФСП · демо/u);
+  for (const achievement of demoWithAchievements.achievements) {
+    assert.ok(pdfText.includes(achievement.title), 'PDF preserves the same fictional achievement as the displayed profile');
+    assert.ok(pdfText.includes(achievement.result), 'PDF preserves the fictional result and demo provenance');
+  }
   assert.match(pdfText, /Недоступны для демопрофиля/u);
   assert(!pdfText.includes('@'), 'The exported demo PDF does not reveal email contacts');
   await dialog.getByRole('button', { name: 'Закрыть', exact: true }).click();

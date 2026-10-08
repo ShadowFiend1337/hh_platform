@@ -363,15 +363,19 @@ for(const phase of ['index','query']) test(`a stale ${phase} reply never acquire
   assert.deepEqual(value.queryCache.get('test-v2:'+PROFILE_INDEX_POLICY+'\nзадачи'),[0,1]);
 });
 
-test('semantic relevance is primary and test score or federation achievements only break ties', async t => {
+test('encoder-only search uses test evidence for close profiles and preserves material relevance gaps', async t => {
   const encoder = new FakeEncoder();
   encoder.encode = async texts => texts.map(text => text.includes('stronger') ? [0.8, 0.6]
-    : text.includes('weaker') ? [0.795, Math.sqrt(1 - 0.795 ** 2)] : text === 'потребность' ? [1, 0] : [0, 1]);
+    : text.includes('closer') ? [0.795, Math.sqrt(1 - 0.795 ** 2)]
+    : text.includes('weaker') ? [0.7, Math.sqrt(1 - 0.7 ** 2)] : text === 'потребность' ? [1, 0] : [0, 1]);
   const value = service(t, [profile('strong', { bio: 'stronger', confirmed: { specialization: 'Embedded', grade: 'Middle', score: 70 } }),
+    profile('close', { bio: 'closer', confirmed: { specialization: 'Embedded', grade: 'Middle', score: 100 } }),
     profile('weak', { bio: 'weaker', confirmed: { specialization: 'Embedded', grade: 'Middle', score: 100 }, achievements: [{ title: 'Demo' }] })], encoder);
   const result = await value.search('потребность');
-  assert.deepEqual(result.items.map(item => item.person.id), ['strong', 'weak']);
-  assert.ok(result.items[0].semanticScore > result.items[1].semanticScore);
+  assert.deepEqual(result.items.map(item => item.person.id), ['close', 'strong', 'weak']);
+  assert.ok(result.items[0].semanticScore < result.items[1].semanticScore, 'Close scores need not be exactly equal for test evidence to affect ordering');
+  assert.ok(result.items[1].semanticScore > result.items[2].semanticScore);
+  assert.equal(result.model.categoryRankingPolicy.version, 'category-evidence-bands-v1');
 });
 
 test('raw pagination offset makes progress after an earlier ranked row is inserted', async t => {

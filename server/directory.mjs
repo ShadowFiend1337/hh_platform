@@ -9,6 +9,7 @@ import { RequestError } from './assessment.mjs';
 import { unsupportedRequestedRoles } from './query-role-scope.mjs';
 import { accountsShareRealm, isLocalFixtureAccount } from './local-fixtures.mjs';
 import { isDemoCatalogProfile } from './demo-catalog.mjs';
+import { CATEGORY_RANKING_POLICY, rankComparableCandidates, semanticOrder } from './search-ranking.mjs';
 
 function validateFilters(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new RequestError(400,'Некорректные фильтры.');
@@ -373,7 +374,7 @@ export class DirectoryService {
       } catch { throw new RequestError(503,'Поиск по смыслу недоступен. Повторите запрос или используйте фильтры без текста.'); }
     }
     const stage=embeddingQuery?this.encoder.info.reranker:null;
-    const order=(a,b)=>(embeddingQuery?b.rank-a.rank||b.semanticScore-a.semanticScore:0)||b.testScore-a.testScore||b.fsp-a.fsp
+    const filterOrder=(a,b)=>b.testScore-a.testScore||b.fsp-a.fsp
       ||a.person.name.localeCompare(b.person.name,'ru')||a.person.id.localeCompare(b.person.id);
     const candidates=rows.map(row=>{
       const cached=vector?vectors.get(row.id):null;
@@ -486,15 +487,20 @@ export class DirectoryService {
           // DEV's approximate floor was fitted on described professional
           // tasks. Sparse role/skill claims use the unchanged strong cutoff;
           // do not transfer a task-only floor to this new evidence type.
-          items=eligible.filter(item=>item.evidenceKind==='professional' && item.rank>=fusion.admission.threshold).sort(order).slice(0,fusion.admission.limit)
+          items=eligible.filter(item=>item.evidenceKind==='professional' && item.rank>=fusion.admission.threshold).sort(semanticOrder).slice(0,fusion.admission.limit)
             .map(item=>({...item,approximate:true}));
           if (items.length) warnings.push('Точных совпадений нет. Показаны ближайшие профили.');
         }
       } catch { throw new RequestError(503,'Поиск по смыслу недоступен. Повторите запрос или используйте фильтры без текста.'); }
     } else items=candidates.filter(item=>!embeddingQuery||item.semanticScore!==null&&item.semanticScore>=this.encoder.info.threshold);
-    items.sort(order);
+    // Admission and the nearest-list limit have already been applied using
+    // unchanged neural scores. Evidence can only exchange comparable slots
+    // within the same confirmed category, before response pagination.
+    if (embeddingQuery) items=rankComparableCandidates(items,{scoreKind:stage?'logit':'cosine'});
+    else items.sort(filterOrder);
     return {items:items.slice(offset,offset+limit).map(({testScore,fsp,sourceId,documentHash,publicPayload,taskSections,reasonSuffix,roleLabel,...item})=>item),total:items.length,offset,limit,query,interpreted,effectiveFilters:filters,
-      model:{...this.encoder.info,indexPolicy:PROFILE_INDEX_POLICY,taskEvidencePolicy:TASK_EVIDENCE_POLICY,...(stage?{stage:structuredClone(stage),
+      model:{...this.encoder.info,indexPolicy:PROFILE_INDEX_POLICY,taskEvidencePolicy:TASK_EVIDENCE_POLICY,
+        ...(embeddingQuery?{categoryRankingPolicy:CATEGORY_RANKING_POLICY}:{}),...(stage?{stage:structuredClone(stage),
         profileEvidencePolicy:PROFILE_EVIDENCE_POLICY,
         rerankerAggregation:stage.scoreCalibration?'max-fused-professional-sections-v2':'max-professional-sections-v2'}:{})},warnings};
   }

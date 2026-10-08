@@ -95,6 +95,22 @@ test('fusion score determines ordering and its own cutoff without changing the f
   assert.equal(encoder.info.reranker.threshold,0.5);assert.equal(encoder.info.reranker.scoreCalibration.threshold,4);
 });
 
+test('the active QDA composition applies category evidence after fusion admission and preserves every raw score',async t=>{
+  const encoder=new Encoder();
+  encoder.info.reranker.scoreCalibration=quadraticCalibration({quadraticMatrix:[[0,0],[0,0]],weights:[0,1]});
+  encoder.logits={relevant:4.2,tested:4.1,rejected:3.99};
+  const result=await service(t,[
+    profile('relevant',{confirmed:{specialization:'Embedded',grade:'Middle',score:83}}),
+    profile('tested',{confirmed:{specialization:'Embedded',grade:'Middle',score:100}}),
+    profile('rejected',{confirmed:{specialization:'Embedded',grade:'Middle',score:100},achievements:[{title:'Demo'}]}),
+  ],encoder).search(rawQuery);
+  assert.deepEqual(result.items.map(item=>item.person.id),['tested','relevant']);
+  assert.deepEqual(result.items.map(item=>item.rank),[4.1,4.2]);
+  assert.deepEqual(result.items.map(item=>item.rerankerScore),[4.1,4.2]);
+  assert.equal(encoder.info.reranker.scoreCalibration.threshold,4);
+  assert.equal(result.model.categoryRankingPolicy.admission,'unchanged-model-cutoff-before-evidence-ordering');
+});
+
 test('sparse competencies pair their own raw-query cosine and cross logit through unchanged fusion',async t=>{
   const encoder=new Encoder();
   const competencyQuery='Нужен инженер электроники с C++';
@@ -235,6 +251,23 @@ test('only zero strong matches admits at most three nearest profiles above the D
   assert.equal(result.total,3);assert.deepEqual(result.items.map(item=>item.person.id),['first','second','third']);
   assert.ok(result.items.every(item=>item.approximate===true&&item.rank>=2&&item.rank<4));
   assert.deepEqual(result.warnings,['Точных совпадений нет. Показаны ближайшие профили.']);
+});
+
+test('a higher test and FSP cannot move the fourth nearest profile across the admission list limit',async t=>{
+  const encoder=new Encoder();
+  encoder.info.reranker.scoreCalibration.admission=admission();
+  encoder.logits={first:-4.2,second:-4.3,third:-4.4,fourth:-4.5};
+  const result=await service(t,[
+    profile('first',{confirmed:{specialization:'Embedded',grade:'Middle',score:83}}),
+    profile('second',{confirmed:{specialization:'Embedded',grade:'Middle',score:83},achievements:[{title:'Demo'}]}),
+    profile('third',{confirmed:{specialization:'Embedded',grade:'Middle',score:83}}),
+    profile('fourth',{confirmed:{specialization:'Embedded',grade:'Middle',score:100},achievements:[{title:'Demo'}]}),
+  ],encoder).search(rawQuery);
+  assert.deepEqual(result.items.map(item=>item.person.id),['second','first','third']);
+  assert.equal(result.total,3);
+  assert.ok(result.items.every(item=>item.approximate===true));
+  assert.equal(result.warnings.length,1);
+  assert.ok(result.items.every(item=>item.rank<4 && item.rank>=2));
 });
 
 test('profiles below the admission floor remain an empty result without an approximate warning',async t=>{

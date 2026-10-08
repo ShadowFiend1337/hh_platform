@@ -29,8 +29,7 @@ export function CandidateDetails({ person, contacts, onInvite, contactNote = 'О
   const workHistory = sectionText(person.workHistory);
   const careerAchievements = sectionText(person.careerAchievements);
   const education = sectionText(person.education);
-  const achievements = person.achievements.filter(achievement => !person.synthetic
-    || !/демонстрац|вымышлен/iu.test(achievement.title + ' ' + achievement.result));
+  const achievements = person.achievements;
   return <div className="candidate-details">
     <div className="detail-person">
       <div className="avatar avatar-large">{initials(person.name)}</div>
@@ -50,7 +49,7 @@ export function CandidateDetails({ person, contacts, onInvite, contactNote = 'О
     {careerAchievements && <section><h4>Достижения</h4><p className="body-copy resume-copy">{careerAchievements}</p></section>}
     {education && <section><h4>Образование</h4><p className="body-copy resume-copy">{education}</p></section>}
     {person.languages && <section><h4>Языки</h4><p className="body-copy resume-copy">{person.languages}</p></section>}
-    <section><h4 className="inline-icon"><Medal size={17} />Достижения ФСП</h4>
+    <section><h4 className="inline-icon" title={person.synthetic ? 'Вымышленные результаты демонстрационного профиля' : 'Сведения из профиля'}><Medal size={17} />{person.synthetic ? 'ФСП · демо' : 'Достижения ФСП'}</h4>
       {achievements.length ? achievements.map((achievement, index) => <div key={index} className="achievement"><strong>{achievement.title}</strong><span>{achievement.result} · {achievement.year}</span></div>)
         : <p className="muted">Истории ФСП пока нет</p>}
     </section>
