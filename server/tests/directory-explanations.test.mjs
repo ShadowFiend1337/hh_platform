@@ -56,7 +56,8 @@ test('actual search annotates only admitted results without changing raw scores,
   assert.equal(page.total, full.total);
   assert.deepEqual(page.items, full.items.slice(1, 2), 'Comparison explanations are derived before pagination');
   assert.equal(page.items[0].explanation.ordering.comparableCount, 2);
-  assert.doesNotMatch(JSON.stringify(full.items), /explanation-private@|79991112233|PRIVATE-FEDERATION-ID|evidenceText|documentHash|sourceId|taskSections/u);
+  assert(full.items.every(item => !Object.hasOwn(item, 'rankingTrace')));
+  assert.doesNotMatch(JSON.stringify(full.items), /explanation-private@|79991112233|PRIVATE-FEDERATION-ID|evidenceText|documentHash|sourceId|taskSections|rankingTrace/u);
 });
 
 test('the explanation names the winning professional passage rather than the nearest retrieval identity', async t => {

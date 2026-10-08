@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { CATEGORY_RANKING_POLICY, rankComparableCandidates, rankingFspEvidence, normalizeRankingFspEvidence } from '../search-ranking.mjs';
+import { CATEGORY_RANKING_POLICY, rankComparableCandidates, rankingFspEvidence, normalizeRankingFspEvidence, rankingTraceFor } from '../search-ranking.mjs';
 
 const candidate = (id, rank, score = 80, changes = {}) => ({
   person: { id, name: id, synthetic: true, achievements: [],
@@ -39,7 +39,12 @@ test('evidence only exchanges existing slots of the same confirmed specializatio
   assert.deepEqual(ids(result), ['embedded-middle-strong', 'other-specialization', 'other-grade', 'embedded-middle-weak']);
   assert.deepEqual(result.map(item => item.person.confirmed.specialization + ':' + item.person.confirmed.grade),
     input.map(item => item.person.confirmed.specialization + ':' + item.person.confirmed.grade));
-  assert.equal(result[1], input[1]); assert.equal(result[2], input[2]);
+  for (const index of [1, 2]) {
+    const { rankingTrace, ...unchanged } = result[index];
+    assert.deepEqual(unchanged, input[index]);
+    assert.equal(rankingTrace.comparableCount, 1);
+    assert.equal(rankingTrace.changedWithinBand, false);
+  }
 });
 
 test('self-reported category never groups an unconfirmed or different confirmed profile', () => {
@@ -152,9 +157,43 @@ test('invalid confirmation scores cannot enter evidence ordering and equal evide
 test('reranking only permutes the admitted input and handles empty and singleton lists', () => {
   assert.deepEqual(rankComparableCandidates([]), []);
   const one = candidate('one', 6.2);
-  assert.deepEqual(rankComparableCandidates([one]), [one]);
+  const [single] = rankComparableCandidates([one]);
+  const { rankingTrace, ...unchanged } = single;
+  assert.deepEqual(unchanged, one);
+  assert.equal(rankingTrace.comparableCount, 1);
   const input = Array.from({ length: 150 }, (_, index) => candidate(`profile-${index}`, 15 - index / 10, index % 101));
   const result = rankComparableCandidates(input);
   assert.equal(result.length, input.length);
   assert.deepEqual(ids(result).sort(), ids(input).sort());
+});
+
+test('execution traces record each actual comparison and resolve provenance once per admitted profile', () => {
+  const source = [candidate('first', 6.2, 90), candidate('medal', 6.1, 90, { achievements: [{ title: 'Демо' }] }),
+    candidate('distant', 5, 100), candidate('unconfirmed', 4.9, 100, { confirmed: null })];
+  const snapshot = structuredClone(source), calls = [];
+  const result = rankComparableCandidates(source, { fspEvidence: person => { calls.push(person.id); return rankingFspEvidence(person); } });
+  assert.deepEqual(calls, ['first', 'medal', 'distant', 'unconfirmed']);
+  assert.deepEqual(ids(result), ['medal', 'first', 'distant', 'unconfirmed']);
+  for (const [index, item] of result.entries()) {
+    assert.equal(rankingTraceFor(item, 'logit'), item.rankingTrace);
+    assert.equal(item.rankingTrace.policy, CATEGORY_RANKING_POLICY.version);
+    assert.equal(item.rankingTrace.scoreKind, 'logit');
+    assert.equal(item.rankingTrace.comparableCount, [2, 2, 1, 0][index]);
+    assert.equal(item.rankingTrace.changedWithinBand, index < 2);
+    assert.equal(item.rankingTrace.fspSource, index === 0 ? 'synthetic-demo' : null);
+    assert(Object.isFrozen(item.rankingTrace));
+  }
+  assert.deepEqual(source, snapshot);
+});
+
+test('traces cannot be copied, fabricated or reused for a different score kind', () => {
+  const [ranked] = rankComparableCandidates([candidate('one', 0.9)], { scoreKind: 'cosine' });
+  assert.equal(rankingTraceFor(ranked, 'logit'), null);
+  assert.equal(rankingTraceFor({ ...ranked }, 'cosine'), null);
+  assert.equal(rankingTraceFor({ rankingTrace: { ...ranked.rankingTrace } }, 'cosine'), null);
+  const [reranked] = rankComparableCandidates([ranked]);
+  assert.notEqual(reranked.rankingTrace, ranked.rankingTrace);
+  assert.equal(rankingTraceFor(reranked, 'logit'), reranked.rankingTrace);
+  assert.equal(rankingTraceFor(reranked, 'cosine'), null);
+  assert.equal(ranked.rankingTrace.scoreKind, 'cosine');
 });

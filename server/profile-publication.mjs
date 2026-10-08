@@ -3,6 +3,17 @@ import { isGrade } from '../shared/grading.ts';
 import { threshold } from './assessment.mjs';
 
 export const PROFILE_PUBLICATION_POLICY = 'consented-questionnaire-unconfirmed-last-v1';
+export const CONFIRMATION_ORDER_POLICY = Object.freeze({
+  version: 'confirmed-first-stable-partition-v1',
+  admission: 'unchanged',
+  withinGroups: 'preserved',
+});
+const confirmationOrder = new WeakMap();
+
+/** Server-local evidence that the publication priority actually ran. */
+export function confirmationOrdering(item) {
+  return confirmationOrder.get(item) || null;
+}
 
 const nonempty = value => typeof value === 'string' && value.trim().length > 0;
 const sameValues = (left, right) => Array.isArray(left) && Array.isArray(right)
@@ -60,5 +71,14 @@ export function profilePublication(person, { owner, proof = null, surveys = [] }
 export function confirmedFirst(items) {
   const confirmed = [], unconfirmed = [];
   for (const item of items) (item.person?.confirmed ? confirmed : unconfirmed).push(item);
-  return [...confirmed, ...unconfirmed];
+  const ordered = [...confirmed, ...unconfirmed];
+  const positions = new Map(items.map((item, index) => [item, index]));
+  const mixedGroups = confirmed.length > 0 && unconfirmed.length > 0;
+  ordered.forEach((item, index) => confirmationOrder.set(item, Object.freeze({
+    policy: CONFIRMATION_ORDER_POLICY.version,
+    group: item.person?.confirmed ? 'confirmed' : 'unconfirmed',
+    mixedGroups,
+    changedPosition: positions.get(item) !== index,
+  })));
+  return ordered;
 }

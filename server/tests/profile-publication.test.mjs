@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createAttempt, evaluate } from '../assessment.mjs';
-import { profilePublication, completedPublicationSurvey, verifiedProfileConfirmation, confirmedFirst } from '../profile-publication.mjs';
+import { profilePublication, completedPublicationSurvey, verifiedProfileConfirmation, confirmedFirst,
+  confirmationOrdering, CONFIRMATION_ORDER_POLICY } from '../profile-publication.mjs';
 
 const owner = 'candidate-owner';
 const time = Date.parse('2026-10-08T09:00:00.000Z');
@@ -108,4 +109,24 @@ test('confirmed-first partition preserves score, admission and relative order wi
   assert.deepEqual(input, [u1, c1, u2, c2]);
   assert.deepEqual(ordered.map(item => item.rank), [20, 18, 100, 19]);
   for (const item of input) assert(ordered.includes(item), 'Partition never admits or removes candidates');
+});
+
+test('publication priority records actual movement without modifying or exporting candidate objects', () => {
+  const unconfirmed = { person: { confirmed: null }, rank: 9 };
+  const confirmed = { person: { confirmed: { grade: 'Junior', score: 80 } }, rank: 1 };
+  const input = [unconfirmed, confirmed], snapshot = structuredClone(input);
+  assert.equal(confirmationOrdering(confirmed), null);
+  const ordered = confirmedFirst(input);
+  assert.deepEqual(input, snapshot);
+  assert.deepEqual(ordered, [confirmed, unconfirmed]);
+  assert.deepEqual(confirmationOrdering(confirmed), { policy: CONFIRMATION_ORDER_POLICY.version,
+    group: 'confirmed', mixedGroups: true, changedPosition: true });
+  assert.equal(confirmationOrdering(unconfirmed).group, 'unconfirmed');
+  assert.equal(confirmationOrdering(unconfirmed).changedPosition, true);
+  assert.equal(confirmationOrdering({ ...confirmed }), null, 'Copying public fields cannot claim execution');
+  assert.equal(Object.isFrozen(confirmationOrdering(confirmed)), true);
+  confirmedFirst([confirmed]);
+  assert.equal(confirmationOrdering(confirmed).mixedGroups, false);
+  assert.equal(confirmationOrdering(confirmed).changedPosition, false);
+  assert.deepEqual(confirmedFirst([]), []);
 });

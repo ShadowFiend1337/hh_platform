@@ -35,6 +35,18 @@ export function normalizeRankingFspEvidence(person, source) {
   return null;
 }
 
+// Public explanation may read only traces attached by this execution, not a
+// similarly shaped object copied from input or another candidate. Directory
+// keeps these objects intact until explaining, then strips the internal trace.
+const executedRankings = new WeakMap();
+export function rankingTraceFor(item, scoreKind) {
+  const trace = item && executedRankings.get(item);
+  return trace && trace === item.rankingTrace && trace.policy === CATEGORY_RANKING_POLICY.version
+    && trace.scoreKind === scoreKind && Number.isInteger(trace.comparableCount) && trace.comparableCount >= 0
+    && typeof trace.changedWithinBand === 'boolean' && (!trace.changedWithinBand || trace.comparableCount > 1)
+    && [null, 'synthetic-demo', 'verified-fsp'].includes(trace.fspSource) ? trace : null;
+}
+
 const numericScore = value => Number.isFinite(value) ? value : -Infinity;
 const testScore = item => {
   const score = item.person?.confirmed?.score;
@@ -80,7 +92,10 @@ function evidenceExplanation(item, evidence) {
 export function rankComparableCandidates(items, { scoreKind = 'logit', fspEvidence = rankingFspEvidence } = {}) {
   if (scoreKind !== 'logit' && scoreKind !== 'cosine') throw new TypeError('Unknown semantic score kind');
   if (typeof fspEvidence !== 'function') throw new TypeError('Expected a trusted FSP evidence resolver');
-  const ordered = [...items].sort(semanticOrder);
+  const ordered = [...items].sort(semanticOrder).map(item => ({ ...item, rankingTrace: {
+    policy: CATEGORY_RANKING_POLICY.version, scoreKind, comparableCount: 0, changedWithinBand: false,
+    fspSource: normalizeRankingFspEvidence(item.person, fspEvidence(item.person)),
+  } }));
   const maximumGap = scoreKind === 'cosine' ? CATEGORY_RANKING_POLICY.cosineMaximumGap : CATEGORY_RANKING_POLICY.logitMaximumGap;
   const categories = new Map();
   for (const [position, item] of ordered.entries()) {
@@ -97,20 +112,23 @@ export function rankComparableCandidates(items, { scoreKind = 'logit', fspEviden
       // Allow only floating-point round-off at the documented boundary.
       while (end < positions.length && anchor - ordered[positions[end]].rank <= maximumGap + 1e-12) end++;
       const slots = positions.slice(first, end);
+      const band = slots.map(position => {
+        const item = ordered[position], evidence = item.rankingTrace.fspSource;
+        return { item, position, evidence, strength: testScore(item) + (evidence ? CATEGORY_RANKING_POLICY.fspTestPointBonus : 0) };
+      });
       if (slots.length > 1) {
-        const band = slots.map(position => {
-          const item = ordered[position], source = fspEvidence(item.person);
-          const evidence = normalizeRankingFspEvidence(item.person, source);
-          return { item, evidence, strength: testScore(item) + (evidence ? CATEGORY_RANKING_POLICY.fspTestPointBonus : 0) };
-        });
         band.sort((a, b) => b.strength - a.strength || testScore(b.item) - testScore(a.item) || semanticOrder(a.item, b.item));
-        slots.forEach((position, index) => {
-          const { item, evidence } = band[index];
-          ordered[position] = { ...item, reason: [item.reason, evidenceExplanation(item, evidence)].filter(Boolean).join(' ') };
-        });
       }
+      slots.forEach((position, index) => {
+        const { item, evidence, position: originalPosition } = band[index];
+        item.rankingTrace.comparableCount = slots.length;
+        item.rankingTrace.changedWithinBand = position !== originalPosition;
+        ordered[position] = slots.length > 1
+          ? { ...item, reason: [item.reason, evidenceExplanation(item, evidence)].filter(Boolean).join(' ') } : item;
+      });
       first = end;
     }
   }
+  for (const item of ordered) executedRankings.set(item, Object.freeze(item.rankingTrace));
   return ordered;
 }
