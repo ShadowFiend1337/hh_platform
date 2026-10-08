@@ -52,7 +52,11 @@ test('registered candidate category, employer invitation and accepted contacts s
   const initial = await candidate('/api/platform/state', 'PUT', { state: candidateState, baseRevision: 0 });
   assert.equal(initial.status, 200);
   const beforeTest = await employer('/api/directory/search?filters=' + encodeURIComponent(JSON.stringify({ specialization: 'Frontend' })));
-  assert(!beforeTest.data.items.some(item => item.person.name === 'Тестовый кандидат'));
+  const unconfirmed = beforeTest.data.items.find(item => item.person.name === 'Тестовый кандидат');
+  assert(unconfirmed, 'An explicitly published complete questionnaire is discoverable before confirmation');
+  assert.equal(unconfirmed.person.confirmed, null);
+  assert.equal(unconfirmed.person.email, '');
+  assert.equal(unconfirmed.explanation.category.status, 'unconfirmed');
   const attempt = await candidate('/api/assessment/attempts', 'POST', { survey, vacancyDescription: '' });
   assert.equal(attempt.status, 201);
   // Private fixture inspection supplies answers; the public response never does.

@@ -117,6 +117,7 @@ export function CandidateDeck({ items, decisions, favorites, loading, loadingMor
         <div className="swipe-person-heading"><button className="person-link" onClick={() => onProfile(current.person)}>{current.person.name}<ArrowUpRight size={19} /></button>
           <p className="candidate-specialization">{specializationLabels[current.person.confirmed?.specialization || current.person.specialization]}
             <span className="dot-divider">·</span>{current.person.confirmed ? gradeLabels[current.person.confirmed.grade] : 'Грейд не подтверждён'}</p>
+          {!current.person.confirmed && <p className="field-caption">Желаемый грейд: {gradeLabels[current.person.desiredGrade]}</p>}
         </div>
         <div className="swipe-metadata"><span>{current.person.city && <><MapPin size={14} />{current.person.city}</>}{current.person.format && <><span className="dot-divider">·</span>{current.person.format}</>}</span>
           {current.person.experience && <span>{current.person.experience}</span>}</div>

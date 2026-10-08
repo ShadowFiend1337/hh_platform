@@ -118,7 +118,10 @@ function Workspace({ authAccount }: { authAccount: AuthAccount | null }) {
       return { ...person, email: known?.email || '', phone: known?.phone || '' };
     });
   const surveyComplete = Boolean(currentSurvey(state));
-  const candidatePage = !surveyComplete ? 'onboarding' : !state.profile.confirmed && route.page !== 'onboarding' && route.page !== 'invitations' ? 'assessment' : route.page;
+  const provenCategory = state.profile.confirmed && state.history.some(result => result.passed
+    && result.specialization === state.profile.confirmed?.specialization && result.grade === state.profile.confirmed.grade
+    && result.date === state.profile.confirmed.date && result.score === state.profile.confirmed.score);
+  const candidatePage = !surveyComplete ? 'onboarding' : !provenCategory && route.page !== 'onboarding' && route.page !== 'invitations' ? 'assessment' : route.page;
   const page = route.role === 'candidate' ? candidatePage : route.page;
   const candidateStarted = surveyComplete;
   const contactsAllowed = (id: string) => persistence.contactCandidateIds.includes(id) && !candidates.some(person => person.id === id && person.demoProfile);

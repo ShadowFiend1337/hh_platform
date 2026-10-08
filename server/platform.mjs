@@ -3,7 +3,8 @@ import { isGrade } from '../shared/grading.ts';
 import { MAX_STACK_SKILLS, resumeTextLimits } from '../shared/resume-limits.ts';
 import { defaultSearchFilters, employmentTypes, languageOptions, normalizeSearchFilters } from '../shared/search.ts';
 import { HIRING_NEED_LIMITS, MAX_HIRING_NEEDS } from '../shared/hiring-needs.ts';
-import { publicDirectoryCandidate } from './directory-store.mjs';
+import { publicCandidate, publicDirectoryCandidate } from './directory-store.mjs';
+import { profilePublication } from './profile-publication.mjs';
 import { isDemoCatalogProfile } from './demo-catalog.mjs';
 import { RequestError, threshold } from './assessment.mjs';
 import { syncMarketplaceCompany } from './marketplace.mjs';
@@ -264,6 +265,33 @@ export class PlatformService {
   constructor(directoryStore, assessmentStore, { now = () => Date.now(), accountForOwner } = {}) {
     this.store = directoryStore; this.assessments = assessmentStore; this.now = now;
     this.accountForOwner = accountForOwner;
+    this.rebuildPublicProfiles();
+  }
+  publication(owner, person, surveys, proof) {
+    const completedSurveys = surveys ?? this.store.db.prepare('SELECT payload FROM platform_surveys WHERE owner=?')
+      .all(owner).map(row => JSON.parse(row.payload));
+    if (proof === undefined) {
+      const saved = person._proofId ? this.assessments.get(person._proofId) : null;
+      proof = confirmedBy(saved, owner) && sameConfirmation(person.confirmed, saved.result) ? saved
+        : this.assessments.completed(owner).find(row => confirmedBy(row, owner) && sameConfirmation(person.confirmed, row.result));
+    }
+    return profilePublication(person, { owner, surveys: completedSurveys, proof });
+  }
+  rebuildPublicProfiles() {
+    this.store.transaction(() => {
+      for (const account of this.store.db.prepare('SELECT owner,public_id,profile FROM platform_accounts').all()) {
+        const registered = this.accountForOwner?.(account.owner);
+        if (this.accountForOwner && registered?.role !== 'candidate') continue;
+        const person = JSON.parse(account.profile);
+        if (this.accountForOwner) person.synthetic = isLocalFixtureAccount(registered);
+        const projection = this.publication(account.owner, person);
+        const row = this.store.get(account.public_id);
+        if (!row || Boolean(row.eligible) !== projection.eligible
+          || row.public_payload !== JSON.stringify(publicCandidate(projection.person, account.public_id))) {
+          this.store.upsert({ ...projection.person, id: account.public_id }, account.owner, projection.eligible);
+        }
+      }
+    });
   }
   authorize(owner) {
     if (this.accountForOwner && !this.accountForOwner(owner)) throw new RequestError(401, 'Войдите в аккаунт.');
@@ -421,8 +449,8 @@ export class PlatformService {
         ON CONFLICT(owner) DO UPDATE SET revision=excluded.revision,profile=excluded.profile,company=excluded.company,updated_at=excluded.updated_at`)
         .run(owner, id, revision, JSON.stringify({ ...person, ...(selectedProof ? { _proofId: selectedProof.id } : {}) }), JSON.stringify(employer), timestamp);
       if (this.accountForOwner ? role === 'employer' : role !== 'candidate') syncMarketplaceCompany(this.store, owner, employer, id);
-      const eligible = Boolean(selectedProof && person.name && person.email && person.professionalRole && person.stack.length);
-      this.store.upsert({ ...person, id }, owner, eligible);
+      const publication = this.publication(owner, person, incomingSurveys, selectedProof || null);
+      this.store.upsert({ ...publication.person, id }, owner, publication.eligible);
       this.store.db.prepare('DELETE FROM platform_surveys WHERE owner=?').run(owner);
       for (const item of incomingSurveys) this.store.db.prepare('INSERT INTO platform_surveys VALUES(?,?,?,?)').run(owner, item.id, item.date, JSON.stringify(item));
       this.store.db.prepare('DELETE FROM platform_searches WHERE owner=?').run(owner);

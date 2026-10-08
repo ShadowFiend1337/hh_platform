@@ -105,7 +105,8 @@ test('registered local accounts stay in an explicitly marked realm despite old r
   const f = await setup(t), localCandidate = await f.local('candidate'), localEmployer = await f.local('employer');
   const realCandidate = await f.register('candidate'), realEmployer = await f.register('employer');
   const localPerson = f.service.directory.store.forOwner(localCandidate.owner());
-  assert.equal(localPerson.synthetic, 0, 'The CLI produces the historical row this fix must recognise');
+  assert.equal(localPerson.synthetic, 1, 'Startup backfill marks the registered local fixture');
+  f.service.directory.store.db.prepare('UPDATE directory_candidates SET synthetic=0 WHERE id=?').run(localPerson.id);
   const localCompanies = await localCandidate('/api/companies');
   assert.equal(localCompanies.data.total, 1); assert.equal(localCompanies.data.items[0].synthetic, true);
   const localVacancy = localCompanies.data.items[0].vacancies[0]; assert.equal(localVacancy.synthetic, true);

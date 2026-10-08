@@ -12,6 +12,7 @@ import { isDemoCatalogProfile } from './demo-catalog.mjs';
 import { CATEGORY_RANKING_POLICY, rankComparableCandidates, semanticOrder } from './search-ranking.mjs';
 import { CATEGORY_RECOMMENDATION_POLICY, recommendCategories } from './category-recommendations.mjs';
 import { SEARCH_EXPLANATION_POLICY, explainSearchResults } from './search-explanations.mjs';
+import { PROFILE_PUBLICATION_POLICY, confirmedFirst } from './profile-publication.mjs';
 
 function validateFilters(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new RequestError(400,'Некорректные фильтры.');
@@ -508,7 +509,8 @@ export class DirectoryService {
     else items.sort(filterOrder);
     // Category navigation narrows the current recommendation; it never changes
     // employer constraints, neural admission, or recommendations for other groups.
-    items=explainSearchResults(items,{semantic:Boolean(embeddingQuery),scoreKind:stage?'logit':'cosine',filters});
+    items=confirmedFirst(items);
+    items=explainSearchResults(items,{semantic:Boolean(embeddingQuery),scoreKind:stage?'logit':'cosine',filters,verifiedFirst:true});
     const categories=recommendCategories(items,{semantic:Boolean(embeddingQuery)});
     const selected=category?items.filter(item=>item.person.confirmed?.specialization===category.specialization
       && item.person.confirmed?.grade===category.grade):items;
@@ -517,6 +519,7 @@ export class DirectoryService {
       model:{...this.encoder.info,indexPolicy:PROFILE_INDEX_POLICY,taskEvidencePolicy:TASK_EVIDENCE_POLICY,
         categoryRecommendationPolicy:CATEGORY_RECOMMENDATION_POLICY,
         searchExplanationPolicy:SEARCH_EXPLANATION_POLICY,
+        profilePublicationPolicy:PROFILE_PUBLICATION_POLICY,
         ...(embeddingQuery?{categoryRankingPolicy:CATEGORY_RANKING_POLICY}:{}),...(stage?{stage:structuredClone(stage),
         profileEvidencePolicy:PROFILE_EVIDENCE_POLICY,
         rerankerAggregation:stage.scoreCalibration?'max-fused-professional-sections-v2':'max-professional-sections-v2'}:{})},warnings};

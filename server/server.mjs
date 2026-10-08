@@ -30,6 +30,7 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
   const platform = new PlatformService(directory.store, store, { now, accountForOwner });
   const fsp = new FspIntegrationService(directory.store, { now, accountForOwner, env: authEnv });
   platform.profileSource = (owner, person) => fsp.applyProfile(owner, person);
+  fsp.publishProfile = (owner, person) => platform.publication(owner, person).person;
   const marketplace = new MarketplaceService(directory.store, { now, accountForOwner });
   const limits = new Map();
   function send(response, status, value) {

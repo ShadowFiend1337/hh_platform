@@ -41,6 +41,7 @@ export function CandidateDetails({ person, contacts, onInvite, contactNote = 'О
       <div><span className="field-caption">Опыт</span><strong>{person.experience}</strong></div>
       <div><span className="field-caption">Тестирование</span><strong>{person.confirmed ? person.confirmed.score + ' из 100' : 'Не пройдено'}</strong></div>
       <div><span className="field-caption">Грейд</span><strong className="inline-icon">{person.confirmed && <BadgeCheck size={16} />}{person.confirmed ? gradeLabels[person.confirmed.grade] : 'Не подтверждён'}</strong>{person.confirmed && <time className="confirmed-date" dateTime={person.confirmed.date}>{dateLabel(person.confirmed.date)}</time>}</div>
+      {!person.confirmed && <div><span className="field-caption">Желаемый грейд</span><strong>{gradeLabels[person.desiredGrade]}</strong></div>}
     </div>
     <section><h4>О себе</h4><p className="body-copy">{person.bio || 'Пока не заполнено'}</p></section>
     <section><h4>Стек</h4><div className="tags">{person.stack.map(skill => <span className="tag" key={skill}>{skill}</span>)}</div></section>

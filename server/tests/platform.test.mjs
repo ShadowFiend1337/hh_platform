@@ -115,7 +115,7 @@ test('private profile creation needs consent even when an empty company account 
   assert.equal(revoked.state.profile.email, 'test@example.com');
 });
 
-test('forged history, another session proof, FSP badges and synthetic flags cannot publish a user', t => {
+test('forged history, another session proof, FSP badges and synthetic flags cannot confirm a published questionnaire', t => {
   const { platform, store, assessments } = fixture(t);
   const stolen = completed(assessments, ownerB);
   const state = candidateState(stolen);
@@ -127,8 +127,11 @@ test('forged history, another session proof, FSP badges and synthetic flags cann
   assert.equal(saved.state.profile.fspId, 'REAL-FSP', 'A self-reported external ID does not grant verified achievements');
   assert.deepEqual(saved.state.profile.achievements, []);
   assert.equal(saved.state.profile.synthetic, false);
-  assert.equal(store.forOwner(ownerA).eligible, 0);
-  assert.equal(store.matching(defaultSearchFilters).length, 0);
+  assert.equal(store.forOwner(ownerA).eligible, 1, 'A completed questionnaire is publishable as self-reported');
+  assert.equal(store.forOwner(ownerA).grade, '');
+  assert.equal(store.forOwner(ownerA).score, 0);
+  assert.equal(JSON.parse(store.forOwner(ownerA).public_payload).confirmed, null);
+  assert.equal(store.matching(defaultSearchFilters).length, 1);
 });
 
 test('external federation IDs persist and changing one clears server-owned evidence', t => {
