@@ -228,13 +228,7 @@ export function Employer({ state, update, onProfile, onInvite, notify, directory
   return <>
     <div className="page-heading employer-heading"><h1>Кандидаты</h1><div className="button-group">
       <button className="button secondary compact" aria-expanded={showNeeds} aria-controls="hiring-needs" onClick={() => setShowNeeds(!showNeeds)}>Потребности<ChevronDown size={15} /></button>
-      <button className="icon-button save-search" aria-label="Сохранить подборку" title="Сохранить подборку" onClick={saveSearch}><Bookmark size={18} /></button>
-      <div className="saved-control"><button className="button secondary compact" aria-expanded={showSaved} onClick={() => setShowSaved(!showSaved)}>Подборки<ChevronDown size={15} /></button>
-        {showSaved && <div className="saved-popover">{state.savedSearches.length ? state.savedSearches.map(saved => <div className="saved-item" key={saved.id}>
-          <button onClick={() => { setQuery(saved.query); setDraft(saved.query); setFilters(normalizeSearchFilters(saved.filters)); setCategory(null); setNeedId(''); setShowSaved(false); }}>{saved.title}<ArrowUpRight size={15} /></button>
-          <button className="icon-button" aria-label={'Удалить подборку ' + saved.title} onClick={() => update(previous => ({ ...previous, savedSearches: previous.savedSearches.filter(search => search.id !== saved.id) }))}><X size={14} /></button>
-        </div>) : <p className="muted">Подборок пока нет</p>}</div>}
-      </div></div></div>
+      </div></div>
     {showNeeds && <section className="hiring-needs" id="hiring-needs" aria-label="Потребности работодателя">
       <div className="hiring-needs-heading"><h2>Потребности</h2><button className="button secondary compact" disabled={needs.length >= MAX_HIRING_NEEDS} title={needs.length >= MAX_HIRING_NEEDS ? 'Сохранено максимум потребностей: ' + MAX_HIRING_NEEDS : undefined} onClick={() => editNeed()}><Plus size={15} />Новая потребность</button></div>
       {needs.length > 0 && <div className="hiring-needs-list">{needs.map(need => <div className="hiring-need" key={need.id}>
@@ -265,6 +259,7 @@ export function Employer({ state, update, onProfile, onInvite, notify, directory
       <button className="button primary" type="submit">Подобрать</button>
     </form>
     {query && query !== draft.trim() && <p className="search-context" role="status">Результаты по запросу «{query}»</p>}
+    <div className="directory-result-heading"><div className="directory-result-context">
     {category && !recommendationsCurrent && <div className="directory-category-context"><span>{specializationLabels[category.specialization]} · {gradeLabels[category.grade]}</span><button className="icon-button" aria-label="Сбросить категорию" title="Сбросить категорию" onClick={() => setCategory(null)}><X size={14} /></button></div>}
     {recommendationsCurrent && Boolean(response?.categories?.length) && <section className="recommended-categories" aria-label="Рекомендованные категории"><span>{query ? 'Рекомендуемые категории' : 'Категории'}</span><div className="recommended-category-options">
       <button className="filter-chip" aria-label="Все категории" aria-pressed={!category} onClick={() => setCategory(null)}>Все</button>
@@ -273,6 +268,15 @@ export function Employer({ state, update, onProfile, onInvite, notify, directory
       {categories.length > 6 && <button className="text-button category-expand" aria-expanded={showAllCategories} onClick={() => setShowAllCategories(!showAllCategories)}>{showAllCategories ? 'Скрыть категории' : 'Ещё категории'}</button>}
     </div></section>}
     {response?.query === query && interpretation.length > 0 && <div className="directory-interpretation" aria-label="Условия из запроса"><span>Учтено в запросе:</span>{interpretation.map(value => <span className="tag" key={value}>{value}</span>)}</div>}
+    </div><div className="button-group directory-saved-actions">
+      <button className="icon-button save-search" aria-label="Сохранить подборку" title="Сохранить подборку" onClick={saveSearch}><Bookmark size={18} /></button>
+      <div className="saved-control"><button className="button secondary compact" aria-expanded={showSaved} onClick={() => setShowSaved(!showSaved)}>Подборки<ChevronDown size={15} /></button>
+        {showSaved && <div className="saved-popover">{state.savedSearches.length ? state.savedSearches.map(saved => <div className="saved-item" key={saved.id}>
+          <button onClick={() => { setQuery(saved.query); setDraft(saved.query); setFilters(normalizeSearchFilters(saved.filters)); setCategory(null); setNeedId(''); setShowSaved(false); }}>{saved.title}<ArrowUpRight size={15} /></button>
+          <button className="icon-button" aria-label={'Удалить подборку ' + saved.title} onClick={() => update(previous => ({ ...previous, savedSearches: previous.savedSearches.filter(search => search.id !== saved.id) }))}><X size={14} /></button>
+        </div>) : <p className="muted">Подборок пока нет</p>}</div>}
+      </div>
+    </div></div>
     <button className="button secondary mobile-filter-button" onClick={() => setShowFilters(!showFilters)} aria-expanded={showFilters}><SlidersHorizontal size={16} />Фильтры{filterCount > 0 && ' · ' + filterCount}</button>
     <div className="search-layout">
       <aside className={'filters' + (showFilters ? ' filters-open' : '')} aria-label="Фильтры кандидатов">
