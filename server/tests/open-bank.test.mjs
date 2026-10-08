@@ -9,7 +9,12 @@ test('Each catalog program has balanced authoring coverage with actual tier cond
     assert.equal(program.review.approvedForCertification, false);
     for (const group of openGroups) assert.ok(program.questions.filter(question => question.group === group).length >= 10);
     for (const question of program.questions) {
-      assert.ok(question.prompt.includes(openFamilies.find(family => family.id === question.familyId).levels[grade].task));
+      const family = openFamilies.find(family => family.id === question.familyId);
+      assert.ok(question.prompt.includes(family.levels[grade].task));
+      const subjectCriteria = family.levels[grade].criteria || family.criteria;
+      assert.equal(question.rubricOrigin, family.levels[grade].criteria ? 'grade-specific-author-draft' : 'shared-family-requires-grade-review');
+      assert.deepEqual(question.rubric.filter(item => item.id !== 'level-depth').map(item => item.anchors[2]), subjectCriteria.map(item => item.meets));
+      if (family.levels[grade].criteria) assert.equal(question.referenceAnswer.scenario, family.levels[grade].referenceAnswer || family.levels[grade].expected);
       assert.ok(question.referenceAnswer.level.length);
       assert.deepEqual(Object.keys(question.rubric.find(criterion => criterion.id === 'level-depth').anchors), ['0', '1', '2', '3']);
       assert.ok(question.acceptableAlternatives.length && question.criticalErrors.length);
@@ -18,6 +23,50 @@ test('Each catalog program has balanced authoring coverage with actual tier cond
   }
   assert.equal(openBankReview.independentlyReviewed, false);
   assert.equal(openBankReview.empiricallyCalibrated, false);
+});
+
+test('Both independent forms retain practical coverage in every competency and the program extra group', () => {
+  for (const specialization of openSpecializations) for (const grade of openGrades) {
+    const program = getOpenProgram(specialization, grade);
+    const first = sampleOpenQuestions(specialization, grade);
+    const second = sampleOpenQuestions(specialization, grade, { excludedFamilyIds: first.questions.map(item => item.familyId) });
+    for (const form of [first, second]) {
+      assert.ok(form.questions.filter(item => item.practical).length >= program.practicalPolicy.minimum);
+      for (const group of openGroups) {
+        const count = form.questions.filter(item => item.group === group && item.practical).length;
+        assert.ok(count >= (group === program.practicalPolicy.extraGroup ? 2 : 1), specialization + '/' + grade + '/' + group);
+      }
+    }
+  }
+  const program = getOpenProgram('UXUI', 'Junior');
+  assert.ok(program.questions.some(item => item.practical && item.answerFormat === 'text'));
+  const practical = program.questions.filter(item => item.practical).map(item => item.familyId);
+  assert.throws(() => sampleOpenQuestions('UXUI', 'Junior', { excludedFamilyIds: practical }), /Not enough unseen practical families/u);
+});
+
+test('Grade-specific subject anchors override the family fallback and preserve reusable program skills', () => {
+  const families = openFamilies.filter(family => Object.values(family.levels).every(level => level.criteria));
+  assert.ok(families.length > 0);
+  for (const family of families) {
+    const intern = getOpenProgram(family.specialization, 'Intern').questions.find(item => item.familyId === family.id);
+    const lead = getOpenProgram(family.specialization, 'Lead').questions.find(item => item.familyId === family.id);
+    assert.notDeepEqual(intern.rubric.slice(0, -1), lead.rubric.slice(0, -1), family.id);
+    assert.ok(intern.rubric.slice(0, -1).every(item => item.skillId === undefined || item.skillId.startsWith(family.specialization + ':' + family.group + ':')));
+  }
+  const broken = structuredClone(openFamilies);
+  const family = broken.find(item => item.levels.Intern.criteria);
+  family.levels.Intern.criteria[0].skillId = (family.specialization === 'QA' ? 'ML' : 'QA') + ':A:foreign-skill';
+  assert.ok(validateOpenBank(broken, openSources).some(error => error.includes('program scope')));
+  family.levels.Intern.criteria[0].skillId = family.specialization + ':' + family.group + ':skill';
+  family.levels.Intern.criteria[0].strong = family.levels.Intern.criteria[0].meets;
+  assert.ok(validateOpenBank(broken, openSources).some(error => error.includes('/Intern') && error.includes('indistinguishable rubric')));
+  const skillFamilies = new Map();
+  for (const item of families) for (const level of Object.values(item.levels)) for (const criterion of level.criteria) {
+    if (!criterion.skillId) continue;
+    if (!skillFamilies.has(criterion.skillId)) skillFamilies.set(criterion.skillId, new Set());
+    skillFamilies.get(criterion.skillId).add(item.id);
+  }
+  assert.ok([...skillFamilies.values()].some(ids => ids.size > 1), 'Program skills must be reusable across independent families');
 });
 
 test('Another form and another grade respect disclosed family exclusions; exhausted coverage fails explicitly', () => {

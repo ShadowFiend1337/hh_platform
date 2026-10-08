@@ -18,7 +18,14 @@ if (command === 'validate') {
     assert.equal(first.questions.length, 20);
     assert.equal(second.questions.length, 20);
     assert.equal(new Set([...first.questions, ...second.questions].map(question => question.familyId)).size, 40);
-    for (const group of openGroups) assert.equal(first.questions.filter(question => question.group === group).length, 5);
+    for (const form of [first, second]) {
+      assert.ok(form.questions.filter(question => question.practical).length >= program.practicalPolicy.minimum);
+      for (const group of openGroups) {
+        assert.equal(form.questions.filter(question => question.group === group).length, 5);
+        const quota = group === program.practicalPolicy.extraGroup ? 2 : 1;
+        assert.ok(form.questions.filter(question => question.group === group && question.practical).length >= quota);
+      }
+    }
     for (const question of program.questions) {
       assert.ok(question.referenceAnswer.level && question.rubric.some(criterion => criterion.id === 'level-depth'));
       assert.ok(question.sources.every(source => source.verification && source.accessedOn));
@@ -37,7 +44,7 @@ if (command === 'validate') {
     console.log('PASS Private open-bank data are absent from the existing frontend build');
   } else console.log('SKIP Frontend bundle privacy: build frontend first');
   console.log('PASS Specialization/grade coverage, distinct family forms, source provenance and bounded personalization');
-  console.log('PASS Private authoring samples retain different grade conditions, expected actions and rubric versions');
+  console.log('PASS Private authoring samples retain practical coverage, grade conditions, expected actions and rubric versions');
   console.log('LIMITATION Structural validation is not expert review, grade calibration or a candidate study');
 } else if (command === 'sample' || command === 'export') {
   const value = command === 'sample' ? sampleOpenQuestions(specialization, grade)

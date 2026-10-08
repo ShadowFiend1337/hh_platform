@@ -1,0 +1,77 @@
+[
+  {
+    "id": "embedded-adc-api", "title": "ADC API reference", "url": "https://docs.zephyrproject.org/latest/doxygen/html/group__adc__interface.html", "publisher": "Zephyr Project", "kind": "technical-reference", "accessedOn": "2026-10-08", "usage": "original-scenario-no-verbatim-copy", "verification": "opened", "note": "Прочитана официальная документация АЦП. Формула шкалы, числа и критерии в сценариях заданы автором; это не вопросы компании."
+  },
+  {
+    "id": "embedded-ti-adc", "title": "ADC Input Circuit Evaluation for C2000 Real-Time MCUs (using PSPICE-FOR-TI)", "url": "https://www.ti.com/lit/pdf/spracy9", "publisher": "Texas Instruments", "kind": "technical-reference", "accessedOn": "2026-10-08", "usage": "original-scenario-no-verbatim-copy", "verification": "opened", "note": "Прочитан первичный материал о входном тракте и установлении сигнала АЦП. Сценарии и числовые условия авторские, без переноса текста, схем или готовых упражнений."
+  },
+  {
+    "id": "embedded-gpio", "title": "General-Purpose Input/Output (GPIO)", "url": "https://docs.zephyrproject.org/latest/hardware/peripherals/gpio.html", "publisher": "Zephyr Project", "kind": "technical-reference", "accessedOn": "2026-10-08", "usage": "original-scenario-no-verbatim-copy", "verification": "opened", "note": "Прочитан официальный GPIO материал. Пределы напряжения и модель питания гипотетической платы явно заданы в авторских задачах, а не приписаны API Zephyr."
+  },
+  {
+    "id": "embedded-slabs", "title": "Memory Slabs", "url": "https://docs.zephyrproject.org/latest/kernel/memory_management/slabs.html", "publisher": "Zephyr Project", "kind": "technical-reference", "accessedOn": "2026-10-08", "usage": "original-scenario-no-verbatim-copy", "verification": "opened", "note": "Прочитан материал о фиксированных блоках памяти, выравнивании и владении. Все бюджеты RAM и стека в задачах оригинальные."
+  },
+  {
+    "id": "embedded-cache", "title": "Caching Basics", "url": "https://docs.zephyrproject.org/latest/hardware/cache/guide.html", "publisher": "Zephyr Project", "kind": "technical-reference", "accessedOn": "2026-10-08", "usage": "original-scenario-no-verbatim-copy", "verification": "opened", "note": "Прочитано официальное описание cache и согласования DMA. Некогерентность и размер строки явно заданы в сценарии; аппаратные особенности конкретной платы необходимо проверять отдельно."
+  },
+  {
+    "id": "embedded-interrupts", "title": "Interrupts", "url": "https://docs.zephyrproject.org/latest/kernel/services/interrupts.html", "publisher": "Zephyr Project", "kind": "technical-reference", "accessedOn": "2026-10-08", "usage": "original-scenario-no-verbatim-copy", "verification": "opened", "note": "Прочитан первичный материал о контексте ISR, ограничении блокировки и передаче работы. Карта условного W1C регистра и раздельные стеки — авторские явно заданные аппаратные допущения."
+  },
+  {
+    "id": "embedded-i2c-spec", "title": "I2C-bus specification and user manual, UM10204", "url": "https://www.nxp.com/docs/en/user-guide/UM10204.pdf", "publisher": "NXP Semiconductors", "kind": "technical-reference", "accessedOn": "2026-10-08", "usage": "original-scenario-no-verbatim-copy", "verification": "opened", "note": "Прочитана первичная спецификация I2C. Учебные значения RC, адреса и разрешённая recovery последовательность сформулированы заново; они не являются универсальными инструкциями для произвольной платы."
+  },
+  {
+    "id": "embedded-i2c", "title": "Inter-Integrated Circuit (I2C) Bus", "url": "https://docs.zephyrproject.org/latest/hardware/peripherals/i2c.html", "publisher": "Zephyr Project", "kind": "technical-reference", "accessedOn": "2026-10-08", "usage": "original-scenario-no-verbatim-copy", "verification": "opened", "note": "Прочитана документация I2C контроллера и ограничений времени ожидания. Авторские задачи явно задают форму адреса, разрешённые действия и таймауты."
+  },
+  {
+    "id": "embedded-spi-api", "title": "SPI API reference", "url": "https://docs.zephyrproject.org/latest/doxygen/html/group__spi__interface.html", "publisher": "Zephyr Project", "kind": "technical-reference", "accessedOn": "2026-10-08", "usage": "original-scenario-no-verbatim-copy", "verification": "opened", "note": "Прочитан официальный API SPI с конфигурацией полярности, фазы и передачи. Трассы, частоты и конфликты устройств в банке авторские."
+  },
+  {
+    "id": "embedded-uart", "title": "Universal Asynchronous Receiver-Transmitter (UART)", "url": "https://docs.zephyrproject.org/latest/hardware/peripherals/uart.html", "publisher": "Zephyr Project", "kind": "technical-reference", "accessedOn": "2026-10-08", "usage": "original-scenario-no-verbatim-copy", "verification": "opened", "note": "Прочитана документация polling, interrupt и asynchronous UART. Протокол кадров, checksum, byte order и DMA API в задачах — явно условные авторские контракты."
+  },
+  {
+    "id": "embedded-pwm", "title": "Pulse Width Modulation (PWM)", "url": "https://docs.zephyrproject.org/latest/hardware/peripherals/pwm.html", "publisher": "Zephyr Project", "kind": "technical-reference", "accessedOn": "2026-10-08", "usage": "original-scenario-no-verbatim-copy", "verification": "opened", "note": "Прочитан первичный материал о периоде и длительности активного импульса. Формула PSC/ARR и CCR явно заданы как модель условного таймера, а не универсальный регистровый интерфейс Zephyr."
+  },
+  {
+    "id": "embedded-can", "title": "CAN Controller", "url": "https://docs.zephyrproject.org/latest/hardware/peripherals/can/controller.html", "publisher": "Zephyr Project", "kind": "technical-reference", "accessedOn": "2026-10-08", "usage": "original-scenario-no-verbatim-copy", "verification": "opened", "note": "Прочитана официальная документация CAN arbitration, идентификаторов и результата передачи. Сетевые нагрузки и deadlines авторские; готовые примеры кода не копировались."
+  },
+  {
+    "id": "embedded-message-queues", "title": "Message Queues", "url": "https://docs.zephyrproject.org/latest/kernel/services/data_passing/message_queues.html", "publisher": "Zephyr Project", "kind": "technical-reference", "accessedOn": "2026-10-08", "usage": "original-scenario-no-verbatim-copy", "verification": "opened", "note": "Прочитан первичный материал о bounded очередях и передаче событий. SPSC модель, rates и burst условия оригинальные; данные источника не превращены в утверждение о калиброванных грейдах."
+  },
+  {
+    "id": "embedded-atomic", "title": "Atomic Services", "url": "https://docs.zephyrproject.org/latest/kernel/services/other/atomic.html", "publisher": "Zephyr Project", "kind": "technical-reference", "accessedOn": "2026-10-08", "usage": "original-scenario-no-verbatim-copy", "verification": "opened", "note": "Прочитана документация атомарных операций и memory ordering. В сценариях отдельно задаётся атомарность и release/acquire модель; эталоны не требуют неподтверждённых возможностей MCU."
+  },
+  {
+    "id": "embedded-mutexes", "title": "Mutexes", "url": "https://docs.zephyrproject.org/latest/kernel/services/synchronization/mutexes.html", "publisher": "Zephyr Project", "kind": "technical-reference", "accessedOn": "2026-10-08", "usage": "original-scenario-no-verbatim-copy", "verification": "opened", "note": "Прочитаны ограничения контекста mutex и priority inheritance. Задачи о блокировке и цепочках ресурсов авторские; наличие конкретного протокола в target RTOS требуется проверить."
+  },
+  {
+    "id": "embedded-scheduling", "title": "Scheduling", "url": "https://docs.zephyrproject.org/latest/kernel/services/scheduling/index.html", "publisher": "Zephyr Project", "kind": "technical-reference", "accessedOn": "2026-10-08", "usage": "original-scenario-no-verbatim-copy", "verification": "opened", "note": "Прочитан официальный материал о планировании. Примеры deadlines и interference сформулированы автором; прошедший стендовый тест не приравнивается к доказательству всех верхних границ."
+  },
+  {
+    "id": "embedded-timers", "title": "Timers", "url": "https://docs.zephyrproject.org/latest/kernel/services/timing/timers.html", "publisher": "Zephyr Project", "kind": "technical-reference", "accessedOn": "2026-10-08", "usage": "original-scenario-no-verbatim-copy", "verification": "opened", "note": "Прочитаны первичные сведения о timer expiry context и периодах. Debounce, periodic loop и fault timing трассы оригинальные и самодостаточные."
+  },
+  {
+    "id": "embedded-clocks", "title": "Kernel Timing", "url": "https://docs.zephyrproject.org/latest/kernel/services/timing/clocks.html", "publisher": "Zephyr Project", "kind": "technical-reference", "accessedOn": "2026-10-08", "usage": "original-scenario-no-verbatim-copy", "verification": "opened", "note": "Прочитан материал о часах, единицах и time conversion. Числа wraparound и предпосылки интервалов заданы автором; это не цитаты упражнения из источника."
+  },
+  {
+    "id": "embedded-watchdog-api", "title": "Watchdog API reference", "url": "https://docs.zephyrproject.org/latest/doxygen/html/group__watchdog__interface.html", "publisher": "Zephyr Project", "kind": "technical-reference", "accessedOn": "2026-10-08", "usage": "original-scenario-no-verbatim-copy", "verification": "opened", "note": "Прочитана официальная watchdog API документация. Task progress, безопасные выходы и интервалы — авторская постановка; специфические safety гарантии оборудования не приписываются библиотеке."
+  },
+  {
+    "id": "embedded-nvs", "title": "Non-Volatile Storage (NVS)", "url": "https://docs.zephyrproject.org/latest/services/storage/nvs/nvs.html", "publisher": "Zephyr Project", "kind": "technical-reference", "accessedOn": "2026-10-08", "usage": "original-scenario-no-verbatim-copy", "verification": "opened", "note": "Прочитан материал о законченных записях, CRC и flash wear. Числа, двухстраничный протокол и сценарий питания оригинальные; расчёт из документации не копировался."
+  },
+  {
+    "id": "embedded-mcuboot", "title": "MCUboot bootloader design", "url": "https://docs.mcuboot.com/design.html", "publisher": "MCUboot Project", "kind": "technical-reference", "accessedOn": "2026-10-08", "usage": "original-scenario-no-verbatim-copy", "verification": "opened", "note": "Прочитан первичный материал о проверке image, trial boot, confirm и rollback. Сценарии ключей, схем и двух продуктов авторские; требуются явные проверки конфигурации конкретного bootloader."
+  },
+  {
+    "id": "embedded-dfu", "title": "Device Firmware Upgrade", "url": "https://docs.zephyrproject.org/latest/services/device_mgmt/dfu.html", "publisher": "Zephyr Project", "kind": "technical-reference", "accessedOn": "2026-10-08", "usage": "original-scenario-no-verbatim-copy", "verification": "opened", "note": "Прочитана официальная документация доставки firmware. Авторские задачи отдельно рассматривают download, проверку, активацию и восстановление, без копирования готового интервью."
+  },
+  {
+    "id": "embedded-coredump", "title": "Core Dump", "url": "https://docs.zephyrproject.org/latest/services/debugging/coredump.html", "publisher": "Zephyr Project", "kind": "technical-reference", "accessedOn": "2026-10-08", "usage": "original-scenario-no-verbatim-copy", "verification": "opened", "note": "Прочитан первичный материал о crash capture и разборе dump. Build IDs, bounded retained snapshot и полевые симптомы в задачах оригинальные."
+  },
+  {
+    "id": "embedded-logging", "title": "Logging", "url": "https://docs.zephyrproject.org/latest/services/logging/index.html", "publisher": "Zephyr Project", "kind": "technical-reference", "accessedOn": "2026-10-08", "usage": "original-scenario-no-verbatim-copy", "verification": "opened", "note": "Прочитана документация logging modes и ресурсов. Аварийный путь в задачах самодостаточно задаёт ограничения и не предполагает исправность обычной logging инфраструктуры."
+  },
+  {
+    "id": "embedded-testing", "title": "Test Framework", "url": "https://docs.zephyrproject.org/latest/develop/test/ztest.html", "publisher": "Zephyr Project", "kind": "technical-reference", "accessedOn": "2026-10-08", "usage": "original-scenario-no-verbatim-copy", "verification": "opened", "note": "Прочитаны различия unit и integration tests, mocks и исполняемого target. HIL условия и expected outputs авторские; документация не заявляет,что её mock tests доказывают физическую безопасность."
+  }
+]
