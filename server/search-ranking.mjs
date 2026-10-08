@@ -14,12 +14,14 @@ export const CATEGORY_RANKING_POLICY = Object.freeze({
   categoryPositions: 'preserved',
 });
 
-// Existing real profiles have no separately verified federation provenance.
+// Real federation identity verification is not connected yet.
 // Merely writing an external ID or a competition title cannot earn a bonus.
-// A future trusted provider may supply a server-validated evidence resolver;
-// the default deliberately recognises only the authored demonstration corpus.
+// Metadata below is supplied only by the session-bound server demo provider;
+// ordinary profile input cannot set it. Demo evidence never verifies identity.
 export function rankingFspEvidence(person) {
-  return person?.synthetic === true && Array.isArray(person.achievements) && person.achievements.length
+  const demoProvider = person?.fspEvidence?.provider === 'fsp-demo' && person.fspEvidence.mode === 'demo'
+    && person.fspEvidence.identityVerified === false && person.fspEvidence.activeCount > 0;
+  return (person?.synthetic === true || demoProvider) && Array.isArray(person.achievements) && person.achievements.length
     ? 'synthetic-demo' : null;
 }
 
@@ -89,7 +91,7 @@ export function rankComparableCandidates(items, { scoreKind = 'logit', fspEviden
         const band = slots.map(position => {
           const item = ordered[position], source = fspEvidence(item.person);
           // The resolver must name a known provenance, not return a truthy ID.
-          const evidence = (source === 'synthetic-demo' && item.person.synthetic === true)
+          const evidence = (source === 'synthetic-demo' && rankingFspEvidence(item.person) === source)
             || (source === 'verified-fsp' && item.person.synthetic !== true) ? source : null;
           return { item, evidence, strength: testScore(item) + (evidence ? CATEGORY_RANKING_POLICY.fspTestPointBonus : 0) };
         });

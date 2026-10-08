@@ -112,7 +112,7 @@ export function CandidateDeck({ items, decisions, favorites, loading, loadingMor
         <div className="swipe-person-top"><div className="avatar swipe-avatar">{initials(current.person.name)}</div>
           <div className="swipe-badges">
             {current.person.demoProfile && <span className="tag" title="Вымышленный профиль для проверки подбора">Демо</span>}
-            {current.person.achievements.length > 0 && <Medal size={18} aria-label={current.person.synthetic ? 'ФСП · демо: вымышленные результаты' : 'Есть сведения ФСП в профиле'} />}</div>
+            {current.person.achievements.length > 0 && <Medal size={18} aria-label={current.person.synthetic || current.person.fspEvidence?.mode === 'demo' ? 'ФСП · демо: вымышленные результаты' : 'Есть сведения ФСП в профиле'} />}</div>
         </div>
         <div className="swipe-person-heading"><button className="person-link" onClick={() => onProfile(current.person)}>{current.person.name}<ArrowUpRight size={19} /></button>
           <p className="candidate-specialization">{specializationLabels[current.person.confirmed?.specialization || current.person.specialization]}

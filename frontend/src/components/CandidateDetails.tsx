@@ -49,7 +49,7 @@ export function CandidateDetails({ person, contacts, onInvite, contactNote = 'О
     {careerAchievements && <section><h4>Достижения</h4><p className="body-copy resume-copy">{careerAchievements}</p></section>}
     {education && <section><h4>Образование</h4><p className="body-copy resume-copy">{education}</p></section>}
     {person.languages && <section><h4>Языки</h4><p className="body-copy resume-copy">{person.languages}</p></section>}
-    <section><h4 className="inline-icon" title={person.synthetic ? 'Вымышленные результаты демонстрационного профиля' : 'Сведения из профиля'}><Medal size={17} />{person.synthetic ? 'ФСП · демо' : 'Достижения ФСП'}</h4>
+    <section><h4 className="inline-icon" title={person.synthetic || person.fspEvidence?.mode === 'demo' ? 'Вымышленные результаты; личность ФСП не подтверждена' : 'Сведения из профиля'}><Medal size={17} />{person.synthetic || person.fspEvidence?.mode === 'demo' ? 'ФСП · демо' : 'Достижения ФСП'}</h4>
       {achievements.length ? achievements.map((achievement, index) => <div key={index} className="achievement"><strong>{achievement.title}</strong><span>{achievement.result} · {achievement.year}</span></div>)
         : <p className="muted">Истории ФСП пока нет</p>}
     </section>

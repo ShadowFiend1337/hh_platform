@@ -1,0 +1,6 @@
+.fsp-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.fsp-evidence-list { list-style: none; margin: 12px 0; padding: 0; }
+.fsp-evidence-list li + li { margin-top: 12px; }
+.fsp-evidence-list strong { font-size: 14px; font-weight: 600; }
+.fsp-link .dialog-form { display: grid; gap: 16px; }
+.fsp-link .dialog-form .field-help { margin: 0; }

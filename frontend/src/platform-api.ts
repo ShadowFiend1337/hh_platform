@@ -232,6 +232,17 @@ export function usePlatformPersistence(state: PlatformState, update: Dispatch<Se
   }, [enabled, ready, update]);
 
   return { ready, revision, directoryRevision, people, contactCandidateIds, status, error,
+    refresh: async () => {
+      if (!enabled) throw new ApiError('Войдите в аккаунт.', 401);
+      await writing.current;
+      const result = await request('GET', undefined, serverIdentity.current);
+      if (!mounted.current || blocked.current) return;
+      const next = result.state ? rebaseState(current.current, baseline.current, result.state) : createInitialState();
+      receive(result);
+      if (!result.state) persisted.current = hash(next);
+      current.current = next; update(next); setError('');
+      setStatus(hash(next) === persisted.current ? 'saved' : 'saving');
+    },
     retry: () => {
       setError('');
       if (ready) setStatus('saving');

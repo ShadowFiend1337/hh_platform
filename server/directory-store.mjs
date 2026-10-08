@@ -104,7 +104,7 @@ export function publicCandidate(person, id = person.id) {
   const allowed = ['name', 'specialization', 'desiredGrade', 'confirmed', 'gradeChangedAt', 'stack', 'industry', 'professionalRole',
     'surveyCompletedAt', 'experience', 'city', 'format', 'bio', 'careerAchievements', 'education', 'workHistory', 'softSkills',
     'portfolio', 'languages', 'achievements', 'visible', 'consent', 'salaryFrom', 'salaryTo', 'experienceMonths',
-    'employmentType', 'availableFrom', 'languageCodes', 'synthetic'];
+    'employmentType', 'availableFrom', 'languageCodes', 'synthetic', 'fspEvidence'];
   const output = Object.fromEntries(allowed.filter(key => Object.hasOwn(person, key)).map(key => [key, person[key]]));
   for (const key of ['name', 'professionalRole', 'experience', 'bio', 'careerAchievements', 'education', 'workHistory', 'languages']) {
     if (output[key]) output[key] = scrub(output[key]);

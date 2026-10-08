@@ -7,6 +7,7 @@ import { employmentTypes } from '../../../shared/search.ts';
 import { deriveExperienceMonths, deriveLanguageCodes } from '../candidate-preferences';
 import { SoftSkillsField } from '../components/SoftSkillsField';
 import { CandidateHistory } from '../components/CandidateHistory';
+import { FspLink } from '../components/FspLink';
 
 function sameValues(left: string[], right: string[]) {
   const leftValues = new Set(left);
@@ -14,9 +15,10 @@ function sameValues(left: string[], right: string[]) {
   return leftValues.size === rightValues.size && [...leftValues].every(value => rightValues.has(value));
 }
 
-export function Profile({ state, update, notify, onTest, onPreview }: {
+export function Profile({ state, update, notify, onTest, onPreview, onFspChange, syncStatus }: {
   state: PlatformState; update: (fn: (state: PlatformState) => PlatformState) => void;
   notify: (message: string) => void; onTest: () => void; onPreview: () => void;
+  onFspChange: () => Promise<void>; syncStatus: string;
 }) {
   const [fspId, setFspId] = useState(state.profile.fspId);
   const [consent, setConsent] = useState(state.profile.consent);
@@ -111,8 +113,9 @@ export function Profile({ state, update, notify, onTest, onPreview }: {
         </fieldset>
         <div className="section-divider" />
         <FormHeader title="ФСП" Icon={Medal} />
-        <label className="field"><span>ID участника</span><input value={fspId} maxLength={100} onChange={event => setFspId(event.target.value)} placeholder="Необязательно" /></label>
-        {fspId && <p className="field-help">Привязка ожидает проверки</p>}
+        <FspLink disabled={!consent || consent !== profile.consent || syncStatus !== 'saved'} onChange={async result => {
+          setFspId(result.fspId); await onFspChange();
+        }} />
         <div className="section-divider" />
         <label className="checkbox-field"><input type="checkbox" disabled={!consent} checked={visible && consent} onChange={event => setVisible(event.target.checked)} /><span>Показывать профиль работодателям</span></label>
         <label className="checkbox-field"><input type="checkbox" checked={consent} onChange={event => { setConsent(event.target.checked); if (!event.target.checked) setVisible(false); }} /><span>Согласен на обработку персональных данных</span></label>

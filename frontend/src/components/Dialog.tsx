@@ -24,7 +24,7 @@ export function Dialog({ title, children, onClose, wide = false }: {
       const rect = event.currentTarget.getBoundingClientRect();
       if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) onClose();
     }}>
-    <div className="dialog-header"><h2 id="dialog-title">{title}</h2><button className="icon-button" aria-label="Закрыть" onClick={onClose}><X size={20} /></button></div>
+    <div className="dialog-header"><h2 id="dialog-title">{title}</h2><button type="button" className="icon-button" aria-label="Закрыть" onClick={onClose}><X size={20} /></button></div>
     {children}
   </dialog>;
 }

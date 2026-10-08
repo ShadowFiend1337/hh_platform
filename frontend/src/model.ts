@@ -69,6 +69,7 @@ export interface Candidate {
   phone: string;
   fspId: string;
   achievements: { title: string; result: string; year: string }[];
+  fspEvidence?: { provider: 'fsp-demo'; mode: 'demo'; identityVerified: false; lastSyncedAt: string; activeCount: number; revokedCount: number } | null;
   visible: boolean;
   consent: boolean;
   salaryFrom?: number | null;

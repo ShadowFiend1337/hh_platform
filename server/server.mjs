@@ -9,6 +9,7 @@ import { DirectoryService } from './directory.mjs';
 import { PlatformService } from './platform.mjs';
 import { MarketplaceService } from './marketplace.mjs';
 import { AuthError, AuthService } from './auth.mjs';
+import { FspIntegrationService } from './fsp-integration.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const cookieName = 'predel_session';
@@ -27,6 +28,8 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
   const accountForOwner = owner => typeof owner === 'string' ? auth.accountForPlatformOwner(owner) : null;
   const directory = new DirectoryService(dbPath, { accountForOwner });
   const platform = new PlatformService(directory.store, store, { now, accountForOwner });
+  const fsp = new FspIntegrationService(directory.store, { now, accountForOwner, env: authEnv });
+  platform.profileSource = (owner, person) => fsp.applyProfile(owner, person);
   const marketplace = new MarketplaceService(directory.store, { now, accountForOwner });
   const limits = new Map();
   function send(response, status, value) {
@@ -164,6 +167,18 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
           }
           throw new RequestError(405, 'Метод не поддерживается.');
         }
+        if (url.pathname === '/api/integrations/fsp-demo' || /^\/api\/integrations\/fsp-demo\/(connect|sync)$/.test(url.pathname)) {
+          allowRole(identity, 'candidate', 'Привязка ФСП доступна соискателю.');
+          const identityScope = 'auth:' + identity.account.id;
+          response.setHeader('X-Platform-Identity', identityScope);
+          if (request.method === 'GET' && url.pathname === '/api/integrations/fsp-demo') return send(response, 200, fsp.read(session));
+          if (request.headers['x-platform-identity'] !== identityScope) throw new RequestError(409, 'Аккаунт изменился. Обновите страницу.');
+          limit('fsp:' + session, 12, 60000);
+          if (request.method === 'POST' && url.pathname.endsWith('/connect')) return send(response, 200, fsp.connect(session, await body(request)));
+          if (request.method === 'POST' && url.pathname.endsWith('/sync')) return send(response, 200, fsp.sync(session, await body(request)));
+          if (request.method === 'DELETE' && url.pathname === '/api/integrations/fsp-demo') return send(response, 200, fsp.disconnect(session, await body(request)));
+          throw new RequestError(405, 'Метод не поддерживается.');
+        }
         const contacts = /^\/api\/directory\/([^/]+)\/contacts$/.exec(url.pathname);
         if (request.method === 'GET' && contacts) return send(response, 200, platform.contacts(session, decodeURIComponent(contacts[1])));
         if (request.method === 'GET' && url.pathname === '/api/directory/options') {
@@ -295,7 +310,7 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
   server.requestTimeout = 15000;
   server.headersTimeout = 10000;
   server.on('close', () => { auth.close(); directory.close(); store.close(); });
-  return { server, store, directory, platform, marketplace, auth };
+  return { server, store, directory, platform, marketplace, auth, fsp };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

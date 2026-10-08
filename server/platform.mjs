@@ -360,6 +360,7 @@ export class PlatformService {
       }
       const oldProfile = account ? JSON.parse(account.profile) : null;
       const person = profile(value.profile, oldProfile);
+      this.profileSource?.(owner, person);
       if (this.accountForOwner) person.synthetic = isLocalFixtureAccount(this.accountForOwner(owner));
       if (role === 'employer' && (hasPrivateProfile(person) || person.consent || incomingSurveys.length)) {
         throw new RequestError(403, 'Профиль и анкеты доступны соискателю.');
