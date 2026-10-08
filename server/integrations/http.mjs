@@ -8,7 +8,7 @@ export function callbackPage(response) {
     'Content-Security-Policy': `default-src 'none'; script-src 'nonce-${nonce}'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'` });
   // SameSite=Strict cookies are absent on the provider's initial navigation.
   // The same-origin POST from this page restores them without weakening cookies.
-  response.end(`<!doctype html><html lang="ru"><meta charset="utf-8"><title>Подключение ФСП</title><p id="message" role="status">Завершаем подключение ФСП…</p><script nonce="${nonce}">
+  response.end(`<!doctype html><html lang="ru"><meta charset="utf-8"><title>Подключение источника</title><p id="message" role="status">Завершаем подключение источника…</p><script nonce="${nonce}">
 (async () => {
   const params = new URLSearchParams(location.search);
   const input = Object.fromEntries(['state','code','error'].filter(key => params.has(key)).map(key => [key, params.get(key)]));
@@ -50,6 +50,11 @@ export async function integrationRoutes({ request, response, url, identity, inte
   }
   if (identity.account.role !== 'candidate') throw new RequestError(403, 'Подключения доступны соискателю.');
   const scope = 'auth:' + identity.account.id; response.setHeader('X-Platform-Identity', scope);
+  if(path==='/api/integrations/public-achievements/sources') {
+    if(request.method!=='GET')throw new RequestError(405,'Метод не поддерживается.');integrations.requireConsent(owner);
+    if(url.search)throw new RequestError(400,'Недопустимые параметры запроса.');
+    send(response,200,integrations.publicCollector.list());return true;
+  }
   if (path === '/api/integrations/fsp-public/search') {
     if (request.method !== 'GET') throw new RequestError(405, 'Метод не поддерживается.');
     if ([...url.searchParams.keys()].some(key => !['name','limit','offset'].includes(key))
@@ -57,9 +62,15 @@ export async function integrationRoutes({ request, response, url, identity, inte
     integrations.requireConsent(owner);
     limit('fsp-public-search:' + owner, 30, 60000);
     response.setHeader('Cache-Control', 'no-store');
-    send(response, 200, integrations.publicCatalog.search(url.searchParams.get('name'), url.searchParams.get('limit') ?? '20', url.searchParams.get('offset') ?? '0')); return true;
+    send(response, 200, integrations.fspCatalog.search(url.searchParams.get('name'), url.searchParams.get('limit') ?? '20', url.searchParams.get('offset') ?? '0')); return true;
   }
-  const match = /^\/api\/integrations\/([a-z][a-z0-9-]{0,40})(?:\/(connect|sync|callback))?$/u.exec(path);
+  if (path === '/api/integrations/public-achievements/search') {
+    if(request.method!=='GET')throw new RequestError(405,'Метод не поддерживается.');
+    if([...url.searchParams.keys()].some(key=>!['name','limit','offset','sourceId'].includes(key)||url.searchParams.getAll(key).length!==1))throw new RequestError(400,'Недопустимые параметры поиска.');
+    integrations.requireConsent(owner);limit('public-search:'+owner,30,60000);
+    send(response,200,integrations.publicAchievements.search(url.searchParams.get('name'),url.searchParams.get('limit')??'20',url.searchParams.get('offset')??'0',url.searchParams.get('sourceId')||undefined));return true;
+  }
+  const match = /^\/api\/integrations\/([a-z][a-z0-9-]{0,40})(?:\/(connect|sync|callback|verify))?$/u.exec(path);
   if (['POST','DELETE'].includes(request.method) && match?.[2] !== 'callback' && request.headers['x-platform-identity'] !== scope) throw new RequestError(409, 'Аккаунт изменился. Обновите страницу.');
   if (path === '/api/integrations' && request.method === 'GET') { send(response, 200, integrations.connections(owner)); return true; }
   if (path === '/api/profile/evidence' && request.method === 'GET') { send(response, 200, integrations.evidence(owner)); return true; }
@@ -70,6 +81,10 @@ export async function integrationRoutes({ request, response, url, identity, inte
     if (action === 'connect' && request.method === 'POST') {
       limit('integration-connect:' + owner, 10, 600000);
       send(response, 202, await integrations.connect(owner, provider, await body(request))); return true;
+    }
+    if (action === 'verify' && request.method === 'POST') {
+      limit('integration-verify:' + owner, 10, 600000);
+      send(response, 200, await integrations.verifyChallenge(owner, provider, await body(request))); return true;
     }
     if (action === 'callback' && request.method === 'POST') {
       limit('integration-callback:' + owner, 20, 600000);

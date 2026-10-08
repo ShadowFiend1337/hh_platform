@@ -108,7 +108,7 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
         if (url.pathname === '/api/integrations/openapi.json' && request.method === 'GET') {
           return send(response, 200, JSON.parse(await readFile(resolve(root, 'docs/api/integrations.openapi.json'), 'utf8')));
         }
-        if (url.pathname === '/api/integrations/fsp/callback' && request.method === 'GET') return callbackPage(response);
+        if (['/api/integrations/fsp/callback','/api/integrations/github/callback'].includes(url.pathname) && request.method === 'GET') return callbackPage(response);
         if (url.pathname === '/api/integrations/fsp/webhook' && request.method === 'POST') {
           limit('integration-webhook:' + request.socket.remoteAddress, 60, 60000);
           return send(response, 202, integrations.webhook(await readWebhook(request), request.headers));

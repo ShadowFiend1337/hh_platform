@@ -15,12 +15,20 @@ export class PublicSourceChecks {
     return row?{sourceId:row.source_id,reviewedHash:row.reviewed_hash,fetchedHash:row.fetched_hash,status:row.status,checkedAt:row.checked_at}:null;
   }
   status(source) {
+    if(source.provider==='public-achievements')return this.integrations.publicCollector.availability(source.sourceId);
     const row=this.view(source.sourceId);
     // A newly reviewed catalog supersedes a check against its older hash.
     if(!row || row.reviewedHash!==source.documentHash && row.fetchedHash===source.documentHash) return null;
     return row.status==='matched' && row.fetchedHash!==source.documentHash ? 'changed' : row.status;
   }
   async check(sourceId) {
+    if(this.integrations.publicCollector.sources.has(sourceId)) {
+      const result=await this.integrations.publicCollector.refresh(sourceId);
+      this.db.prepare(`INSERT INTO fsp_public_source_checks VALUES(?,?,?,?,?) ON CONFLICT(source_id) DO UPDATE SET
+        reviewed_hash=excluded.reviewed_hash,fetched_hash=excluded.fetched_hash,status=excluded.status,checked_at=excluded.checked_at`)
+        .run(sourceId,result.reviewedHash,result.fetchedHash,result.status,result.checkedAt);
+      return this.view(sourceId);
+    }
     const source=this.integrations.publicCatalog.read().sources.find(source=>source.id===sourceId);
     if(!source) throw new RequestError(404,'Источник не найден.');
     const url=new URL(source.sourceUrl);

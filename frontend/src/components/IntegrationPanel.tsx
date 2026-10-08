@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { integrationRequest, integrationErrorLabels, type IntegrationProvider, type IntegrationConnection, type IntegrationJob, type Evidence } from '../integrations-api';
 import { ClaimPanel } from './ClaimPanel';
-import { PublicFspSearch } from './PublicFspSearch';
+import { PublicAchievementSearch } from './PublicAchievementSearch';
 import { EvidenceList } from './EvidenceList';
+import { ProfileChallengeConnect } from './ProfileChallengeConnect';
+import { KaggleConnect } from './KaggleConnect';
 
 export function IntegrationPanel({ accountId, consent }: { accountId?: string; consent: boolean }) {
   const [claimsRevision,setClaimsRevision]=useState(0);
@@ -61,19 +63,21 @@ export function IntegrationPanel({ accountId, consent }: { accountId?: string; c
     {!accountId ? <p className="muted">Для подключения источников войдите в аккаунт кандидата.</p> : <>
       {!consent && <p className="muted">Сначала сохраните профиль с согласием на обработку данных.</p>}
       <label className="checkbox-field"><input type="checkbox" checked={approved} onChange={event => setApproved(event.target.checked)} /><span>Согласен на получение и хранение моих достижений из выбранного источника. Публикацией управляют настройки профиля.</span></label>
-      <PublicFspSearch accountId={accountId} consent={consent} onClaimCreated={()=>{setClaimsRevision(value=>value+1);setRevision(value=>value+1);}} />
+      <PublicAchievementSearch accountId={accountId} consent={consent} onClaimCreated={()=>{setClaimsRevision(value=>value+1);setRevision(value=>value+1);}} />
       <ClaimPanel accountId={accountId} consent={consent} revision={claimsRevision} onChange={()=>setRevision(value=>value+1)} />
       {providers.map(provider => {
         const connection = connections.find(item => item.provider === provider.id);
         return <div className="integration-source" key={provider.id}><h3>{provider.name}</h3>
           {provider.mode === 'demo' && <p className="field-help">Вымышленные записи не подтверждают навыки и не дают бонуса ФСП.</p>}
-          {!provider.enabled && <p className="muted">Подключение будет доступно после настройки доступа к источнику.</p>}
+          {!provider.enabled && <p className="muted">{['codeforces','atcoder','kaggle'].includes(provider.id) ? 'Источник отключён администратором.' : 'Подключение будет доступно после настройки доступа к источнику.'}</p>}
+          {provider.id==='github'&&<p className="field-help">Подтверждение аккаунта через GitHub. Импортируются публичные проекты и принятые PR; качество кода и грейд оцениваются отдельно.</p>}
           {connection ? <><p>{connection.externalId} · {connection.identityVerified ? 'Аккаунт подтверждён' : 'Демонстрационная привязка'}</p>
+            {provider.id==='atcoder'&&<p className="field-help">Оставьте проверочный код в Affiliation до отключения аккаунта: он нужен для каждого обновления.</p>}
             <p className="field-help">{connection.lastSyncedAt ? 'Последнее обновление: ' + new Date(connection.lastSyncedAt).toLocaleString('ru-RU') : 'Ожидает первого обновления'}</p>
             {connection.lastError && <p role="status">{integrationErrorLabels[connection.lastError] || 'Обновление не завершено'}</p>}
             <div className="integration-actions"><button className="button secondary compact" disabled={busy || !consent || connection.status === 'reauthorization_required'} onClick={() => void action(provider, 'sync')}>Обновить</button>
               <button className="button secondary compact" disabled={busy} onClick={() => void action(provider, 'disconnect')}>Отключить и удалить данные</button></div>
-          </> : <>
+          </> : provider.auth === 'profile_challenge' ? <ProfileChallengeConnect key={accountId + ':' + consent} provider={provider} accountId={accountId} consent={consent} approved={approved} enabled={provider.enabled} onConnected={next=>{setJob(next);setApproved(false);setRevision(value=>value+1);}} /> : provider.auth==='api_token' ? <KaggleConnect key={accountId+':'+consent} accountId={accountId} consent={consent} approved={approved} enabled={provider.enabled} onConnected={next=>{setJob(next);setApproved(false);setRevision(value=>value+1);}} /> : <>
             {provider.mode === 'demo' && <label className="field"><span>Демонстрационный сценарий</span><select value={scenario} onChange={event => setScenario(event.target.value)}>
               <option value="achievements">Есть достижения</option><option value="empty">История пуста</option><option value="not-found">Участник не найден</option><option value="unavailable">Источник недоступен</option><option value="revoked">Достижение отозвано</option>
             </select></label>}

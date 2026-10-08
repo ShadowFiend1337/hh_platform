@@ -12,8 +12,15 @@ export async function claimRoutes({request,response,url,identity,integrations,bo
   const scope='auth:'+identity.account.id;response.setHeader('X-Platform-Identity',scope);
   if(['POST','PUT','DELETE'].includes(request.method) && request.headers['x-platform-identity']!==scope) throw new RequestError(409,'Аккаунт изменился. Обновите страницу.');
   const sourceCheck = /^\/api\/moderation\/sources\/([a-z0-9-]{1,100})\/check$/u.exec(path);
+  if(path==='/api/moderation/sources'&&request.method==='GET'){query(url,[]);send(response,200,integrations.publicCollector.list());return true;}
+  const sourceCollect=/^\/api\/moderation\/sources\/([a-z0-9-]{1,100})\/collect$/u.exec(path);
+  if(sourceCollect&&request.method==='POST'){query(url,[]);const input=await body(request);if(Object.keys(input).length)throw new RequestError(400,'Ожидается пустой объект.');limit('source-collect:'+identity.account.id,10,600000);send(response,202,{job:integrations.publicCollector.enqueue(sourceCollect[1])});return true;}
+  const collectionJob=/^\/api\/moderation\/sources\/jobs\/([a-f\d-]{36})$/u.exec(path);
+  if((sourceCollect&&request.method!=='POST')||(collectionJob&&request.method!=='GET')||(path==='/api/moderation/sources'&&request.method!=='GET'))throw new RequestError(405,'Метод не поддерживается.');
+  if(collectionJob&&request.method==='GET'){query(url,[]);send(response,200,integrations.publicCollector.job(collectionJob[1]));return true;}
   if(sourceCheck && request.method!=='POST') throw new RequestError(405,'Метод не поддерживается.');
   if(sourceCheck && request.method==='POST') {
+    query(url,[]);
     const input=await body(request); if(Object.keys(input).length) throw new RequestError(400,'Ожидается пустой объект.');
     limit('source-check:'+identity.account.id,5,600000);
     send(response,200,await integrations.publicSourceChecks.check(sourceCheck[1]));return true;

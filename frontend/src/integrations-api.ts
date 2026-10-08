@@ -2,10 +2,10 @@ export interface Evidence {
   id: string; provider: string; title: string; discipline: string; occurredAt: string; result: string;
   place: number | null; participation: 'individual' | 'team'; teamRole: string | null; sourceUrl: string | null;
   status: 'verified' | 'unverified' | 'demo' | 'stale' | 'revoked'; identityVerified: boolean;
-  checkedAt: string; validUntil: string; verificationMethod?: 'manual_review';
+  checkedAt: string; validUntil: string; verificationMethod?: 'manual_review' | 'profile_challenge' | 'api_token' | 'oauth2';
   skills: { skill: string; scope: 'individual_result' | 'team_result'; ruleVersion: string }[];
 }
-export interface IntegrationProvider { id: string; name: string; mode: 'live' | 'demo'; enabled: boolean; scenarios?: string[] }
+export interface IntegrationProvider { id: string; name: string; mode: 'live' | 'demo'; auth?: 'oidc' | 'demo' | 'profile_challenge' | 'api_token' | 'oauth2'; enabled: boolean; scenarios?: string[] }
 export interface IntegrationConnection {
   id: string; provider: string; externalId: string; identityVerified: boolean; status: string;
   lastSyncedAt: string | null; lastError: string | null; evidenceCount: number;

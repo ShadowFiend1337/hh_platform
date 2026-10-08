@@ -37,6 +37,13 @@
     "validate:assessment": "node server/validate.mjs",
     "import:fsp-public": "node scripts/import-fsp-public.mjs",
     "moderator": "node scripts/moderator.mjs",
-    "test:moderation-browser": "node frontend/tests/moderation.mjs"
+    "test:moderation-browser": "node frontend/tests/moderation.mjs",
+    "test:codeforces-browser": "node frontend/tests/codeforces.mjs",
+    "test:external-providers-browser": "node frontend/tests/external-providers.mjs",
+    "import:public-achievements": "node --use-env-proxy scripts/import-public-achievements.mjs",
+    "test:public-achievements-browser": "node frontend/tests/public-achievements.mjs"
+  },
+  "dependencies": {
+    "parse5": "8.0.0"
   }
 }

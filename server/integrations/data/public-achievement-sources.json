@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    {
+      "id": "icpc-world-finals-2025",
+      "publisher": "ICPC",
+      "authority": "organizer",
+      "sourceKind": "table",
+      "sourceUrl": "https://worldfinals.icpc.global/scoreboard/2025/finals/index.html",
+      "discoveryUrl": "https://worldfinals.icpc.global/scoreboard/2025/finals/index.html",
+      "parser": "icpc-pc2-table-v1",
+      "eventKey": "icpc-world-finals-2025",
+      "title": "ICPC World Finals 2025 — итоговая таблица",
+      "requiredTitle": "49th ICPC World Finals Baku",
+      "discipline": "algorithms",
+      "occurredOn": "2025-09-04",
+      "dateBasis": "event",
+      "participation": "team",
+      "nomination": null,
+      "expectedRows": 139,
+      "requiredMarkers": [
+        "49th ICPC World Finals Baku"
+      ]
+    },
+    {
+      "id": "fsp-robotics-cup-2026-news",
+      "publisher": "ФСП России",
+      "authority": "organizer",
+      "sourceKind": "news",
+      "sourceUrl": "https://www.fsp-russia.ru/press/news/final-kubka-rossii-po-sportivnomu-programmirovaniyu-v-distsipline-programmirovanie-robototekhniki-us/",
+      "discoveryUrl": "https://www.fsp-russia.ru/press/news/",
+      "parser": "fsp-news-places-v1",
+      "eventKey": "fsp-robotics-cup-final-2026",
+      "title": "Кубок России 2026 — программирование робототехники, финал",
+      "requiredTitle": "Финал Кубка России по спортивному программированию в дисциплине «Программирование робототехники»",
+      "discipline": "robotics",
+      "occurredOn": "2026-06-27",
+      "dateBasis": "event",
+      "participation": "team",
+      "nomination": null,
+      "expectedRows": 3,
+      "requiredMarkers": [
+        "С 25 по 28 июня 2026 года",
+        "26 и 27 июня"
+      ]
+    },
+    {
+      "id": "itmo-vk-cup-2020-news",
+      "publisher": "Университет ИТМО",
+      "authority": "university",
+      "sourceKind": "news",
+      "sourceUrl": "https://news.itmo.ru/ru/news/9862/",
+      "discoveryUrl": "https://news.itmo.ru/ru/search/?tag=ICPC",
+      "parser": "itmo-vk-winner-v1",
+      "eventKey": "vk-cup-2020-engine",
+      "title": "VK Cup 2020 — Engine",
+      "requiredTitle": "стал победителем VK Cup",
+      "discipline": "algorithms",
+      "occurredOn": "2020-11-02",
+      "dateBasis": "publication",
+      "participation": "individual",
+      "nomination": "Engine",
+      "expectedRows": 1,
+      "requiredMarkers": [
+        "Engine",
+        "олимпиадное программирование"
+      ]
+    }
+  ]
+}

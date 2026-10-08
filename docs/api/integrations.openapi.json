@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "predel — API внешних подтверждений",
-    "version": "1.2.0",
+    "version": "1.5.0",
     "description": "Реализованные маршруты основного Node.js backend. Это спецификация модуля интеграций, не всего существующего API. Без внешнего контракта и доступа ФСП real-провайдер disabled; demo включён только вне production. Общий лимит /api — 180 запросов/минуту на IP; ошибки всегда {error:string}. API ответы no-store. Максимум запросов — 20 000 байт. Cookie Path=/api, HttpOnly, SameSite=Strict; Secure задаётся COOKIE_SECURE."
   },
   "servers": [
@@ -163,7 +163,7 @@
       "post": {
         "operationId": "connectProvider",
         "summary": "Начать подключение источника",
-        "description": "Нужно сохранённое согласие профиля и отдельное consent:true. Для fsp возвращается URL OIDC с state, nonce, PKCE S256; для fsp-demo — подключение и задача. 10 запросов за 10 минут на владельца. scenario допускается только для демо. Статус 202 означает начало работы, а не подтверждение достижений.",
+        "description": "Нужно отдельное consent=true и сохранённое согласие профиля. Codeforces/AtCoder принимают handle, возвращают challenge и не связывают аккаунт до verify. Kaggle принимает apiToken: проверяет IntrospectToken, связывает immutable userId и ставит импорт в очередь. FSP/GitHub запускают OAuth со state+PKCE. scenario разрешён только для demo. Одновременный disconnect или новый connect отменяет результат запроса, даже если внешний ответ пришёл позже.",
         "tags": [
           "Integrations"
         ],
@@ -234,7 +234,11 @@
               "type": "string",
               "enum": [
                 "fsp",
-                "fsp-demo"
+                "fsp-demo",
+                "codeforces",
+                "atcoder",
+                "kaggle",
+                "github"
               ]
             }
           },
@@ -489,7 +493,11 @@
               "type": "string",
               "enum": [
                 "fsp",
-                "fsp-demo"
+                "fsp-demo",
+                "codeforces",
+                "atcoder",
+                "kaggle",
+                "github"
               ]
             }
           },
@@ -686,7 +694,11 @@
               "type": "string",
               "enum": [
                 "fsp",
-                "fsp-demo"
+                "fsp-demo",
+                "codeforces",
+                "atcoder",
+                "kaggle",
+                "github"
               ]
             }
           },
@@ -1958,9 +1970,9 @@
     },
     "/api/moderation/sources/{sourceId}/check": {
       "post": {
-        "operationId": "checkPublicFspSource",
-        "summary": "Проверить хеш официального PDF",
-        "description": "Требуется назначенное серверным оператором право canModerate; роль candidate/employer сама его не даёт. Изменения требуют X-Platform-Identity=auth:<account.id>. Собственную заявку нельзя модерировать. Только зарегистрированные HTTPS PDF на fsp-russia.ru/upload/iblock. URL кандидата не загружаются. До 10 МБ, 10 секунд, редиректы запрещены; до 5 проверок/10 минут. Изменение/удаление/недоступность источника делает связанные подтверждения неактивными до успешной проверки. Новые данные требуют нового OCR и проверки каталога; этот endpoint не публикует результаты распознавания.",
+        "operationId": "checkPublicAchievementSource",
+        "summary": "Проверить свежесть официального источника",
+        "description": "Требуется серверное право canModerate. Изменения требуют X-Platform-Identity=auth:<account.id>. Только зарегистрированные источники, без пользовательских URL. Для HTML выполняет синхронный сбор и публикует проверенные парсером факты (до 1 МБ); для старого PDF сверяет хеш (до 10 МБ), новый OCR не публикует. Таймаут 10 секунд, редиректы запрещены, до 5 проверок/10 минут. reviewedHash/fetchedHash для HTML относятся к результатам, а не оформлению страницы. Изменение конкретного результата, удаление или недоступность источника делает связанные подтверждения неактивными. Во время сбора одобрение блокируется. Query-параметры запрещены.",
         "tags": [
           "AchievementClaims"
         ],
@@ -2040,6 +2052,876 @@
           }
         }
       }
+    },
+    "/api/integrations/codeforces/verify": {
+      "post": {
+        "operationId": "verifyCodeforcesAccount",
+        "summary": "Подтвердить контроль над аккаунтом Codeforces",
+        "description": "Сверяет Organization через официальный user.info с одноразовым кодом владельца. 10 запросов за 10 минут. Код привязан к владельцу, нику и времени регистрации; 30 минут, однократное успешное использование. Неверный код 403, неизвестный/истёкший код 400, изменившееся подключение или занятый аккаунт 409, источник недоступен 503. Успех запускает фоновую загрузку рейтинга, последних 1000 рейтинговых выступлений и до 2000 отправок; это не подтверждение паспортной личности, отсутствия списывания или грейда.",
+        "tags": [
+          "Integrations"
+        ],
+        "security": [
+          {
+            "accountSession": []
+          }
+        ],
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "405": {
+            "$ref": "#/components/responses/Error405"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error413"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          },
+          "200": {
+            "description": "Успешный ответ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallbackResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-Platform-Identity": {
+                "description": "Для эндпоинтов кабинета кандидата — auth:<account.id>; отсутствует на /directory/{id}/evidence.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-Platform-Identity",
+            "in": "header",
+            "required": true,
+            "description": "auth:<account.id> текущего аккаунта; получить из GET /api/integrations или /api/platform/state. Несовпадение возвращает 409.",
+            "schema": {
+              "type": "string",
+              "pattern": "^auth:.+$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyProfileChallengeRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/integrations/atcoder/verify": {
+      "post": {
+        "operationId": "verifyAtCoderProfile",
+        "summary": "Подтвердить контроль над аккаунтом AtCoder",
+        "description": "Одноразовый challengeId привязан к кандидату и источнику, действует 30 минут. Проверяется точный код в публичном Affiliation. Код сохраняется в профиле AtCoder и повторно проверяется при синхронизации. Пароли/куки AtCoder не запрашиваются. Disconnect, замена challenge и отзыв согласия блокируют запоздалое подключение.",
+        "tags": [
+          "Integrations"
+        ],
+        "security": [
+          {
+            "accountSession": []
+          }
+        ],
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "405": {
+            "$ref": "#/components/responses/Error405"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error413"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          },
+          "200": {
+            "description": "Успешный ответ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallbackResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-Platform-Identity": {
+                "description": "Для эндпоинтов кабинета кандидата — auth:<account.id>; отсутствует на /directory/{id}/evidence.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-Platform-Identity",
+            "in": "header",
+            "required": true,
+            "description": "auth:<account.id> текущего аккаунта; получить из GET /api/integrations или /api/platform/state. Несовпадение возвращает 409.",
+            "schema": {
+              "type": "string",
+              "pattern": "^auth:.+$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyProfileChallengeRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/integrations/github/callback": {
+      "get": {
+        "operationId": "githubCallbackGet",
+        "summary": "Завершить OAuth-привязку GitHub через SameSite=Strict bridge",
+        "description": "Собственное зарегистрированное GitHub OAuth-приложение. State одноразовый и привязан к кандидату, PKCE S256. Полученный токен проверяется GET /user; subject — immutable числовой GitHub ID. Новое подключение/отключение во время обмена кодом исключает позднюю привязку. GET очищает code/state из URL и выполняет same-origin POST, затем возвращает в профиль.",
+        "security": [],
+        "parameters": [
+          {
+            "name": "state",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "code",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "error",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Страница завершения",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          }
+        }
+      },
+      "post": {
+        "operationId": "githubCallbackPost",
+        "summary": "Завершить OAuth-привязку GitHub",
+        "description": "Собственное зарегистрированное GitHub OAuth-приложение. State одноразовый и привязан к кандидату, PKCE S256. Полученный токен проверяется GET /user; subject — immutable числовой GitHub ID. Новое подключение/отключение во время обмена кодом исключает позднюю привязку. GET очищает code/state из URL и выполняет same-origin POST, затем возвращает в профиль.",
+        "tags": [
+          "Integrations"
+        ],
+        "security": [
+          {
+            "accountSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Успешный ответ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallbackResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-Platform-Identity": {
+                "description": "Для эндпоинтов кабинета кандидата — auth:<account.id>; отсутствует на /directory/{id}/evidence.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "405": {
+            "$ref": "#/components/responses/Error405"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error413"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CallbackRequest"
+              },
+              "example": {
+                "state": "opaque-state-from-authorization",
+                "code": "one-time-authorization-code"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/integrations/atcoder/connect": {
+      "post": {
+        "operationId": "connectAtcoder",
+        "summary": "Начать подключение atcoder",
+        "description": "Нужно отдельное consent=true и сохранённое согласие профиля. Codeforces/AtCoder принимают handle, возвращают challenge и не связывают аккаунт до verify. Kaggle принимает apiToken: проверяет IntrospectToken, связывает immutable userId и ставит импорт в очередь. FSP/GitHub запускают OAuth со state+PKCE. scenario разрешён только для demo. Одновременный disconnect или новый connect отменяет результат запроса, даже если внешний ответ пришёл позже.",
+        "tags": [
+          "Integrations"
+        ],
+        "security": [
+          {
+            "accountSession": []
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Успешный ответ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-Platform-Identity": {
+                "description": "Для эндпоинтов кабинета кандидата — auth:<account.id>; отсутствует на /directory/{id}/evidence.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "405": {
+            "$ref": "#/components/responses/Error405"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error413"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-Platform-Identity",
+            "in": "header",
+            "required": true,
+            "description": "auth:<account.id> текущего аккаунта; получить из GET /api/integrations или /api/platform/state. Несовпадение возвращает 409.",
+            "schema": {
+              "type": "string",
+              "pattern": "^auth:.+$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AtCoderConnectRequest"
+              },
+              "examples": {
+                "live": {
+                  "summary": "Подключить ФСП",
+                  "value": {
+                    "consent": true
+                  }
+                },
+                "demo": {
+                  "summary": "Демонстрация пустой истории",
+                  "value": {
+                    "consent": true,
+                    "scenario": "empty"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/integrations/kaggle/connect": {
+      "post": {
+        "operationId": "connectKaggle",
+        "summary": "Начать подключение kaggle",
+        "description": "Нужно отдельное consent=true и сохранённое согласие профиля. Codeforces/AtCoder принимают handle, возвращают challenge и не связывают аккаунт до verify. Kaggle принимает apiToken: проверяет IntrospectToken, связывает immutable userId и ставит импорт в очередь. FSP/GitHub запускают OAuth со state+PKCE. scenario разрешён только для demo. Одновременный disconnect или новый connect отменяет результат запроса, даже если внешний ответ пришёл позже.",
+        "tags": [
+          "Integrations"
+        ],
+        "security": [
+          {
+            "accountSession": []
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Успешный ответ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-Platform-Identity": {
+                "description": "Для эндпоинтов кабинета кандидата — auth:<account.id>; отсутствует на /directory/{id}/evidence.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "405": {
+            "$ref": "#/components/responses/Error405"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error413"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-Platform-Identity",
+            "in": "header",
+            "required": true,
+            "description": "auth:<account.id> текущего аккаунта; получить из GET /api/integrations или /api/platform/state. Несовпадение возвращает 409.",
+            "schema": {
+              "type": "string",
+              "pattern": "^auth:.+$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KaggleConnectRequest"
+              },
+              "examples": {
+                "live": {
+                  "summary": "Подключить ФСП",
+                  "value": {
+                    "consent": true
+                  }
+                },
+                "demo": {
+                  "summary": "Демонстрация пустой истории",
+                  "value": {
+                    "consent": true,
+                    "scenario": "empty"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/integrations/public-achievements/search": {
+      "get": {
+        "operationId": "searchPublicAchievements",
+        "summary": "Поиск имени или команды в открытых результатах",
+        "tags": [
+          "Integrations"
+        ],
+        "security": [
+          {
+            "accountSession": []
+          }
+        ],
+        "description": "Только кандидат с согласием профиля; 30 запросов/минуту. Поиск фрагментов слов без учёта регистра и ё/е. Каталог зарегистрированных официальных таблиц/новостей и проверенных PDF; coverage.complete=false. sourceStatus указывает свежесть источника, identityVerified всегда false до отдельной модерации принадлежности. Командные места требуют проверки состава. Произвольные URL и повторяющиеся/неизвестные query-параметры запрещены.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 2,
+              "maxLength": 100
+            },
+            "description": "Имя участника, название команды или фрагмент от двух символов."
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "minimum": 1,
+              "maximum": 50
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "minimum": 0,
+              "maximum": 999999
+            }
+          },
+          {
+            "in": "query",
+            "name": "sourceId",
+            "schema": {
+              "type": "string"
+            },
+            "description": "ID зарегистрированного источника; без параметра — все источники."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Совпадения имени в проверенной выгрузке. Не являются подтверждением владения аккаунтом, навыка или грейда.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicAchievementSearchResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "405": {
+            "$ref": "#/components/responses/Error405"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          }
+        }
+      }
+    },
+    "/api/integrations/public-achievements/sources": {
+      "get": {
+        "operationId": "readPublicAchievementSources",
+        "summary": "Источники результатов и состояние сбора",
+        "tags": [
+          "AchievementClaims"
+        ],
+        "security": [
+          {
+            "accountSession": []
+          }
+        ],
+        "description": "Только кандидат с сохранённым согласием профиля. Зарегистрированные HTML-источники; старый PDF ФСП участвует в общем поиске, но не в этой очереди. Любые query-параметры запрещены.",
+        "responses": {
+          "200": {
+            "description": "Успешный ответ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicAchievementSources"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "405": {
+            "$ref": "#/components/responses/Error405"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          }
+        }
+      }
+    },
+    "/api/moderation/sources": {
+      "get": {
+        "operationId": "readModerationSources",
+        "summary": "Состояние зарегистрированных источников",
+        "tags": [
+          "AchievementClaims"
+        ],
+        "security": [
+          {
+            "accountSession": []
+          }
+        ],
+        "description": "Требуется серверное право canModerate. Изменения требуют X-Platform-Identity=auth:<account.id>. Только зарегистрированные источники, без пользовательских URL.",
+        "responses": {
+          "200": {
+            "description": "Успешный ответ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicAchievementSources"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "405": {
+            "$ref": "#/components/responses/Error405"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          }
+        }
+      }
+    },
+    "/api/moderation/sources/{sourceId}/collect": {
+      "post": {
+        "operationId": "collectPublicAchievements",
+        "summary": "Поставить обновление источника в очередь",
+        "tags": [
+          "AchievementClaims"
+        ],
+        "security": [
+          {
+            "accountSession": []
+          }
+        ],
+        "description": "Требуется серверное право canModerate. Изменения требуют X-Platform-Identity=auth:<account.id>. Только зарегистрированные источники, без пользовательских URL. До 10 запросов/10 минут. Одна активная задача на источник. Надёжная очередь SQLite переживает перезапуск. Сбор HTML до 1 МБ/10 секунд, без редиректов; ошибка сохраняет прошлый снимок, но делает подтверждения неактивными. Пустой JSON-объект; query-параметры запрещены.",
+        "responses": {
+          "202": {
+            "description": "Успешный ответ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicCollectionAccepted"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "405": {
+            "$ref": "#/components/responses/Error405"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sourceId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9-]{1,100}$"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Platform-Identity",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {},
+                "required": []
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/moderation/sources/jobs/{jobId}": {
+      "get": {
+        "operationId": "readPublicCollectionJob",
+        "summary": "Статус задачи сбора",
+        "tags": [
+          "AchievementClaims"
+        ],
+        "security": [
+          {
+            "accountSession": []
+          }
+        ],
+        "description": "Требуется серверное право canModerate. Изменения требуют X-Platform-Identity=auth:<account.id>. Только зарегистрированные источники, без пользовательских URL. Задачи относятся к общему публичному каталогу и доступны модераторам. Query-параметры запрещены.",
+        "responses": {
+          "200": {
+            "description": "Успешный ответ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicCollectionJob"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "405": {
+            "$ref": "#/components/responses/Error405"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "jobId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -2071,7 +2953,11 @@
             "type": "string",
             "enum": [
               "fsp",
-              "fsp-demo"
+              "fsp-demo",
+              "codeforces",
+              "atcoder",
+              "kaggle",
+              "github"
             ]
           },
           "name": {
@@ -2088,7 +2974,10 @@
             "type": "string",
             "enum": [
               "oidc",
-              "demo"
+              "demo",
+              "profile_challenge",
+              "api_token",
+              "oauth2"
             ]
           },
           "enabled": {
@@ -2106,7 +2995,11 @@
           "contractVersion": {
             "type": "string",
             "enum": [
-              "fsp-resource-v1"
+              "fsp-resource-v1",
+              "codeforces-v1",
+              "atcoder-public-v1",
+              "kaggle-sdk-v1",
+              "github-rest-v1"
             ]
           },
           "scenarios": {
@@ -2145,7 +3038,11 @@
             "type": "string",
             "enum": [
               "fsp",
-              "fsp-demo"
+              "fsp-demo",
+              "codeforces",
+              "atcoder",
+              "kaggle",
+              "github"
             ]
           },
           "externalId": {
@@ -2232,7 +3129,11 @@
             "type": "string",
             "enum": [
               "fsp",
-              "fsp-demo"
+              "fsp-demo",
+              "codeforces",
+              "atcoder",
+              "kaggle",
+              "github"
             ]
           },
           "status": {
@@ -2321,7 +3222,12 @@
           "ruleVersion": {
             "type": "string",
             "enum": [
-              "fsp-discipline-v1"
+              "fsp-discipline-v1",
+              "codeforces-algorithms-v1",
+              "atcoder-algorithms-v1",
+              "kaggle-competitions-v1",
+              "github-portfolio-v1",
+              "public-achievements-v1"
             ]
           }
         },
@@ -2344,7 +3250,12 @@
             "enum": [
               "fsp",
               "fsp-demo",
-              "fsp-public"
+              "fsp-public",
+              "codeforces",
+              "atcoder",
+              "kaggle",
+              "github",
+              "public-achievements"
             ]
           },
           "externalRecordId": {
@@ -2443,12 +3354,23 @@
           "mappingVersion": {
             "type": "string",
             "enum": [
-              "fsp-discipline-v1"
+              "fsp-discipline-v1",
+              "codeforces-algorithms-v1",
+              "atcoder-algorithms-v1",
+              "kaggle-competitions-v1",
+              "github-portfolio-v1",
+              "public-achievements-v1"
             ]
           },
           "verificationMethod": {
-            "const": "manual_review",
-            "description": "У публичных протоколов принадлежность проверена модератором платформы; это не авторизация ФСП ID."
+            "type": "string",
+            "enum": [
+              "manual_review",
+              "profile_challenge",
+              "api_token",
+              "oauth2"
+            ],
+            "description": "Способ проверки контроля над внешним аккаунтом: модерация, код в публичном профиле, интроспекция API-токена или OAuth. Подтверждение аккаунта/фактов источника не подтверждает профессиональный грейд."
           }
         },
         "required": [
@@ -2483,7 +3405,12 @@
           "mappingVersion": {
             "type": "string",
             "enum": [
-              "fsp-discipline-v1"
+              "fsp-discipline-v1",
+              "codeforces-algorithms-v1",
+              "atcoder-algorithms-v1",
+              "kaggle-competitions-v1",
+              "github-portfolio-v1",
+              "public-achievements-v1"
             ]
           }
         },
@@ -2493,25 +3420,16 @@
         ]
       },
       "ConnectRequest": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "consent": {
-            "const": true
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/FspConnectRequest"
           },
-          "scenario": {
-            "type": "string",
-            "enum": [
-              "achievements",
-              "empty",
-              "not-found",
-              "unavailable",
-              "revoked"
-            ]
+          {
+            "$ref": "#/components/schemas/ProfileChallengeConnectRequest"
+          },
+          {
+            "$ref": "#/components/schemas/KaggleConnectRequest"
           }
-        },
-        "required": [
-          "consent"
         ]
       },
       "ConnectResponse": {
@@ -2559,6 +3477,9 @@
                 "type": "null"
               }
             ]
+          },
+          "challenge": {
+            "$ref": "#/components/schemas/ProfileChallenge"
           }
         },
         "required": [
@@ -2810,99 +3731,13 @@
         ]
       },
       "ClaimRecord": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^[a-f0-9]{64}$"
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/LegacyFspClaimRecord"
           },
-          "sourceId": {
-            "type": "string"
-          },
-          "participantName": {
-            "type": "string"
-          },
-          "place": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "solvedTasks": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "completionTime": {
-            "type": "integer",
-            "minimum": 0,
-            "description": "Числовое значение столбца «Время выполнения задач». Единица в протоколе не указана; не переводим в минуты."
-          },
-          "region": {
-            "type": "string"
-          },
-          "participation": {
-            "const": "individual"
-          },
-          "role": {
-            "const": "athlete"
-          },
-          "sourcePage": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "extractionConfidence": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 100
-          },
-          "extractionStatus": {
-            "const": "reviewed"
-          },
-          "identityVerified": {
-            "const": false
-          },
-          "title": {
-            "type": "string"
-          },
-          "discipline": {
-            "type": "string"
-          },
-          "occurredOn": {
-            "type": "string",
-            "format": "date"
-          },
-          "sourceUrl": {
-            "type": "string",
-            "format": "uri"
-          },
-          "documentHash": {
-            "type": "string",
-            "pattern": "^[a-f0-9]{64}$"
-          },
-          "sourceReviewedAt": {
-            "type": "string",
-            "format": "date-time"
+          {
+            "$ref": "#/components/schemas/PublicAchievementRecord"
           }
-        },
-        "required": [
-          "id",
-          "sourceId",
-          "participantName",
-          "place",
-          "solvedTasks",
-          "completionTime",
-          "region",
-          "participation",
-          "role",
-          "sourcePage",
-          "extractionConfidence",
-          "extractionStatus",
-          "identityVerified",
-          "title",
-          "discipline",
-          "occurredOn",
-          "sourceUrl",
-          "documentHash",
-          "sourceReviewedAt"
         ]
       },
       "ClaimDocumentInput": {
@@ -2974,7 +3809,10 @@
         "additionalProperties": false,
         "properties": {
           "version": {
-            "const": "fsp-claim-checks-v1"
+            "enum": [
+              "fsp-claim-checks-v1",
+              "public-claim-checks-v1"
+            ]
           },
           "sourceStatus": {
             "type": "string",
@@ -2986,7 +3824,15 @@
             ]
           },
           "nameMatch": {
-            "type": "boolean"
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "null для команды: вместо ФИО проверяется участие кандидата в составе."
           },
           "duplicateApproved": {
             "type": "boolean"
@@ -3559,6 +4405,10 @@
                 "type": "string",
                 "maxLength": 2000,
                 "minLength": 20
+              },
+              "teamMembershipConfirmed": {
+                "type": "boolean",
+                "description": "Обязательно true при одобрении командной записи. Не подтверждает личный вклад или профессиональный грейд."
               }
             },
             "required": [
@@ -3598,6 +4448,987 @@
               "reason"
             ]
           }
+        ]
+      },
+      "FspConnectRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "consent": {
+            "const": true
+          },
+          "scenario": {
+            "type": "string",
+            "enum": [
+              "achievements",
+              "empty",
+              "not-found",
+              "unavailable",
+              "revoked"
+            ]
+          }
+        },
+        "required": [
+          "consent"
+        ]
+      },
+      "CodeforcesConnectRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "consent",
+          "handle"
+        ],
+        "properties": {
+          "consent": {
+            "const": true
+          },
+          "handle": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.-]{3,24}$"
+          }
+        }
+      },
+      "ProfileChallenge": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "token",
+          "handle",
+          "field",
+          "profileUrl",
+          "expiresAt",
+          "keepProof"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{43}$"
+          },
+          "token": {
+            "type": "string",
+            "pattern": "^predel-[A-Za-z0-9_-]{43}$"
+          },
+          "handle": {
+            "type": "string"
+          },
+          "field": {
+            "type": "string",
+            "enum": [
+              "organization",
+              "affiliation"
+            ]
+          },
+          "profileUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "keepProof": {
+            "type": "boolean",
+            "description": "true: код должен оставаться в поле при последующих синхронизациях (AtCoder без публичного immutable ID). false: после проверки код можно убрать (Codeforces)."
+          }
+        }
+      },
+      "VerifyProfileChallengeRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "challengeId"
+        ],
+        "properties": {
+          "challengeId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{43}$"
+          }
+        }
+      },
+      "KaggleConnectRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "consent",
+          "apiToken"
+        ],
+        "properties": {
+          "consent": {
+            "const": true
+          },
+          "apiToken": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._~-]{20,4096}$",
+            "writeOnly": true,
+            "description": "Современный API Token из настроек Kaggle. Только HTTPS в production. Ник и user ID извлекаются из IntrospectToken; запрос не принимает заявленный пользователем ID."
+          }
+        }
+      },
+      "AtCoderConnectRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "consent",
+          "handle"
+        ],
+        "properties": {
+          "consent": {
+            "const": true
+          },
+          "handle": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_]{3,16}$"
+          }
+        }
+      },
+      "ProfileChallengeConnectRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "consent",
+          "handle"
+        ],
+        "properties": {
+          "consent": {
+            "const": true
+          },
+          "handle": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.-]{3,24}$"
+          }
+        },
+        "description": "Codeforces: 3–24 символа [A-Za-z0-9_.-]; AtCoder: 3–16 символов [A-Za-z0-9_]. Ограничение выбирается по provider."
+      },
+      "PublicPdfSearchRecord": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "sourceId": {
+            "type": "string"
+          },
+          "participantName": {
+            "type": "string"
+          },
+          "place": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "solvedTasks": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "completionTime": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Числовое значение столбца «Время выполнения задач». Единица в протоколе не указана; не переводим в минуты."
+          },
+          "region": {
+            "type": "string"
+          },
+          "participation": {
+            "const": "individual"
+          },
+          "role": {
+            "const": "athlete"
+          },
+          "sourcePage": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "extractionConfidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "extractionStatus": {
+            "const": "reviewed"
+          },
+          "identityVerified": {
+            "const": false
+          },
+          "status": {
+            "const": "unverified"
+          },
+          "title": {
+            "type": "string"
+          },
+          "discipline": {
+            "type": "string"
+          },
+          "occurredOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "sourceUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "documentHash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "sourceReviewedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "provider": {
+            "const": "fsp-public"
+          },
+          "sourceKind": {
+            "const": "pdf"
+          },
+          "publisher": {
+            "type": "string"
+          },
+          "sourceStatus": {
+            "type": "string",
+            "enum": [
+              "matched",
+              "missing",
+              "unavailable"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "sourceId",
+          "participantName",
+          "place",
+          "solvedTasks",
+          "completionTime",
+          "region",
+          "participation",
+          "role",
+          "sourcePage",
+          "extractionConfidence",
+          "extractionStatus",
+          "identityVerified",
+          "status",
+          "title",
+          "discipline",
+          "occurredOn",
+          "sourceUrl",
+          "documentHash",
+          "sourceReviewedAt"
+        ]
+      },
+      "PublicAchievementRecord": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "sourceId": {
+            "type": "string"
+          },
+          "participantName": {
+            "type": "string"
+          },
+          "place": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "solvedTasks": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "completionTime": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "participation": {
+            "enum": [
+              "individual",
+              "team"
+            ]
+          },
+          "role": {
+            "enum": [
+              "participant",
+              "team"
+            ]
+          },
+          "sourcePage": {
+            "type": "null"
+          },
+          "extractionStatus": {
+            "const": "parsed"
+          },
+          "identityVerified": {
+            "const": false
+          },
+          "title": {
+            "type": "string"
+          },
+          "discipline": {
+            "type": "string"
+          },
+          "occurredOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "sourceUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "documentHash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "provider": {
+            "const": "public-achievements"
+          },
+          "publisher": {
+            "type": "string"
+          },
+          "authority": {
+            "enum": [
+              "organizer",
+              "university"
+            ]
+          },
+          "sourceKind": {
+            "enum": [
+              "news",
+              "table"
+            ]
+          },
+          "dateBasis": {
+            "enum": [
+              "event",
+              "publication"
+            ]
+          },
+          "nomination": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "result": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "excerpt": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "sourceLocator": {
+            "type": "string"
+          },
+          "parserVersion": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "sourceId",
+          "participantName",
+          "place",
+          "solvedTasks",
+          "completionTime",
+          "region",
+          "participation",
+          "role",
+          "sourcePage",
+          "extractionStatus",
+          "identityVerified",
+          "title",
+          "discipline",
+          "occurredOn",
+          "sourceUrl",
+          "documentHash",
+          "provider",
+          "publisher",
+          "authority",
+          "sourceKind",
+          "dateBasis",
+          "nomination",
+          "result",
+          "excerpt",
+          "sourceLocator",
+          "parserVersion"
+        ]
+      },
+      "PublicAchievementSearchRecord": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "sourceId": {
+            "type": "string"
+          },
+          "participantName": {
+            "type": "string"
+          },
+          "place": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "solvedTasks": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "completionTime": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "participation": {
+            "enum": [
+              "individual",
+              "team"
+            ]
+          },
+          "role": {
+            "enum": [
+              "participant",
+              "team"
+            ]
+          },
+          "sourcePage": {
+            "type": "null"
+          },
+          "extractionStatus": {
+            "const": "parsed"
+          },
+          "identityVerified": {
+            "const": false
+          },
+          "title": {
+            "type": "string"
+          },
+          "discipline": {
+            "type": "string"
+          },
+          "occurredOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "sourceUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "documentHash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "provider": {
+            "const": "public-achievements"
+          },
+          "publisher": {
+            "type": "string"
+          },
+          "authority": {
+            "enum": [
+              "organizer",
+              "university"
+            ]
+          },
+          "sourceKind": {
+            "enum": [
+              "news",
+              "table"
+            ]
+          },
+          "dateBasis": {
+            "enum": [
+              "event",
+              "publication"
+            ]
+          },
+          "nomination": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "result": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "excerpt": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "sourceLocator": {
+            "type": "string"
+          },
+          "parserVersion": {
+            "type": "string"
+          },
+          "status": {
+            "const": "unverified"
+          },
+          "sourceStatus": {
+            "type": "string",
+            "enum": [
+              "matched",
+              "missing",
+              "unavailable"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "sourceId",
+          "participantName",
+          "place",
+          "solvedTasks",
+          "completionTime",
+          "region",
+          "participation",
+          "role",
+          "sourcePage",
+          "extractionStatus",
+          "identityVerified",
+          "title",
+          "discipline",
+          "occurredOn",
+          "sourceUrl",
+          "documentHash",
+          "provider",
+          "publisher",
+          "authority",
+          "sourceKind",
+          "dateBasis",
+          "nomination",
+          "result",
+          "excerpt",
+          "sourceLocator",
+          "parserVersion",
+          "status",
+          "sourceStatus"
+        ]
+      },
+      "LegacyFspClaimRecord": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "sourceId": {
+            "type": "string"
+          },
+          "participantName": {
+            "type": "string"
+          },
+          "place": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "solvedTasks": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "completionTime": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Числовое значение столбца «Время выполнения задач». Единица в протоколе не указана; не переводим в минуты."
+          },
+          "region": {
+            "type": "string"
+          },
+          "participation": {
+            "const": "individual"
+          },
+          "role": {
+            "const": "athlete"
+          },
+          "sourcePage": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "extractionConfidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "extractionStatus": {
+            "const": "reviewed"
+          },
+          "identityVerified": {
+            "const": false
+          },
+          "title": {
+            "type": "string"
+          },
+          "discipline": {
+            "type": "string"
+          },
+          "occurredOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "sourceUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "documentHash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "sourceReviewedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "sourceId",
+          "participantName",
+          "place",
+          "solvedTasks",
+          "completionTime",
+          "region",
+          "participation",
+          "role",
+          "sourcePage",
+          "extractionConfidence",
+          "extractionStatus",
+          "identityVerified",
+          "title",
+          "discipline",
+          "occurredOn",
+          "sourceUrl",
+          "documentHash",
+          "sourceReviewedAt"
+        ]
+      },
+      "PublicAchievementSearchResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "provider": {
+            "const": "public-achievements"
+          },
+          "status": {
+            "const": "unverified"
+          },
+          "identityVerified": {
+            "const": false
+          },
+          "checkedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "coverage": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "sources": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "records": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "complete": {
+                "const": false
+              }
+            },
+            "required": [
+              "sources",
+              "records",
+              "complete"
+            ]
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/PublicPdfSearchRecord"
+                },
+                {
+                  "$ref": "#/components/schemas/PublicAchievementSearchRecord"
+                }
+              ]
+            }
+          }
+        },
+        "required": [
+          "provider",
+          "status",
+          "identityVerified",
+          "checkedAt",
+          "coverage",
+          "total",
+          "limit",
+          "offset",
+          "items"
+        ]
+      },
+      "PublicCollectionJob": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sourceId": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "succeeded",
+              "failed"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "enum": [
+                  "source_missing",
+                  "invalid_source_response",
+                  "source_unavailable"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resultCount": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "sourceId",
+          "status",
+          "createdAt",
+          "updatedAt",
+          "error",
+          "resultCount"
+        ]
+      },
+      "PublicAchievementSource": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "publisher": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "sourceUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "sourceKind": {
+            "enum": [
+              "news",
+              "table"
+            ]
+          },
+          "parserVersion": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "matched",
+              "missing",
+              "unavailable"
+            ]
+          },
+          "lastSuccessAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastAttemptAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastError": {
+            "anyOf": [
+              {
+                "enum": [
+                  "source_missing",
+                  "invalid_source_response",
+                  "source_unavailable"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "recordCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "activeJob": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PublicCollectionJob"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "publisher",
+          "title",
+          "sourceUrl",
+          "sourceKind",
+          "parserVersion",
+          "status",
+          "lastSuccessAt",
+          "lastAttemptAt",
+          "lastError",
+          "recordCount",
+          "activeJob"
+        ]
+      },
+      "PublicAchievementSources": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicAchievementSource"
+            }
+          }
+        },
+        "required": [
+          "sources"
+        ]
+      },
+      "PublicCollectionAccepted": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "job": {
+            "$ref": "#/components/schemas/PublicCollectionJob"
+          }
+        },
+        "required": [
+          "job"
         ]
       }
     },

@@ -31,8 +31,8 @@ try {
   for(const p of [page,reviewPage])p.on('pageerror',error=>errors.push(error.message));
   await page.goto(base+'/app?role=candidate&tab=profile');
   await page.getByRole('heading',{name:'Внешние подтверждения',exact:true}).waitFor();
-  const search=page.locator('.integration-source').filter({has:page.getByRole('heading',{name:'Публичные протоколы ФСП',exact:true})});
-  await search.getByLabel('Фамилия и имя участника').fill('Ромашов Федор');await search.getByRole('button',{name:'Найти в протоколах'}).click();
+  const search=page.locator('.integration-source').filter({has:page.getByRole('heading',{name:'Результаты из открытых источников',exact:true})});
+  await search.getByLabel('Имя участника или команда').fill('Ромашов Федор');await search.getByRole('button',{name:'Найти результат'}).click();
   await search.getByRole('button',{name:'Это мой результат'}).click();
   const form=search.locator('.claim-form');await form.getByLabel('Описание участия').fill('Участвовал в финале. Подтверждающий документ содержит сведения об участнике.');
   await form.getByLabel('Подтверждающий файл — до 2 МБ').setInputFiles({name:'certificate.png',mimeType:'image/png',buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRuoAAAAASUVORK5CYII=','base64')});
@@ -49,7 +49,7 @@ try {
   const edit=claims.locator('.claim-form');await edit.getByLabel('Описание участия').fill('Я решал алгоритмические задачи лично в индивидуальном финале. Прилагаю подтверждающий документ.');
   assert(await edit.getByRole('checkbox',{name:'Сохранить файл certificate.png'}).isChecked());await edit.getByRole('checkbox',{name:/Это мой результат/u}).check();await edit.getByRole('button',{name:'Отправить на проверку'}).click();await claims.getByText('На проверке',{exact:true}).waitFor();
   await reviewPage.getByRole('button',{name:'Обновить очередь'}).click();await reviewPage.getByRole('button',{name:'Рассмотреть заявку'}).click();
-  await detail.getByRole('button',{name:'Проверить свежесть протокола'}).click();await detail.getByText(/Последняя проверка PDF:/u).waitFor();
+  await detail.getByRole('button',{name:'Проверить свежесть источника'}).click();await detail.getByText(/Последняя проверка источника:/u).waitFor();
   await detail.getByLabel('Обоснование решения для кандидата').fill('Материалы и принадлежность результата проверены.');await detail.getByLabel('Основание проверки — доступно модераторам').fill('Тестовый сценарий: сверены сведения участника и независимое подтверждение организатора.');
   await detail.getByRole('checkbox',{name:/Проверил материалы/u}).check();await reviewPage.screenshot({path:'/tmp/hh-moderation-review.png',fullPage:true});
   await detail.getByRole('button',{name:'Сохранить решение'}).click();await reviewPage.getByText('Всего заявок: 0',{exact:true}).waitFor();

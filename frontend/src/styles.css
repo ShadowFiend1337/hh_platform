@@ -638,3 +638,4 @@ fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
 .moderation-layout { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(360px, 2fr); gap: 24px; align-items: start; }
 .moderation-detail .field { margin-top: 12px; }
 @media (max-width: 800px) { .moderation-layout { grid-template-columns: 1fr; } }
+.verification-code { display: inline-block; overflow-wrap: anywhere; word-break: break-all; padding: .5rem; background: var(--surface-muted, #f4f0f8); border-radius: .4rem; }

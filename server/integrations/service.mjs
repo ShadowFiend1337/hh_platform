@@ -6,6 +6,8 @@ import { RequestError } from '../assessment.mjs';
 import { PublicSourceChecks } from './source-checks.mjs';
 import { AchievementClaims } from './claims.mjs';
 import { PublicFspCatalog } from './public-fsp.mjs';
+import { PublicSourceCollector } from './public-collector.mjs';
+import { PublicAchievementCatalog } from './public-catalog.mjs';
 import { ProviderError, createProviders, secretToken, trustedUrl } from './providers.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
@@ -35,14 +37,18 @@ export function normalizeEvidence(value, connection, provider, now) {
   }
   const discipline = text(value.discipline, 100);
   const attribution = value.participation === 'team' ? 'team_result' : 'individual_result';
+  const mappingVersion = provider.mappingVersion || 'fsp-discipline-v1';
   return { id: hash(`${connection.id}\0${externalId}`), provider: provider.id, externalRecordId: externalId,
     title: text(value.title, 300), discipline, occurredAt: new Date(occurredAt).toISOString(), result: text(value.result, 1000),
     place: value.place, participation: value.participation, teamRole: text(value.teamRole, 200, true), sourceUrl,
     status: value.status === 'revoked' ? 'revoked' : provider.mode === 'demo' ? 'demo' : connection.identity_verified ? 'verified' : 'unverified',
     identityVerified: Boolean(connection.identity_verified), checkedAt: iso(now),
     validUntil: new Date(now() + 7 * 86400000).toISOString(),
-    skills: (Object.hasOwn(skillRules, discipline) ? skillRules[discipline] : []).map(skill => ({ skill, scope: attribution, ruleVersion: 'fsp-discipline-v1' })),
-    snapshotHash: hash(JSON.stringify(value)), mappingVersion: 'fsp-discipline-v1' };
+    ...(provider.auth === 'profile_challenge' ? { verificationMethod: 'profile_challenge' } : {}),
+    ...(provider.auth === 'api_token' ? { verificationMethod: 'api_token' } : {}),
+    ...(provider.auth === 'oauth2' ? { verificationMethod: 'oauth2' } : {}),
+    skills: (Object.hasOwn(skillRules, discipline) ? skillRules[discipline] : []).map(skill => ({ skill, scope: attribution, ruleVersion: mappingVersion })),
+    snapshotHash: hash(JSON.stringify(value)), mappingVersion };
 }
 
 export function encryptionKey(env, dbPath) {
@@ -61,8 +67,8 @@ export function encryptionKey(env, dbPath) {
   return key;
 }
 export class IntegrationService {
-  constructor(store, { dbPath = ':memory:', env = process.env, providers, now = Date.now, fetcher = fetch, retryDelayMs = 1000, automatic = true, publicCatalog, publicFetcher } = {}) {
-    this.publicCatalog = publicCatalog || new PublicFspCatalog();
+  constructor(store, { dbPath = ':memory:', env = process.env, providers, now = Date.now, fetcher = fetch, retryDelayMs = 1000, automatic = true, publicCatalog, publicFetcher, publicCollectorOptions = {} } = {}) {
+    this.fspCatalog = publicCatalog || new PublicFspCatalog();
     this.store = store; this.db = store.db; this.now = now; this.retryDelayMs = retryDelayMs; this.closed = false;
     this.claimsEncryptionConfigured = ![env.APP_ENV,env.NODE_ENV].includes('production') || Boolean(env.INTEGRATION_ENCRYPTION_KEY);
     this.key = encryptionKey(env, dbPath); this.providers = new Map((providers || createProviders(env, { now, fetcher })).map(provider => [provider.id, provider]));
@@ -80,6 +86,10 @@ export class IntegrationService {
       CREATE TABLE IF NOT EXISTS integration_pending (
         state_hash TEXT PRIMARY KEY, owner TEXT NOT NULL REFERENCES platform_accounts(owner) ON DELETE CASCADE,
         provider TEXT NOT NULL, secrets TEXT NOT NULL, expires_at TEXT NOT NULL, created_at TEXT NOT NULL
+      ) STRICT;
+      CREATE TABLE IF NOT EXISTS integration_intents (
+        owner TEXT NOT NULL REFERENCES platform_accounts(owner) ON DELETE CASCADE,
+        provider TEXT NOT NULL, version TEXT NOT NULL, PRIMARY KEY(owner,provider)
       ) STRICT;
       CREATE TABLE IF NOT EXISTS integration_evidence (
         id TEXT PRIMARY KEY, connection_id TEXT NOT NULL REFERENCES integration_connections(id) ON DELETE CASCADE,
@@ -99,6 +109,9 @@ export class IntegrationService {
         PRIMARY KEY(provider,id)
       ) STRICT;
     `);
+    this.publicCollector = new PublicSourceCollector(this.db,{now,fetcher:publicFetcher || fetcher,automatic:automatic && env.PUBLIC_SOURCE_AUTOSYNC !== '0',...publicCollectorOptions,onChange:()=>this.claims?.tick()});
+    this.publicAchievements = new PublicAchievementCatalog(this.publicCollector,this.fspCatalog);
+    this.publicCatalog = publicCatalog || this.publicAchievements;
     this.claims = new AchievementClaims(this);
     this.publicSourceChecks = new PublicSourceChecks(this, { fetcher: publicFetcher || fetcher });
     store.integrationCount = owner => this.db.prepare(`SELECT COUNT(*) AS count FROM integration_evidence e
@@ -132,7 +145,7 @@ export class IntegrationService {
   }
   descriptors() {
     return { providers: [...this.providers.values()].map(provider => ({ id: provider.id, name: provider.name, mode: provider.mode, auth: provider.auth,
-      enabled: provider.enabled, capabilities: ['achievements'], contractVersion: 'fsp-resource-v1',
+      enabled: provider.enabled, capabilities: ['achievements'], contractVersion: provider.contractVersion || 'fsp-resource-v1',
       ...(provider.mode === 'demo' ? { scenarios: ['achievements', 'empty', 'not-found', 'unavailable', 'revoked'] } : {}) })) };
   }
   connections(owner) {
@@ -145,26 +158,62 @@ export class IntegrationService {
       consentAt: row.consent_at, createdAt: row.created_at, lastSyncedAt: row.last_synced_at, lastError: row.last_error, evidenceCount: evidence.length,
       activeJob: activeJob ? this.publicJob(activeJob) : null };
   }
+  beginIntent(owner, id) {
+    const intent = randomUUID();
+    this.db.prepare('INSERT INTO integration_intents VALUES(?,?,?) ON CONFLICT(owner,provider) DO UPDATE SET version=excluded.version').run(owner,id,intent);
+    this.db.prepare('DELETE FROM integration_pending WHERE owner=? AND provider=?').run(owner,id);
+    return intent;
+  }
+  checkIntent(owner, id, intent) {
+    this.requireConsent(owner);
+    if (this.closed) throw new RequestError(503, 'Сервис завершает работу.');
+    if (this.db.prepare('SELECT version FROM integration_intents WHERE owner=? AND provider=?').get(owner,id)?.version !== intent) throw new RequestError(409, 'Подключение изменилось. Начните заново.');
+  }
   async connect(owner, id, input) {
     this.requireConsent(owner); const provider = this.provider(id);
-    if (!own(input) || input.consent !== true || Object.keys(input).some(key => !['consent', 'scenario'].includes(key))
+    const allowed = provider.auth === 'profile_challenge' ? ['consent','handle'] : provider.auth === 'api_token' ? ['consent','apiToken'] : ['consent','scenario'];
+    if (!own(input) || input.consent !== true || Object.keys(input).some(key => !allowed.includes(key))
       || provider.mode !== 'demo' && input.scenario !== undefined) throw new RequestError(400, 'Нужно отдельное согласие на получение внешних данных.');
     if (this.db.prepare('SELECT 1 FROM integration_connections WHERE owner=? AND provider=?').get(owner, id)) throw new RequestError(409, 'Источник уже подключён. Сначала отключите его.');
+    if (provider.mode === 'live' && !this.claimsEncryptionConfigured) throw new RequestError(503, 'Для подключения нужен ключ шифрования интеграций.');
+    if (provider.auth === 'profile_challenge') {
+      let handle; try { handle = provider.validateHandle(input.handle); } catch { throw new RequestError(400, `Укажите корректный ник ${provider.name}.`); }
+      const intent = this.beginIntent(owner,id);
+      let user; try { user = await provider.user(handle); } catch (error) { throw new RequestError(error.code === 'identity_not_found' ? 404 : 503, error.code === 'identity_not_found' ? `Аккаунт ${provider.name} не найден.` : `${provider.name} временно недоступен.`); }
+      this.checkIntent(owner,id,intent);
+      const nonce = secretToken(), token = 'predel-' + nonce, state = secretToken();
+      const createdAt = iso(this.now), expiresAt = new Date(this.now() + 30 * 60000).toISOString();
+      this.db.prepare('DELETE FROM integration_pending WHERE owner=? AND provider=? OR expires_at<=?').run(owner, id, createdAt);
+      this.db.prepare('INSERT INTO integration_pending VALUES(?,?,?,?,?,?)').run(hash(state), owner, id,
+        this.seal({ token, handle: user.handle, subject:provider.identity(user).subject, intent }), expiresAt, createdAt);
+      return { authorizationUrl: null, expiresAt, connection: null, job: null,
+        challenge: { id: state, token, handle: user.handle, field: provider.challengeField, profileUrl: provider.profileUrl(user.handle), keepProof:provider.keepProof, expiresAt } };
+    }
+    if (provider.auth === 'api_token') {
+      try { provider.validateToken(input.apiToken); } catch { throw new RequestError(400, 'Укажите API-токен Kaggle.'); }
+      const intent = this.beginIntent(owner,id);
+      let identity;
+      try { identity = await provider.connectToken(input.apiToken); }
+      catch (error) { throw new RequestError(['reauthorization_required','invalid_identity','identity_not_found'].includes(error.code) ? 403 : 503,
+        ['reauthorization_required','invalid_identity','identity_not_found'].includes(error.code) ? 'Kaggle не подтвердил аккаунт по этому токену. Создайте новый API-токен в настройках Kaggle.' : 'Kaggle временно недоступен.'); }
+      this.checkIntent(owner,id,intent);
+      const connection = this.attach(owner,provider,identity);
+      return {authorizationUrl:null, expiresAt:null, connection:this.publicConnection(connection), job:this.sync(owner,id)};
+    }
     if (provider.mode === 'demo') {
       const connection = this.attach(owner, provider, provider.connect(owner, input.scenario));
       const job = this.sync(owner, id);
       return { connection: this.publicConnection(connection), job, authorizationUrl: null, expiresAt: null };
     }
-    const state = secretToken(), nonce = secretToken(), verifier = secretToken();
+    const intent = this.beginIntent(owner,id), state = secretToken(), nonce = secretToken(), verifier = secretToken();
     const challenge = createHash('sha256').update(verifier).digest('base64url');
     let authorizationUrl;
     try { authorizationUrl = await provider.authorize({ state, nonce, challenge }); }
     catch { throw new RequestError(503, 'Авторизация источника временно недоступна.'); }
-    if (this.closed) throw new RequestError(503, 'Сервис завершает работу.');
-    this.requireConsent(owner);
+    this.checkIntent(owner,id,intent);
     const createdAt = iso(this.now), expiresAt = new Date(this.now() + 10 * 60000).toISOString();
     this.db.prepare('DELETE FROM integration_pending WHERE owner=? AND provider=? OR expires_at<=?').run(owner, id, createdAt);
-    this.db.prepare('INSERT INTO integration_pending VALUES(?,?,?,?,?,?)').run(hash(state), owner, id, this.seal({ nonce, verifier }), expiresAt, createdAt);
+    this.db.prepare('INSERT INTO integration_pending VALUES(?,?,?,?,?,?)').run(hash(state), owner, id, this.seal({ nonce, verifier, intent }), expiresAt, createdAt);
     return { authorizationUrl, expiresAt, connection: null, job: null };
   }
   attach(owner, provider, identity) {
@@ -179,18 +228,41 @@ export class IntegrationService {
       identity.externalId, Number(identity.identityVerified), this.seal(identity.credentials), 'connected', timestamp, timestamp, null, null, null);
     return this.db.prepare('SELECT * FROM integration_connections WHERE id=?').get(id);
   }
+  async verifyChallenge(owner, id, input) {
+    const provider = this.provider(id); this.requireConsent(owner);
+    if (provider.auth !== 'profile_challenge' || !own(input) || Object.keys(input).some(key => key !== 'challengeId')
+      || typeof input.challengeId !== 'string' || !/^[A-Za-z0-9_-]{43}$/u.test(input.challengeId)) throw new RequestError(400, 'Некорректное подтверждение аккаунта.');
+    const key = hash(input.challengeId), pending = this.db.prepare('SELECT * FROM integration_pending WHERE state_hash=? AND owner=? AND provider=?').get(key, owner, id);
+    if (!pending || Date.parse(pending.expires_at) <= this.now()) throw new RequestError(400, 'Код истёк или подключение уже завершено.');
+    const proof = this.unseal(pending.secrets);
+    let user; try { user = await provider.user(proof.handle); } catch { throw new RequestError(503, `${provider.name} временно недоступен. Повторите проверку позже.`); }
+    if (this.closed) throw new RequestError(503, 'Сервис завершает работу.');
+    this.requireConsent(owner);
+    this.checkIntent(owner,id,proof.intent);
+    if (provider.identity(user).subject !== proof.subject || provider.proofValue(user)?.trim() !== proof.token) throw new RequestError(403, `Код не найден в поле «${provider.challengeLabel}» профиля ${provider.name}. Сохраните его и повторите проверку.`);
+    const connection = this.store.transaction(() => {
+      // Recheck after network I/O: disconnect, a new challenge or another verify
+      // must prevent a stale request from creating a connection.
+      const current = this.db.prepare('SELECT * FROM integration_pending WHERE state_hash=? AND owner=? AND provider=?').get(key, owner, id);
+      if (!current || current.secrets !== pending.secrets || Date.parse(current.expires_at) <= this.now()) throw new RequestError(409, 'Подключение изменилось или истекло. Начните заново.');
+      const row = this.attach(owner, provider, provider.identity(user));
+      this.db.prepare('DELETE FROM integration_pending WHERE state_hash=?').run(key); return row;
+    });
+    return { connection: this.publicConnection(connection), job: this.sync(owner, id) };
+  }
   async callback(owner, id, query) {
     const provider = this.provider(id);
-    if (provider.mode !== 'live' || typeof query.state !== 'string' || query.state.length > 200) throw new RequestError(400, 'Некорректное завершение подключения.');
+    if (provider.mode !== 'live' || !['oidc','oauth2'].includes(provider.auth) || typeof query.state !== 'string' || query.state.length > 200) throw new RequestError(400, 'Некорректное завершение подключения.');
     const pending = this.db.prepare('SELECT * FROM integration_pending WHERE state_hash=? AND owner=? AND provider=?').get(hash(query.state), owner, id);
     if (!pending || Date.parse(pending.expires_at) <= this.now()) throw new RequestError(400, 'Подключение истекло или уже завершено.');
     this.db.prepare('DELETE FROM integration_pending WHERE state_hash=?').run(pending.state_hash);
     if (query.error || typeof query.code !== 'string' || !query.code || query.code.length > 4000) throw new RequestError(400, 'Авторизация источника не завершена.');
     this.requireConsent(owner);
+    const secrets = this.unseal(pending.secrets);
     let identity;
-    try { identity = await provider.exchange(query.code, this.unseal(pending.secrets)); }
+    try { identity = await provider.exchange(query.code, secrets); }
     catch { throw new RequestError(403, 'Не удалось подтвердить внешний аккаунт. Начните подключение заново.'); }
-    if (this.closed) throw new RequestError(503, 'Сервис завершает работу.');
+    this.checkIntent(owner,id,secrets.intent);
     const connection = this.attach(owner, provider, identity);
     return { connection: this.publicConnection(connection), job: this.sync(owner, id) };
   }
@@ -232,6 +304,7 @@ export class IntegrationService {
   disconnect(owner, id) {
     this.store.transaction(() => {
       const connection = this.db.prepare('SELECT * FROM integration_connections WHERE owner=? AND provider=?').get(owner, id);
+      this.beginIntent(owner,id);
       this.db.prepare('DELETE FROM integration_pending WHERE owner=? AND provider=?').run(owner, id);
       if (!connection) return;
       this.db.prepare("UPDATE integration_jobs SET status='cancelled',error='disconnected',updated_at=? WHERE connection_id=? AND status IN ('queued','running')").run(iso(this.now), connection.id);
@@ -244,6 +317,7 @@ export class IntegrationService {
     this.claims.removeOwner(owner);
     for (const row of this.db.prepare('SELECT provider FROM integration_connections WHERE owner=?').all(owner)) this.disconnect(owner, row.provider);
     this.db.prepare('DELETE FROM integration_pending WHERE owner=?').run(owner);
+    this.db.prepare('DELETE FROM integration_intents WHERE owner=?').run(owner);
   }
   webhook(raw, headers) {
     if (!this.webhookSecret) throw new RequestError(503, 'Webhook источника не настроен.');
@@ -379,5 +453,5 @@ export class IntegrationService {
     this.claims.tick();
     this.wake();
   }
-  close() { this.closed = true; clearInterval(this.timer); this.abort.abort(); }
+  close() { this.closed = true; clearInterval(this.timer); this.abort.abort(); this.publicCollector.close(); }
 }

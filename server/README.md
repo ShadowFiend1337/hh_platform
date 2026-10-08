@@ -8,6 +8,7 @@
 
 ```bash
 cp .env.example .env
+npm ci
 npm ci --prefix frontend
 npm run dev
 ```
@@ -87,3 +88,5 @@ npm run dev
 Пилот без API ФСП: `GET /api/integrations/fsp-public/search?name=Фамилия%20Имя`, сессия кандидата и согласие профиля. 24 проверенные записи одного официального протокола, все `unverified`. Запуск OCR: `npm run import:fsp-public`; подробности в [исследовании](../docs/fsp-public-research.md).
 
 Заявки: `/api/achievement-claims`; очередь и решения: `/api/moderation/claims`; хеш официального источника: `/api/moderation/sources/{sourceId}/check`. Доступ к модерации назначается только серверной командой `npm run moderator -- grant <login-or-email>`, отзывается `revoke`. [Документация](../docs/achievement-moderation.md).
+
+[Парсинг результатов из официальных таблиц и новостей](../docs/public-achievements.md): реестр источников, очередь обновлений, поиск команды/участника и подтверждение через модерацию.

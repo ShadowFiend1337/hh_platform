@@ -49,12 +49,15 @@ export class AchievementClaims {
       verification_method TEXT, verification_reference TEXT, approved_profile_name TEXT,
       UNIQUE(owner,record_id)
     ) STRICT;
-    CREATE UNIQUE INDEX IF NOT EXISTS achievement_one_owner ON achievement_claims(record_id) WHERE status='approved';
     CREATE INDEX IF NOT EXISTS achievement_queue ON achievement_claims(status,updated_at);
     CREATE TABLE IF NOT EXISTS achievement_claim_audit (
       id INTEGER PRIMARY KEY, claim_id TEXT NOT NULL REFERENCES achievement_claims(id) ON DELETE CASCADE,
       actor_id TEXT NOT NULL, action TEXT NOT NULL, version INTEGER NOT NULL, created_at TEXT NOT NULL, detail TEXT NOT NULL
     ) STRICT;`);
+    if(!this.db.prepare('PRAGMA table_info(achievement_claims)').all().some(column=>column.name==='participation'))this.db.exec("ALTER TABLE achievement_claims ADD COLUMN participation TEXT NOT NULL DEFAULT 'individual' CHECK(participation IN ('individual','team'))");
+    this.db.exec(`UPDATE achievement_claims SET participation='team' WHERE json_extract(snapshot,'$.participation')='team';
+      DROP INDEX IF EXISTS achievement_one_owner;
+      CREATE UNIQUE INDEX achievement_one_owner ON achievement_claims(record_id) WHERE status='approved' AND participation='individual';`);
   }
   profile(owner) {
     const row = this.db.prepare('SELECT profile FROM platform_accounts WHERE owner=?').get(owner);
@@ -76,7 +79,7 @@ export class AchievementClaims {
   }
   checks(row, support = null) {
     const source = this.current(row);
-    const duplicate = this.db.prepare("SELECT 1 FROM achievement_claims WHERE record_id=? AND status='approved' AND id<>?").get(row.record_id,row.id);
+    const duplicate = row.participation!=='team' && this.db.prepare("SELECT 1 FROM achievement_claims WHERE record_id=? AND status='approved' AND id<>?").get(row.record_id,row.id);
     return evaluateClaim({snapshot:JSON.parse(row.snapshot),...source,candidateName:this.profile(row.owner)?.name,
       duplicateApproved:Boolean(duplicate),documentProvided:support ? Boolean(support.document || support.links.length) : true});
   }
@@ -112,8 +115,8 @@ export class AchievementClaims {
       if(this.db.prepare('SELECT 1 FROM achievement_claims WHERE owner=? AND record_id=?').get(owner,input.recordId)) throw new RequestError(409,'Заявка на этот результат уже существует.');
       if(this.db.prepare("SELECT COUNT(*) AS n FROM achievement_claims WHERE owner=? AND status IN ('pending','needs_info')").get(owner).n>=20) throw new RequestError(409,'Одновременно допустимо до 20 незавершённых заявок.');
       const id=randomUUID(), at=iso(this.now);
-      this.db.prepare(`INSERT INTO achievement_claims(id,owner,record_id,status,version,snapshot,candidate_name,materials,created_at,updated_at)
-        VALUES(?,?,?,'pending',1,?,?,?,?,?)`).run(id,owner,input.recordId,JSON.stringify(record),this.profile(owner).name,this.integrations.seal(support),at,at);
+      this.db.prepare(`INSERT INTO achievement_claims(id,owner,record_id,status,version,snapshot,candidate_name,materials,created_at,updated_at,participation)
+        VALUES(?,?,?,'pending',1,?,?,?,?,?,?)`).run(id,owner,input.recordId,JSON.stringify(record),this.profile(owner).name,this.integrations.seal(support),at,at,record.participation);
       const row=this.get(id,owner);this.audit(row,actor,'submitted');return this.view(row);
     });
   }
@@ -128,9 +131,9 @@ export class AchievementClaims {
       if(!['pending','needs_info','rejected','withdrawn','revoked'].includes(row.status)) throw new RequestError(409,'Одобренную заявку сначала отзовите.');
       if (this.db.prepare("SELECT COUNT(*) AS n FROM achievement_claims WHERE owner=? AND status IN ('pending','needs_info') AND id<>?").get(owner,id).n>=20) throw new RequestError(409,'Одновременно допустимо до 20 незавершённых заявок.');
       const record=this.integrations.publicCatalog.get(row.record_id);
-      this.db.prepare(`UPDATE achievement_claims SET status='pending',version=version+1,snapshot=?,candidate_name=?,materials=?,updated_at=?,
+      this.db.prepare(`UPDATE achievement_claims SET status='pending',version=version+1,snapshot=?,candidate_name=?,materials=?,updated_at=?,participation=?,
         reviewed_at=NULL,valid_until=NULL,decision_note=NULL,verification_method=NULL,verification_reference=NULL,approved_profile_name=NULL WHERE id=?`)
-        .run(JSON.stringify(record),this.profile(owner).name,this.integrations.seal(support),iso(this.now),id);
+        .run(JSON.stringify(record),this.profile(owner).name,this.integrations.seal(support),iso(this.now),record.participation,id);
       const next=this.get(id,owner);this.audit(next,actor,'resubmitted');this.integrations.reindex(owner);return this.view(next);
     });
   }
@@ -149,7 +152,8 @@ export class AchievementClaims {
   }
   decide(reviewer,id,input) {
     this.requireStorage();
-    strict(input,['version','decision','reason','ownershipConfirmed','verificationMethod','verificationReference']);
+    strict(input,['version','decision','reason','ownershipConfirmed','verificationMethod','verificationReference','teamMembershipConfirmed']);
+    if(input.teamMembershipConfirmed!==undefined&&typeof input.teamMembershipConfirmed!=='boolean')throw new RequestError(400,'Некорректное подтверждение состава команды.');
     if(!reviewer.canModerate) throw new RequestError(403,'Требуется право модератора.');
     const choices={approve:'approved',reject:'rejected',request_information:'needs_info',revoke:'revoked'};
     if(!Object.hasOwn(choices,input.decision)) throw new RequestError(400,'Неизвестное решение.');
@@ -162,17 +166,19 @@ export class AchievementClaims {
       if(input.decision==='revoke' ? row.status!=='approved' : !['pending','needs_info',...(input.decision==='approve'?['approved']:[])].includes(row.status)) throw new RequestError(409,'Для текущего статуса это решение недоступно.');
       let method=null,reference=null;
       if(input.decision==='approve') {
-        if (this.integrations.publicSourceChecks?.running.has(JSON.parse(row.snapshot).sourceId)) throw new RequestError(409,'Дождитесь завершения проверки источника.');
+        const sourceId=JSON.parse(row.snapshot).sourceId;
+        if (this.integrations.publicSourceChecks?.running.has(sourceId)||this.integrations.publicCollector.running.has(sourceId)) throw new RequestError(409,'Дождитесь завершения проверки источника.');
         const checks=this.checks(row);
         if(checks.sourceStatus!=='matched' || checks.duplicateApproved) throw new RequestError(409,'Источник изменён, недоступен или результат уже привязан. Нужна повторная проверка.');
         if(input.ownershipConfirmed!==true || !['document_review','organizer_confirmation','account_ownership'].includes(input.verificationMethod)) throw new RequestError(400,'Укажите способ проверки и подтвердите принадлежность результата.');
+        if(row.participation==='team'&&input.teamMembershipConfirmed!==true)throw new RequestError(400,'Подтвердите участие кандидата в составе этой команды. Командного места недостаточно.');
         reference=text(input.verificationReference,20,2000,'основание проверки принадлежности'); method=input.verificationMethod;
         if(method==='document_review' && !checks.documentProvided) throw new RequestError(400,'Для проверки документа нужны подтверждающие материалы.');
-      } else if(input.ownershipConfirmed || input.verificationMethod || input.verificationReference) throw new RequestError(400,'Проверка принадлежности указывается только при одобрении.');
+      } else if(input.ownershipConfirmed || input.verificationMethod || input.verificationReference || input.teamMembershipConfirmed) throw new RequestError(400,'Проверка принадлежности указывается только при одобрении.');
       const at=iso(this.now),until=input.decision==='approve'?new Date(this.now()+validDays*86400000).toISOString():null;
       this.db.prepare(`UPDATE achievement_claims SET status=?,version=version+1,updated_at=?,reviewed_at=?,valid_until=?,decision_note=?,verification_method=?,verification_reference=?,approved_profile_name=? WHERE id=?`)
         .run(choices[input.decision],at,at,until,note,method,reference?this.integrations.seal({value:reference}):null,input.decision==='approve'?profile.name:null,id);
-      const next=this.get(id);this.audit(next,reviewer.id,input.decision,{reason:note,verificationMethod:method,verificationReference:reference});this.integrations.reindex(row.owner);return this.view(next,{moderator:true});
+      const next=this.get(id);this.audit(next,reviewer.id,input.decision,{reason:note,verificationMethod:method,verificationReference:reference,...(row.participation==='team'?{teamMembershipConfirmed:input.teamMembershipConfirmed===true}:{})});this.integrations.reindex(row.owner);return this.view(next,{moderator:true});
     });
   }
   attachment(row, actor) {
@@ -180,15 +186,16 @@ export class AchievementClaims {
     if(!document) throw new RequestError(404,'Файл не приложен.');
     this.audit(row,actor,'document_downloaded');return {...document,bytes:Buffer.from(document.dataBase64,'base64')};
   }
-  count(owner) { return this.db.prepare("SELECT * FROM achievement_claims WHERE owner=? AND status='approved'").all(owner).filter(row=>this.active(row)).length; }
+  count(owner) { return this.db.prepare("SELECT * FROM achievement_claims WHERE owner=? AND status='approved'").all(owner).filter(row=>JSON.parse(row.snapshot).provider!=='public-achievements'&&this.active(row)).length; }
   evidence(owner,{publicOnly=false}={}) {
     return this.db.prepare("SELECT * FROM achievement_claims WHERE owner=? AND status IN ('approved','revoked') ORDER BY reviewed_at DESC,id").all(owner).map(row=>{
       const record=JSON.parse(row.snapshot),active=this.active(row);
-      const item={id:hash('claim:'+row.id),provider:'fsp-public',title:record.title,discipline:record.discipline,occurredAt:record.occurredOn+'T00:00:00.000Z',
-        result:`Место ${record.place}; решено задач: ${record.solvedTasks}`,place:record.place,participation:record.participation,teamRole:null,sourceUrl:record.sourceUrl+'#page='+record.sourcePage,
+      const generic=record.provider==='public-achievements',mappingVersion=generic?'public-achievements-v1':'fsp-discipline-v1',scope=record.participation==='team'?'team_result':'individual_result';
+      const item={id:hash('claim:'+row.id),provider:generic?'public-achievements':'fsp-public',title:record.title,discipline:record.discipline,occurredAt:record.occurredOn+'T00:00:00.000Z',
+        result:generic?record.result:`Место ${record.place}; решено задач: ${record.solvedTasks}`,place:record.place,participation:record.participation,teamRole:record.participation==='team'?'Участие в составе проверено модератором; личный вклад отдельно не оценивался':null,sourceUrl:record.sourceUrl+(record.sourcePage?'#page='+record.sourcePage:''),
         status:row.status==='revoked'?'revoked':active?'verified':'stale',identityVerified:active,checkedAt:row.reviewed_at,validUntil:row.valid_until || row.reviewed_at,
-        verificationMethod:'manual_review',skills:record.discipline==='algorithms'?[{skill:'Алгоритмы',scope:'individual_result',ruleVersion:'fsp-discipline-v1'},{skill:'Структуры данных',scope:'individual_result',ruleVersion:'fsp-discipline-v1'}]:[],
-        externalRecordId:row.record_id,snapshotHash:record.documentHash,mappingVersion:'fsp-discipline-v1'};
+        verificationMethod:'manual_review',skills:record.discipline==='algorithms'?[{skill:'Алгоритмы',scope,ruleVersion:mappingVersion},{skill:'Структуры данных',scope,ruleVersion:mappingVersion}]:[],
+        externalRecordId:row.record_id,snapshotHash:record.documentHash,mappingVersion};
       if(publicOnly){delete item.externalRecordId;delete item.snapshotHash;}return item;
     });
   }

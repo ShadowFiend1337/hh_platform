@@ -34,6 +34,7 @@
 
 ~~~bash
 cp .env.example .env
+npm ci
 npm ci --prefix frontend
 npm run setup:search
 npm run train:search
@@ -89,3 +90,5 @@ npm run dev
 Для работы без доступа к API ФСП добавлен [пилот импорта публичных протоколов](docs/fsp-public-research.md): `npm run import:fsp-public`, 24 проверенные записи первого протокола и поиск по ФИО в профиле.
 
 [Привязка и модерация достижений](docs/achievement-moderation.md): кандидат подаёт материалы из профиля, модератор работает на `/moderation`. Право назначается командой `npm run moderator -- grant <login-or-email>`.
+
+[Парсинг результатов из официальных таблиц и новостей](docs/public-achievements.md): реестр источников, очередь обновлений, поиск команды/участника и подтверждение через модерацию.
