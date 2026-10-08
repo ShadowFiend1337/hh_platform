@@ -1,7 +1,7 @@
 // Transparent evidence constraints supplement neural similarity; they do not
 // certify a person's competence or turn arbitrary query words into filters.
 // Only the named methods below have a literal, bounded requirement policy.
-export const TASK_EVIDENCE_POLICY = 'explicit-professional-concepts-v1';
+export const TASK_EVIDENCE_POLICY = 'explicit-professional-concepts-with-treatment-effects-v2';
 
 const boundary = expression => new RegExp(`(?<![\\p{L}\\p{N}_])(?:${expression})(?![\\p{L}\\p{N}_])`, 'giu');
 const normalize = text => String(text || '').normalize('NFKC').replaceAll('ё', 'е');
@@ -17,6 +17,11 @@ const words = '[\\p{L}\\p{N}_-]+';
 // https://www.yubico.com/products/how-the-yubikey-works/
 // https://cloud.google.com/security/products/titan-security-key
 const concepts = [
+  // CATE/uplift estimates a treatment-induced difference in outcomes, rather
+  // than baseline purchase/churn propensity. This requirement checks claimed
+  // task evidence only; it does not validate the causal model or its accuracy.
+  // https://www.pywhy.org/EconML/spec/estimation/dml.html
+  ['individual-treatment-effect', 'Индивидуальный эффект воздействия', String.raw`uplift|cate|conditional\s+average\s+treatment\s+effects?|индивидуальн[а-я]*\s+(?:причинн[а-я]*\s+)?эффект[а-я]*\s+(?:воздействи[а-я]*|вмешательств[а-я]*)`],
   ['nfc', 'NFC', String.raw`nfc|near[ -]field communication|бесконтактн[а-я]*\s+(?:метк[а-я]*|карт[а-я]*)`],
   ['ble', 'Bluetooth / BLE', String.raw`bluetooth(?:\s+low\s+energy)?|ble|gatt|блюту[зс][а-я]*`],
   ['barcode', 'Штрихкод', String.raw`bar[ -]?codes?|штрих[ -]?код[а-я]*|баркод[а-я]*`],
@@ -56,12 +61,13 @@ function clauses(text) {
 const deniedExperience = new RegExp(String.raw`(?<![\p{L}\p{N}_])(?:не\s+(?:только\s+)?(?:делал[аи]?|создавал[аи]?|создал[аи]?|проектировал[аи]?|выполнял[аи]?|реализовывал[аи]?|реализовал[аи]?|разрабатывал[аи]?|разработал[аи]?|исследовал[аи]?|применял[аи]?|использовал[аи]?|обрабатывал[аи]?|поддерживал[аи]?|моделировал[аи]?|настраивал[аи]?|интегрировал[аи]?|занимал(?:ся|ась|ись)|работал[аи]?|изучал[аи]?|умею|умеем|владею|владеем|знаю|знаем|знаком[аы]?)|не\s+(?:доводилось|приходилось)\s+(?:${words}\s+){0,3}(?:работать|делать|разрабатывать|реализовывать|настраивать)|(?:нет|не\s+имею|не\s+имеем)\s+опыта|опыта\s+(?:${words}\s+){0,6}нет|не\s+входил[аои]?\s+(?:в\s+)?(?:мои\s+)?(?:задач[а-я]*|обязанност[а-я]*)|(?:в\s+)?(?:мои\s+)?(?:задач[а-я]*|обязанност[а-я]*)\s+не\s+входил[аои]?|(?:have\s+not|haven't|never|did\s+not|didn't)\s+(?:implemented|implement|developed|develop|worked|work|used|use)|no\s+experience)(?![\p{L}\p{N}_])`, 'iu');
 const prospectiveExperience = /(?<![\p{L}\p{N}_])(?:хочу\s+(?:изучить|освоить|научиться)|планирую\s+(?:изучить|освоить|научиться)|только\s+планирую|want\s+to\s+(?:learn|study)|plan\s+to\s+(?:learn|study))(?![\p{L}\p{N}_])/iu;
 const experienceDisclaimer = /(?<![\p{L}\p{N}_])(?:(?:без|нет|не\s+имею|не\s+имеем)\s+(?:(?:коммерческ[а-я]*|практическ[а-я]*|профессиональн[а-я]*|реальн[а-я]*)\s+)?опыта|(?:мне|нам)\s+незнаком(?:а|о|ы)?)(?![\p{L}\p{N}_])/iu;
+const deniedEvaluation = /(?<![\p{L}\p{N}_])не\s+(?:оценивал[аи]?|оценил[аи]?)(?![\p{L}\p{N}_])/iu;
 
 function claimPolarity(text) {
   // "Не только реализовывал X, но и Y" affirms experience. Remove only this
   // comparative wrapper before testing genuine denial predicates.
   const claim = text.replace(/\bне\s+только\b/giu, '').replace(/(?<![\p{L}\p{N}_])не\s+только(?![\p{L}\p{N}_])/giu, '');
-  if (deniedExperience.test(claim) || experienceDisclaimer.test(claim)) return 'negative';
+  if (deniedExperience.test(claim) || deniedEvaluation.test(claim) || experienceDisclaimer.test(claim)) return 'negative';
   if (prospectiveExperience.test(claim)) return 'prospective';
   return 'positive';
 }
@@ -71,6 +77,23 @@ export function positiveProfessionalContent(text) {
   // Keep existing index contents identical when no claim needs exclusion.
   if (statements.length === positive.length) return String(text || '');
   return positive.join('. ');
+}
+
+// Infer only this bounded task paraphrase: an individual causal increment, or
+// a per-recipient outcome difference relative to withholding an intervention.
+// Generic prediction, a total A/B effect and the word "клиент" are insufficient.
+function treatmentEffectParaphrase(text) {
+  const individual = /(?<![\p{L}\p{N}_])(?:индивидуальн[а-я]*|(?:для|у)\s+(?:кажд[а-я]*|отдельн[а-я]*)\s+(?:клиент[а-я]*|абонент[а-я]*|пользоват[а-я]*|покупател[а-я]*|получател[а-я]*|человек[а-я]*|человека))(?![\p{L}\p{N}_])/iu.exec(text);
+  if (!individual) return null;
+  const increment = /(?<![\p{L}\p{N}_])(?:добавочн[а-я]*|дополнительн[а-я]*|причинн[а-я]*|инкрементальн[а-я]*)\s+(?:эффект[а-я]*|прирост[а-я]*)(?![\p{L}\p{N}_])/iu.exec(text);
+  const comparison = /(?:относительно|по\s+сравнению\s+с)\s+(?:отсутстви[а-я]*|(?:вариант[а-я]*\s+)?без)/iu.exec(text);
+  const effect = /насколько|разниц[а-я]*|прирост[а-я]*|измен[а-я]*|сниз[а-я]*|повыс[а-я]*/iu.test(text);
+  const outcome = /покуп[а-я]*|конверси[а-я]*|риск[а-я]*|отток[а-я]*|уход[а-я]*|решени[а-я]*|удержани[а-я]*/iu.test(text);
+  const intervention = /воздействи[а-я]*|вмешательств[а-я]*|подар[а-я]*|купон[а-я]*|скидк[а-я]*|сообщени[а-я]*|предложени[а-я]*/iu.test(text);
+  if (!increment && !(comparison && effect && outcome && intervention)) return null;
+  const cause = increment || comparison;
+  return { id: 'individual-treatment-effect', start: Math.min(individual.index, cause.index),
+    end: Math.max(individual.index + individual[0].length, cause.index + cause[0].length) };
 }
 
 function conceptMatches(text, context = text) {
@@ -88,6 +111,10 @@ function conceptMatches(text, context = text) {
         && !/вход[а-я]*|аутентификац[а-я]*|авторизац[а-я]*|парол[а-я]*|фишинг[а-я]*|sign[ -]?in|login|authenticat/iu.test(normalizedContext)) continue;
       output.push({ id, start: match.index, end: match.index + match[0].length });
     }
+  }
+  if (!output.some(match => match.id === 'individual-treatment-effect')) {
+    const treatmentEffect = treatmentEffectParaphrase(normalized);
+    if (treatmentEffect) output.push(treatmentEffect);
   }
   return output.sort((a, b) => a.start - b.start || b.end - a.end);
 }

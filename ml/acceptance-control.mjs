@@ -23,8 +23,12 @@ const runtimeSources = [
   'ml/acceptance-control.mjs', 'ml/acceptance-control.json',
   'server/directory.mjs', 'server/directory-store.mjs', 'server/semantic-worker.mjs',
   'server/search-ranking.mjs', 'server/query-role-scope.mjs', 'server/search-evidence.mjs',
-  'server/category-recommendations.mjs',
-  'shared/catalog.ts', 'shared/grading.ts', 'shared/search.ts',
+  'server/category-recommendations.mjs', 'server/search-explanations.mjs', 'server/profile-publication.mjs',
+  'server/directory-seed.mjs', 'server/demo-catalog.mjs', 'server/local-fixtures.mjs',
+  'server/assessment.mjs', 'server/bank.mjs', 'server/vacancies.mjs',
+  'server/banks/data.mjs', 'server/banks/engineering.mjs', 'server/banks/product.mjs',
+  'server/banks/engineering-levels.mjs', 'server/banks/data-product-levels.mjs', 'server/banks/embedded.mjs',
+  'shared/catalog.ts', 'shared/grading.ts', 'shared/search.ts', 'shared/resume-limits.ts',
   'ml/worker.py', 'ml/common.py', 'ml/reranker.py', 'ml/requirements.txt',
 ];
 
@@ -89,6 +93,41 @@ export function buildControl(data) {
   return { profiles, cases };
 }
 
+/** Reuse the reference catalogue without pretending these seen tasks are blind. */
+export function buildTransferControl(data, reference) {
+  assert.equal(data.schemaVersion, 1);
+  assert.equal(data.provenance?.kind, 'authored-synthetic-transfer-control');
+  assert.equal(data.referenceCatalog, 'ml/acceptance-control.json');
+  assert.ok(Array.isArray(data.cases) && data.cases.length > 0);
+  assert.ok(Array.isArray(data.referenceCases));
+  const seen = new Set(reference.cases.map(item => item.id));
+  const profiles = [], cases = [];
+  for (const [index, item] of data.cases.entries()) {
+    assert.match(item.id, /^[a-z][a-z0-9-]+$/u);
+    assert.ok(!seen.has(item.id), 'Repeated case ID'); seen.add(item.id);
+    assert.ok(isSpecialization(item.specialization));
+    for (const field of ['query', 'positive', 'negative', 'rationale']) assert.ok(typeof item[field] === 'string' && item[field].trim());
+    assert.ok(item.query.length <= 1200);
+    assert.notEqual(normalize(item.positive), normalize(item.negative));
+    for (const kind of ['positive', 'negative']) {
+      profiles.push({ ...reference.profiles[0], id: `${item.id}-${kind}`,
+        name: `Вымышленный контроль ${index + 1} ${kind}`,
+        specialization: item.specialization, desiredGrade: 'Middle', professionalRole: specializationLabels[item.specialization],
+        confirmed: { specialization: item.specialization, grade: 'Middle', score: 83, date: '2026-10-08T09:00:00.000Z' },
+        bio: item[kind], stack: [], achievements: [], salaryFrom: 180000, salaryTo: 200000, portfolio: '',
+      });
+    }
+    cases.push({ id: item.id, family: item.id, query: item.query, filters: {},
+      expected: { relevant: [`${item.id}-positive`], forbiddenFirst: [`${item.id}-negative`] }, labelRationale: item.rationale });
+  }
+  assert.equal(new Set(data.referenceCases).size, data.referenceCases.length);
+  const referenceCases = data.referenceCases.map(id => {
+    const item = reference.cases.find(row => row.id === id);
+    assert.ok(item, 'Unknown reference case'); return item;
+  });
+  return { profiles: [...reference.profiles, ...profiles], cases: [...referenceCases, ...cases] };
+}
+
 function sourceLiterals(source) {
   const values = [];
   for (const expression of [/"((?:\\.|[^"\\])*)"/gu, /'((?:\\.|[^'\\])*)'/gu]) {
@@ -120,8 +159,14 @@ async function resolveModel(modelPath) {
   return { artifact, activePath, metadataPath, metadata };
 }
 
-async function validateControl(model) {
-  const bytes = await readFile(controlPath), data = JSON.parse(bytes.toString('utf8')), control = buildControl(data);
+async function validateControl(model, path = controlPath) {
+  path = resolve(root, path);
+  const bytes = await readFile(path), data = JSON.parse(bytes.toString('utf8'));
+  const transfer = data.provenance?.kind === 'authored-synthetic-transfer-control';
+  const referencePath = join(root, 'ml/acceptance-control.json');
+  const referenceBytes = transfer ? await readFile(referencePath) : null;
+  const reference = transfer ? buildControl(JSON.parse(referenceBytes.toString('utf8'))) : null;
+  const control = transfer ? buildTransferControl(data, reference) : buildControl(data);
   const oldTexts = [], oldFamilyIds = new Set(), corpusFiles = [];
   for (const name of ['ml/dataset.py', 'ml/dataset_v2.py', 'ml/dataset_v3.py', 'ml/search-regression.mjs']) {
     const source = await readFile(join(root, name), 'utf8');
@@ -136,11 +181,22 @@ async function validateControl(model) {
   }
   for (const item of dataset.splitManifest || []) oldFamilyIds.add(item.id);
   corpusFiles.push({ path: projectPath(datasetPath), sha256: await fileHash(datasetPath) });
-  for (const family of data.families) assert.ok(oldFamilyIds.has(family.nearestExistingFamily), 'Nearest existing family must name a real corpus family');
-  assertNovelLiterals(data, control, oldTexts, oldFamilyIds);
-  return { data, control, controlSha256: hash(bytes), profilesSha256: hash(JSON.stringify(control.profiles)),
+  if (transfer) {
+    oldTexts.push(...reference.cases.map(item => item.query), ...reference.profiles.map(person => person.bio));
+    for (const item of reference.cases) oldFamilyIds.add(item.id);
+    assertNovelLiterals({ families: data.cases }, { profiles: control.profiles.slice(reference.profiles.length),
+      cases: control.cases.filter(item => !data.referenceCases.includes(item.id)) }, oldTexts, oldFamilyIds);
+    corpusFiles.push({ path: projectPath(referencePath), sha256: hash(referenceBytes) });
+  } else {
+    for (const family of data.families) assert.ok(oldFamilyIds.has(family.nearestExistingFamily), 'Nearest existing family must name a real corpus family');
+    assertNovelLiterals(data, control, oldTexts, oldFamilyIds);
+  }
+  return { data, control, controlPath: path, transfer, controlSha256: hash(bytes), profilesSha256: hash(JSON.stringify(control.profiles)),
     labelsSha256: hash(JSON.stringify(control.cases)), corpusFiles,
-    novelty: { literalOverlap: 'none-detected', familyIds: 'disjoint', semanticNovelty: 'authored-narrow-task-distinction; not independently verified' } };
+    novelty: { literalOverlap: transfer ? 'new-transfer-texts:none-detected;reference-inputs:explicit-reuse' : 'none-detected',
+      familyIds: transfer ? 'new-transfer-ids:disjoint;reference-ids:explicit-reuse' : 'disjoint', semanticNovelty: transfer
+      ? 'authored-transfer-regression-after-baseline-inspection; not blind or expert-independent'
+      : 'authored-narrow-task-distinction; not independently verified' } };
 }
 
 async function hashes(paths) {
@@ -160,9 +216,11 @@ async function freeze(model, prepared, output) {
   for (const [name, expected] of Object.entries(model.metadata.reranker.fileHashes)) {
     assert.equal(modelFiles.find(item => item.path === projectPath(join(rerankerRoot, name)))?.sha256, expected, 'Reranker artifact hash mismatch');
   }
-  const sourceFiles = await hashes(runtimeSources.map(path => join(root, path)));
+  const sourceFiles = await hashes([...runtimeSources, ...(prepared.transfer ? ['ml/transfer-control.mjs', 'ml/transfer-control.json'] : [])]
+    .map(path => join(root, path)));
   const manifest = { schemaVersion: 1, kind: 'frozen-authored-composition-control', frozenAt: new Date().toISOString(),
     phase: 'before-worker-start-and-before-inference', suiteVersion: prepared.data.suiteVersion,
+    controlPath: projectPath(prepared.controlPath),
     provenance: prepared.data.provenance, modelArtifact: projectPath(model.artifact), modelVersion: model.metadata.modelVersion,
     encoderModelVersion: model.metadata.encoderModelVersion, pipelineFingerprint: model.metadata.pipelineFingerprint,
     encodingFingerprint: model.metadata.encodingFingerprint, controlSha256: prepared.controlSha256,
@@ -170,8 +228,8 @@ async function freeze(model, prepared, output) {
     sourceFiles, modelFiles, corpusFiles: prepared.corpusFiles, novelty: prepared.novelty,
     evaluationPolicy: { firstMustBeRelevant: true, positiveMustOccurInTop: 5, nearbyNegativeMustNotBeFirst: true,
       budgetAppliesToEveryReturnedProfile: true, allCasesUseTheFullFreshDirectory: true, noModelTuning: true },
-    families: prepared.data.families.map(({ id, specialization, novelTask, nearestExistingFamily, distinction }) =>
-      ({ id, specialization, novelTask, nearestExistingFamily, distinction })), labels: prepared.control.cases };
+    families: (prepared.data.families || prepared.data.cases).map(({ id, specialization, novelTask, nearestExistingFamily, distinction, rationale }) =>
+      ({ id, specialization, novelTask, nearestExistingFamily, distinction, ...(rationale ? { rationale } : {}) })), labels: prepared.control.cases };
   const directory = output ? diagnosticPath(output) : join(diagnosticRoot, new Date().toISOString().replace(/[:.]/gu, '-') + '-' + randomUUID());
   await mkdir(directory, { recursive: true });
   const manifestPath = join(directory, 'manifest.json');
@@ -210,7 +268,7 @@ async function runFrozen(manifestPath, strict) {
   assert.equal(manifest.kind, 'frozen-authored-composition-control');
   assert.equal(manifest.phase, 'before-worker-start-and-before-inference');
   await assertUnchanged([...manifest.sourceFiles, ...manifest.modelFiles, ...manifest.corpusFiles]);
-  const model = await resolveModel(manifest.modelArtifact), prepared = await validateControl(model);
+  const model = await resolveModel(manifest.modelArtifact), prepared = await validateControl(model, manifest.controlPath || controlPath);
   assert.equal(prepared.controlSha256, manifest.controlSha256); assert.equal(prepared.labelsSha256, manifest.labelsSha256);
   assert.equal(prepared.profilesSha256, manifest.profilesSha256); assert.equal(model.metadata.modelVersion, manifest.modelVersion);
   assert.deepEqual(prepared.control.cases, manifest.labels);
@@ -259,7 +317,7 @@ async function main(args) {
     assert.ok(value('--manifest'), 'Run requires a previously written --manifest');
     return runFrozen(value('--manifest'), flag('--strict'));
   }
-  const model = await resolveModel(value('--model')), prepared = await validateControl(model);
+  const model = await resolveModel(value('--model')), prepared = await validateControl(model, value('--data') || controlPath);
   if (flag('--freeze')) {
     const path = await freeze(model, prepared, value('--output'));
     console.log('Авторская разметка, активная композиция и исходники зафиксированы до запуска модели.');

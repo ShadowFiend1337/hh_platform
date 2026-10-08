@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "suiteVersion": "authored-task-transfer-check-v1",
+  "provenance": {
+    "kind": "authored-synthetic-transfer-control",
+    "labels": "Author judgments fixed before first inference and unchanged after baseline inspection.",
+    "purpose": "Regression control of task distinctions on the active complete composition.",
+    "independenceLimit": "The initial run has been inspected. This is an authored transfer regression, not a blind holdout or independent expert assessment.",
+    "notEvidenceOf": [
+      "independent expert agreement",
+      "professional qualification",
+      "hiring outcomes",
+      "real-user conversion"
+    ],
+    "reusePolicy": "Do not train, select weights or thresholds, or alter these labels after observing this control.",
+    "initialLabelFileSha256": "bab668c7a4fc4b8e06f8090ec866c04ddebc4521f0792190c35453c7f8d5bede"
+  },
+  "referenceCatalog": "ml/acceptance-control.json",
+  "referenceCases": [
+    "control-individual-treatment-uplift"
+  ],
+  "cases": [
+    {
+      "id": "new-coupon-treatment-effect",
+      "specialization": "ML",
+      "query": "Для рассылки купонов нужно отделить покупателей, которые придут и без скидки, от тех, кого скидка убедит купить. Ищем оценку причинного прироста вероятности покупки у отдельного человека.",
+      "positive": "Строю CATE и uplift-модели для назначения купонов. Использую контрольную группу без скидки и оцениваю разницу индивидуальных вероятностей исхода при воздействии и без него. Проверяю причинный прирост покупки на отложенном рандомизированном эксперименте.",
+      "negative": "Прогнозирую вероятность покупки по истории клиента. Для выдачи скидки выбираю клиентов с наибольшей вероятностью конверсии. Причинный эффект скидки и исход без воздействия не оценивал.",
+      "rationale": "Individual incremental intervention effect is required; purchase propensity cannot establish it."
+    },
+    {
+      "id": "new-retention-individual-effect",
+      "specialization": "ML",
+      "query": "Оператор предлагает подарок уходящим абонентам. Нужен специалист, который поймёт для каждого абонента, насколько подарок снизит риск ухода относительно отсутствия подарка, а не просто найдёт всех с высоким риском ухода.",
+      "positive": "Разрабатываю модели индивидуального эффекта воздействия на удержание абонентов. По группам treatment и control оцениваю CATE: разницу риска ухода без подарка и с ним. Проверяю выбор получателей на независимом рандомизированном пилоте.",
+      "negative": "Обучаю бинарную модель оттока абонентов по звонкам и платежам. Отбираю клиентов с высоким риском ухода. Индивидуальный эффект подарка не моделировал.",
+      "rationale": "Estimating risk reduction caused by treatment differs from predicting baseline churn."
+    },
+    {
+      "id": "new-endoscopy-confidence",
+      "specialization": "ML",
+      "query": "Модель распознавания медицинских изображений даёт слишком уверенные ошибочные ответы. Нужно откалибровать вероятность ошибки, чтобы сомнительный снимок отправлялся врачу.",
+      "positive": "Калибрую вероятности классификатора медицинских изображений на отложенных данных. Проверяю согласованность уверенности и частоты ошибок, настраиваю температурное масштабирование и порог передачи решения врачу.",
+      "negative": "Создаю классификатор медицинских снимков и повышаю точность за счёт аугментации. Калибровку вероятностей и порог отказа от автоматического решения не настраивал.",
+      "rationale": "Confidence calibration and abstention are distinct from improving ordinary classification accuracy."
+    },
+    {
+      "id": "new-ledger-keyset",
+      "specialization": "Backend",
+      "query": "Журнал платежей постоянно пополняется, и при переходе на следующую страницу клиент видит повторы или пропуски. Нужна стабильная пагинация по курсору и составному ключу вместо номера страницы.",
+      "positive": "Реализую keyset-пагинацию журнала платежей по курсору с составным ключом времени и ID. Фиксирую порядок и границу чтения, проверяю вставки между запросами и отсутствие повторов при следующей странице.",
+      "negative": "Добавляю нумерацию страниц в REST API журнала платежей с SQL LIMIT и OFFSET. Курсорную пагинацию и стабильность между вставками не реализовывал.",
+      "rationale": "Stable keyset pagination is required; numbered offset pages do not meet the changing-data constraint."
+    },
+    {
+      "id": "new-signing-key-overlap",
+      "specialization": "DevOps",
+      "query": "Нужно менять ключ подписи токенов без массового выхода пользователей: новые токены подписываются новым ключом, а старые ещё проверяются предыдущим до истечения срока.",
+      "positive": "Организую ротацию ключей подписи JWT с перекрытием сроков. Публикую оба ключа проверки через JWKS, отмечаю kid и удаляю прежний ключ после истечения старых токенов. Проверяю переход без массового выхода пользователей.",
+      "negative": "Заменяю единственный секрет подписи JWT и перезапускаю приложение. Поддержку предыдущего ключа на переходный период не настраивал.",
+      "rationale": "Overlapping verification keys are required; replacing a single secret invalidates still-valid tokens."
+    },
+    {
+      "id": "new-account-experiment-unit",
+      "specialization": "DataAnalysis",
+      "query": "В эксперименте несколько сотрудников одной компании влияют друг на друга. Нужно выбирать группу на уровне всей компании и оценивать результат с учётом зависимости сотрудников, а не считать их независимыми наблюдениями.",
+      "positive": "Проектирую кластерные рандомизированные эксперименты: назначаю вариант всей компании и учитываю внутрикластерную зависимость при оценке эффекта и доверительного интервала. Проверяю влияние числа компаний и размера кластера на мощность.",
+      "negative": "Сравниваю среднюю конверсию пользователей A/B-теста обычным тестом независимых наблюдений. Кластерную рандомизацию по компаниям и поправку на зависимость не применял.",
+      "rationale": "Cluster-level assignment and dependent-observation analysis are required, rather than ordinary independent-user A/B statistics."
+    }
+  ]
+}
