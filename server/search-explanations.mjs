@@ -2,6 +2,7 @@ import { isSpecialization, specializationLabels } from '../shared/catalog.ts';
 import { isGrade, gradeLabels } from '../shared/grading.ts';
 import { languageOptions } from '../shared/search.ts';
 import { rankingFspEvidence, normalizeRankingFspEvidence, rankingTraceFor } from './search-ranking.mjs';
+import { confirmationOrdering } from './profile-publication.mjs';
 
 export const SEARCH_EXPLANATION_POLICY = 'public-evidence-and-executed-order-v2';
 
@@ -95,13 +96,14 @@ function fspExplanation(person, source, contribution) {
 
 /** Annotate admitted public results; return their existing order and scores. */
 export function explainSearchResults(items, { semantic = false, scoreKind = 'logit', filters = {},
-  fspEvidence = rankingFspEvidence, verifiedFirst = false } = {}) {
+  fspEvidence = rankingFspEvidence } = {}) {
   if (!Array.isArray(items)) throw new TypeError('Expected search results');
   if (scoreKind !== 'logit' && scoreKind !== 'cosine') throw new TypeError('Unknown semantic score kind');
   if (typeof fspEvidence !== 'function') throw new TypeError('Expected a trusted FSP evidence resolver');
   return items.map(item => {
     const person = item.person || {}, category = confirmedCategory(item);
     const trace = semantic ? rankingTraceFor(item, scoreKind) : null;
+    const publicationOrder = confirmationOrdering(item);
     const comparable = Boolean(category && trace && trace.comparableCount > 1);
     const source = trace ? trace.fspSource : fspEvidence(person);
     // Filtering-only search really sorts by test then FSP, whereas semantic
@@ -123,11 +125,20 @@ export function explainSearchResults(items, { semantic = false, scoreKind = 'log
       value: fsp.status === 'demo' ? 'Учебный пример достижений ФСП.' : 'Есть подтверждённые достижения ФСП.' });
     const mode = !category ? 'unconfirmed' : !semantic ? 'filter-score' : comparable ? 'category-evidence-band' : 'semantic-only';
     const ordering = { mode, comparableCount: trace?.comparableCount ?? 0, changedWithinBand: trace?.changedWithinBand === true,
-      explanation: !category ? (verifiedFirst ? 'Профиль показан после кандидатов с подтверждённой категорией.' : 'Желаемый грейд и неподтверждённые достижения не повышают профиль.')
+      confirmationPriority: { applied: Boolean(publicationOrder), policy: publicationOrder?.policy ?? null,
+        group: publicationOrder?.group ?? null, mixedGroups: publicationOrder?.mixedGroups === true,
+        changedPosition: publicationOrder?.changedPosition === true },
+      explanation: !category ? 'Желаемый грейд и неподтверждённые достижения не повышают профиль.'
         : !semantic ? 'Порядок определяется результатом теста, затем достижениями ФСП; равные профили упорядочиваются стабильно.'
           : comparable ? (trace.changedWithinBand ? 'Положение изменилось при сравнении теста и достижений внутри группы близких профилей той же подтверждённой категории.'
             : 'Сравнение по тесту и достижениям сохранило положение среди близких профилей той же подтверждённой категории.')
             : 'Порядок определяется смысловым соответствием задачам; тест и ФСП здесь не меняют положение.' };
+    if (publicationOrder?.mixedGroups) {
+      const priority = publicationOrder.group === 'confirmed'
+        ? 'Профили с подтверждённой категорией показаны первыми. Далее описан порядок внутри этой группы.'
+        : 'Профиль показан после кандидатов с подтверждённой категорией.';
+      ordering.explanation = `${priority} ${ordering.explanation}`;
+    }
     const relevance = item.approximate === true ? 'nearest' : semantic ? 'semantic' : 'filters';
     const testSummary = !category ? test.explanation : `${person.synthetic === true ? 'Учебный результат теста' : 'Серверный результат теста'}: ${category.score}/100.`;
     const parts = [`${categoryInfo.label}. ${categoryInfo.explanation}`, item.approximate === true

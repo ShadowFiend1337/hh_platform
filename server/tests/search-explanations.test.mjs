@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { explainSearchResults } from '../search-explanations.mjs';
 import { rankComparableCandidates } from '../search-ranking.mjs';
+import { confirmedFirst, CONFIRMATION_ORDER_POLICY } from '../profile-publication.mjs';
 
 const candidate = (id, rank, score = 80, changes = {}) => ({
   person: { id, name: id, synthetic: false, specialization: 'Backend', desiredGrade: 'Senior',
@@ -57,12 +58,43 @@ test('the displayed category is confirmed, not the desired grade', () => {
   const result = explainSearchResults([candidate('real', 6.2)], { semantic: true });
   assert.equal(result[0].explanation.category.grade, 'Middle');
   assert.equal(result[0].explanation.category.status, 'confirmed');
-  const unconfirmed = explainSearchResults([candidate('new', 6, 100, { confirmed: null })], { semantic: true, verifiedFirst: true });
+  const unconfirmed = explainSearchResults(confirmedFirst(rankComparableCandidates([
+    candidate('new', 6, 100, { confirmed: null }), candidate('confirmed', 5.8),
+  ])), { semantic: true }).filter(item => item.person.id === 'new');
   assert.equal(unconfirmed[0].explanation.category.grade, null);
   assert.equal(unconfirmed[0].explanation.test.score, null);
   assert.equal(unconfirmed[0].explanation.ordering.mode, 'unconfirmed');
   assert.match(unconfirmed[0].reason, /после кандидатов с подтверждённой/u);
   assert.doesNotMatch(unconfirmed[0].reason, /Senior/u);
+});
+
+test('confirmation priority explains a separate movement without replacing raw relevance or test comparisons', () => {
+  const source = [candidate('unconfirmed-best-match', 9, 100, { confirmed: null }),
+    candidate('confirmed-best-match', 6.2, 60), candidate('confirmed-best-test', 6.1, 95)];
+  const ranked = rankComparableCandidates(source);
+  assert.equal(ranked[0].person.id, 'unconfirmed-best-match');
+  const result = explainSearchResults(confirmedFirst(ranked), { semantic: true });
+  assert.deepEqual(result.map(item => item.person.id), ['confirmed-best-test', 'confirmed-best-match', 'unconfirmed-best-match']);
+  assert.deepEqual(result.map(item => item.rank), [6.1, 6.2, 9]);
+  const first = result[0].explanation, last = result[2].explanation;
+  assert.deepEqual(first.ordering.confirmationPriority, { applied: true, policy: CONFIRMATION_ORDER_POLICY.version,
+    group: 'confirmed', mixedGroups: true, changedPosition: true });
+  assert.equal(first.test.contribution, 'comparison');
+  assert.equal(first.ordering.changedWithinBand, true);
+  assert.match(first.ordering.explanation, /подтверждённой категорией показаны первыми/u);
+  assert.match(first.ordering.explanation, /внутри этой группы/u);
+  assert.equal(last.ordering.confirmationPriority.group, 'unconfirmed');
+  assert.equal(last.test.contribution, 'none');
+  assert.match(last.ordering.explanation, /после кандидатов с подтверждённой/u);
+});
+
+test('explanation claims no confirmation priority without executing the stable partition', () => {
+  const source = [candidate('unconfirmed', 9, 100, { confirmed: null }), candidate('confirmed', 6)];
+  const result = explainSearchResults(rankComparableCandidates(source), { semantic: true });
+  assert.equal(result[0].explanation.ordering.confirmationPriority.applied, false);
+  assert.equal(result[1].explanation.ordering.confirmationPriority.changedPosition, false);
+  assert.doesNotMatch(result[0].reason, /после кандидатов с подтверждённой/u);
+  assert.doesNotMatch(result[1].reason, /подтверждённой категорией показаны первыми/u);
 });
 
 test('untrusted achievement flags and IDs are never called verified or credited', () => {

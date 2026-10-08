@@ -140,11 +140,20 @@ test('confirmed profiles precede unconfirmed profiles before pagination for filt
     assert.equal(full.total, 4);
     assert(full.items.slice(0, 2).every(item => item.person.confirmed));
     assert(full.items.slice(2).every(item => item.person.confirmed === null));
+    assert.equal(full.model.confirmationOrderPolicy.version, 'confirmed-first-stable-partition-v1');
+    for (const [position, item] of full.items.entries()) {
+      const priority = item.explanation.ordering.confirmationPriority;
+      assert.equal(priority.applied, true);
+      assert.equal(priority.mixedGroups, true);
+      assert.equal(priority.group, position < 2 ? 'confirmed' : 'unconfirmed');
+      assert.match(item.reason, position < 2 ? /подтверждённой категорией показаны первыми/u : /после кандидатов с подтверждённой/u);
+    }
     if (query) assert(full.items.at(-1).semanticScore > full.items[0].semanticScore, 'Confirmation partition must apply even when unconfirmed cosine is higher');
     const pages = [];
     for (let offset = 0; offset < 4; offset++) {
       const page = await service.directory.search(query, { city }, { owner: employer.owner, offset, limit: 1 });
       assert.equal(page.total, 4); pages.push(page.items[0].person.id);
+      assert.deepEqual(page.items[0].explanation, full.items[offset].explanation, 'Global priority is explained before pagination');
     }
     assert.deepEqual(pages, full.items.map(item => item.person.id));
     assert.deepEqual(new Set(full.items.map(item => item.person.id)), new Set([ua.id, uc.id, cb.id, cd.id]));
