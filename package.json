@@ -18,6 +18,7 @@
     "test:fsp": "node frontend/tests/fsp-link.mjs",
     "test:unconfirmed": "node frontend/tests/unconfirmed-directory.mjs",
     "test:assessment-guard": "node frontend/tests/assessment-guard.mjs",
+    "test:code-editor": "node frontend/tests/code-editor.mjs",
     "test:contact-privacy": "node frontend/tests/application-privacy.mjs",
     "test:profile-privacy": "node frontend/tests/profile-privacy.mjs",
     "test:browser": "npm --prefix frontend run test:browser",

@@ -1,9 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { BadgeCheck, Check, ClipboardCheck, Clock3, RotateCcw } from 'lucide-react';
 import { AssessmentError, createAssessment, getAssessmentProgram, readAssessment, resumeAssessment, saveAssessment, submitAssessment, type AssessmentAttempt, type AssessmentProgram } from '../assessment';
 import { CandidateSteps } from '../components/CandidateSteps';
+import { CodeDraftBoundary } from '../components/CodeDraftBoundary';
 import { categoryChangeUnlock, currentSurvey, dateLabel, gradeLabels, specializationNames, type PlatformState, type TestResult } from '../model';
 import { clearAssessmentGuard, useAssessmentGuard } from '../use-assessment-guard';
+import { defaultCodeLanguage, readCodeDrafts, type CodeDraft } from '../code-drafts';
+
+const CodeEditor = lazy(() => import('../components/CodeEditor'));
 
 function errorMessage(error: unknown) {
   return error instanceof AssessmentError ? error.message : 'Не удалось загрузить тест. Попробуйте ещё раз.';
@@ -21,6 +25,8 @@ export function Assessment({ state, update, notify, onProfile, onSurvey, onActiv
   const [initialPath] = useState(!state.profile.confirmed);
   const [session, setSession] = useState<AssessmentAttempt | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [codeDrafts, setCodeDrafts] = useState<Record<string, CodeDraft>>({});
+  const [draftStorageFailed, setDraftStorageFailed] = useState(false);
   const [index, setIndex] = useState(0);
   const [result, setResult] = useState<TestResult | null>(null);
   const [program, setProgram] = useState<AssessmentProgram | null>(null);
@@ -47,6 +53,7 @@ export function Assessment({ state, update, notify, onProfile, onSurvey, onActiv
   const current = exam[index];
   const unlock = categoryChangeUnlock(state.profile, specialization, grade);
   const locked = unlock > Date.now();
+  const codeLanguage = defaultCodeLanguage(specialization);
 
   useEffect(() => {
     onActiveChange?.(!!session && !result);
@@ -58,7 +65,7 @@ export function Assessment({ state, update, notify, onProfile, onSurvey, onActiv
     const latestState = stateRef.current;
     if (attempt.surveyId !== expectedSurveyId || currentSurvey(latestState)?.id !== expectedSurveyId
       || categoryChangeUnlock(latestState.profile, attempt.specialization, attempt.grade) > Date.now()) {
-      saveAssessment(null); setSession(null); setAnswers({});
+      saveAssessment(null); setSession(null); setAnswers({}); setCodeDrafts({});
       setError('Анкета изменилась. Пройдите тест заново.');
       return;
     }
@@ -77,7 +84,7 @@ export function Assessment({ state, update, notify, onProfile, onSurvey, onActiv
         } : previousState.profile,
       };
     });
-    saveAssessment(null); setResult(attempt); setSession(null); setAnswers({}); setError('');
+    saveAssessment(null); setResult(attempt); setSession(null); setAnswers({}); setCodeDrafts({}); setError('');
     notify('Результат сохранён');
   }, [update, notify]);
 
@@ -115,6 +122,7 @@ export function Assessment({ state, update, notify, onProfile, onSurvey, onActiv
           return question.options.some(option => option.id === answer) ? [[question.id, answer]] : [];
         }));
         setSession({ ...attempt, token: saved.token }); setAnswers(restoredAnswers);
+        setCodeDrafts(readCodeDrafts(saved.codeDrafts, attempt.questions.map(question => question.id)));
         setIndex(Math.min(saved.index, attempt.questions.length - 1)); setResult(null);
       }
       setResumePending(false);
@@ -129,8 +137,8 @@ export function Assessment({ state, update, notify, onProfile, onSurvey, onActiv
   }, [surveyId, resumeVersion, receiveResult]);
 
   useEffect(() => {
-    if (session) saveAssessment({ id: session.id, token: session.token, surveyId: session.surveyId, answers, index });
-  }, [session, answers, index]);
+    if (session) setDraftStorageFailed(!saveAssessment({ id: session.id, token: session.token, surveyId: session.surveyId, answers, index, codeDrafts }));
+  }, [session, answers, index, codeDrafts]);
 
   useEffect(() => {
     if (!session || !session.serverNow) {
@@ -151,7 +159,7 @@ export function Assessment({ state, update, notify, onProfile, onSurvey, onActiv
     const checkDeadline = () => {
       if (performance.now() < deadlineAt) return;
       clearAssessmentGuard(session.id);
-      saveAssessment(null); setSession(null); setAnswers({});
+      saveAssessment(null); setSession(null); setAnswers({}); setCodeDrafts({});
       setError('Время теста истекло. Начните новую попытку.');
     };
     checkDeadline();
@@ -173,7 +181,7 @@ export function Assessment({ state, update, notify, onProfile, onSurvey, onActiv
         setError('Анкета изменилась. Пройдите тест заново.'); return;
       }
       saveAssessment({ id: attempt.id, token: attempt.token, surveyId: attempt.surveyId, answers: {}, index: 0 });
-      setSession(attempt); setAnswers({}); setIndex(0); setResult(null);
+      setSession(attempt); setAnswers({}); setCodeDrafts({}); setIndex(0); setResult(null);
     } catch (reason) {
       if (!controller.signal.aborted) setError(errorMessage(reason));
     } finally {
@@ -185,7 +193,7 @@ export function Assessment({ state, update, notify, onProfile, onSurvey, onActiv
   async function finish() {
     if (!session || !exam.length || actionController.current || exam.some(item => !answers[item.id])) return;
     if (!survey || survey.id !== session.surveyId || categoryChangeUnlock(state.profile, specialization, grade) > Date.now()) {
-      saveAssessment(null); setSession(null); setAnswers({}); setError('Анкета изменилась. Пройдите тест заново.'); return;
+      saveAssessment(null); setSession(null); setAnswers({}); setCodeDrafts({}); setError('Анкета изменилась. Пройдите тест заново.'); return;
     }
     const controller = new AbortController(); actionController.current = controller;
     setBusy('submitting'); setError('');
@@ -203,7 +211,7 @@ export function Assessment({ state, update, notify, onProfile, onSurvey, onActiv
           } catch { /* Keep the submitted answers available if recovery also fails. */ }
         }
         if (controller.signal.aborted) return;
-        if (unavailableAttempt(reason)) { saveAssessment(null); setSession(null); setAnswers({}); }
+        if (unavailableAttempt(reason)) { saveAssessment(null); setSession(null); setAnswers({}); setCodeDrafts({}); }
         setError(errorMessage(reason));
       }
     } finally {
@@ -237,6 +245,15 @@ export function Assessment({ state, update, notify, onProfile, onSurvey, onActiv
             <span className="question-topic">{current.topic}</span><h2 className="question-text">{current.text}</h2>
             <fieldset className="answer-options" disabled={busy === 'submitting'}><legend className="sr-only">Варианты ответа</legend>{current.options.map(option => <label key={option.id} className={'answer-option' + (answers[current.id] === option.id ? ' selected' : '')}><input type="radio" name={current.id} checked={answers[current.id] === option.id} onChange={() => setAnswers(previousAnswers => ({ ...previousAnswers, [current.id]: option.id }))} /><span>{option.text}</span>{answers[current.id] === option.id && <Check size={17} />}</label>)}</fieldset>
           </div>
+          {codeLanguage && <details className="exam-code-draft" key={session?.id + ':' + current.id} open={['ML', 'DataAnalysis', 'DataEngineering'].includes(specialization)}>
+            <summary>Черновик кода</summary>
+            <p className="field-help">Сохраняется в этой вкладке. Для оценки выберите вариант ответа.</p>
+            <CodeDraftBoundary><Suspense fallback={<p className="field-help" role="status">Загружаем редактор…</p>}>
+              <CodeEditor value={codeDrafts[current.id] || { language: codeLanguage, source: '' }} disabled={busy === 'submitting'}
+                onChange={draft => setCodeDrafts(previous => ({ ...previous, [current.id]: draft }))} />
+            </Suspense></CodeDraftBoundary>
+            {draftStorageFailed && <p className="field-help" role="alert">Черновик не сохранён. Оставьте вкладку открытой.</p>}
+          </details>}
           <div className="exam-actions"><button className="button secondary" disabled={index === 0 || busy === 'submitting'} onClick={() => { setError(''); setIndex(index - 1); }}>Назад</button><button className="button primary" disabled={!answers[current.id] || busy === 'submitting'} onClick={() => index === exam.length - 1 ? finish() : setIndex(index + 1)}>{busy === 'submitting' ? 'Проверяем…' : index === exam.length - 1 ? 'Завершить тест' : 'Далее'}</button></div>
         </>}
         {guard.auditUnavailable && <p className="field-help" role="status">Событие контроля не сохранено.</p>}

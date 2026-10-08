@@ -1,4 +1,5 @@
 import type { CandidateSurvey, Grade, Specialization, TestResult } from './model';
+import { readCodeDrafts, type CodeDraft } from './code-drafts';
 
 export interface AssessmentProgram {
   bankVersion: string;
@@ -60,6 +61,7 @@ export interface SavedAssessment {
   surveyId: string;
   answers: Record<string, string>;
   index: number;
+  codeDrafts?: Record<string, CodeDraft>;
 }
 
 export class AssessmentError extends Error {
@@ -82,6 +84,7 @@ export function readAssessment(): SavedAssessment | null {
       answers: value.answers && typeof value.answers === 'object' && !Array.isArray(value.answers)
         ? Object.fromEntries(Object.entries(value.answers).filter((entry): entry is [string, string] => typeof entry[1] === 'string')) : {},
       index: Number.isInteger(value.index) && value.index >= 0 ? value.index : 0,
+      codeDrafts: readCodeDrafts(value.codeDrafts),
     };
   } catch { return null; }
 }
@@ -90,7 +93,8 @@ export function saveAssessment(value: SavedAssessment | null) {
   try {
     if (value) sessionStorage.setItem(sessionKey, JSON.stringify(value));
     else sessionStorage.removeItem(sessionKey);
-  } catch { /* An attempt remains usable in memory when session storage is unavailable. */ }
+    return true;
+  } catch { return false; /* An attempt remains usable in memory when session storage is unavailable. */ }
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
