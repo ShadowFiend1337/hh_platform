@@ -20,9 +20,19 @@ export const CATEGORY_RANKING_POLICY = Object.freeze({
 // ordinary profile input cannot set it. Demo evidence never verifies identity.
 export function rankingFspEvidence(person) {
   const demoProvider = person?.fspEvidence?.provider === 'fsp-demo' && person.fspEvidence.mode === 'demo'
-    && person.fspEvidence.identityVerified === false && person.fspEvidence.activeCount > 0;
+    && person.fspEvidence.identityVerified === false && Number.isInteger(person.fspEvidence.activeCount)
+    && person.fspEvidence.activeCount > 0;
   return (person?.synthetic === true || demoProvider) && Array.isArray(person.achievements) && person.achievements.length
     ? 'synthetic-demo' : null;
+}
+
+// A trusted resolver still has to name a supported source compatible with the
+// profile. Apply the same check to the actual bonus and its public explanation.
+// Real verification can only be supplied by a trusted server resolver.
+export function normalizeRankingFspEvidence(person, source) {
+  if (source === 'synthetic-demo' && rankingFspEvidence(person) === source) return source;
+  if (source === 'verified-fsp' && person && person.synthetic !== true) return source;
+  return null;
 }
 
 const numericScore = value => Number.isFinite(value) ? value : -Infinity;
@@ -90,9 +100,7 @@ export function rankComparableCandidates(items, { scoreKind = 'logit', fspEviden
       if (slots.length > 1) {
         const band = slots.map(position => {
           const item = ordered[position], source = fspEvidence(item.person);
-          // The resolver must name a known provenance, not return a truthy ID.
-          const evidence = (source === 'synthetic-demo' && rankingFspEvidence(item.person) === source)
-            || (source === 'verified-fsp' && item.person.synthetic !== true) ? source : null;
+          const evidence = normalizeRankingFspEvidence(item.person, source);
           return { item, evidence, strength: testScore(item) + (evidence ? CATEGORY_RANKING_POLICY.fspTestPointBonus : 0) };
         });
         band.sort((a, b) => b.strength - a.strength || testScore(b.item) - testScore(a.item) || semanticOrder(a.item, b.item));

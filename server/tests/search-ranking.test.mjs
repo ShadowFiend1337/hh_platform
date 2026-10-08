@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { CATEGORY_RANKING_POLICY, rankComparableCandidates, rankingFspEvidence } from '../search-ranking.mjs';
+import { CATEGORY_RANKING_POLICY, rankComparableCandidates, rankingFspEvidence, normalizeRankingFspEvidence } from '../search-ranking.mjs';
 
 const candidate = (id, rank, score = 80, changes = {}) => ({
   person: { id, name: id, synthetic: true, achievements: [],
@@ -82,6 +82,47 @@ test('a trusted evidence resolver must use known source values appropriate to th
   assert.deepEqual(ids(rankComparableCandidates(input, { fspEvidence: () => 'verified-fsp' })), ['first', 'second']);
   const real = input.map(item => ({ ...item, person: { ...item.person, synthetic: false } }));
   assert.deepEqual(ids(rankComparableCandidates(real, { fspEvidence: () => 'synthetic-demo' })), ['first', 'second']);
+});
+
+for (const activeCount of ['1', 1.5, NaN, 0, -1, Infinity]) {
+  test(`malformed or inactive FSP demo count ${String(activeCount)} never earns a ranking bonus`, () => {
+    const person = { synthetic: false, achievements: [{ title: 'Демо' }],
+      fspEvidence: { provider: 'fsp-demo', mode: 'demo', identityVerified: false, activeCount } };
+    assert.equal(rankingFspEvidence(person), null);
+    assert.equal(normalizeRankingFspEvidence(person, 'synthetic-demo'), null);
+    const source = [candidate('first', 6.2, 90, { synthetic: false }), candidate('invalid-demo', 6.1, 90, person)];
+    assert.deepEqual(ids(rankComparableCandidates(source)), ['first', 'invalid-demo']);
+    assert.deepEqual(ids(rankComparableCandidates(source, { fspEvidence: () => 'synthetic-demo' })), ['first', 'invalid-demo']);
+  });
+}
+
+test('demo provenance requires actual achievements and cannot be created by a resolver alone', () => {
+  for (const achievements of [[], null, { length: 1 }]) {
+    for (const synthetic of [false, true]) {
+      const person = { synthetic, achievements,
+        fspEvidence: { provider: 'fsp-demo', mode: 'demo', identityVerified: false, activeCount: 1 } };
+      assert.equal(rankingFspEvidence(person), null);
+      assert.equal(normalizeRankingFspEvidence(person, 'synthetic-demo'), null);
+    }
+  }
+  const person = candidate('real', 6.1, 90, { synthetic: false }).person;
+  for (const source of [true, 'some-id', { provider: 'verified-fsp' }, null]) {
+    assert.equal(normalizeRankingFspEvidence(person, source), null);
+  }
+  assert.equal(normalizeRankingFspEvidence(null, 'verified-fsp'), null);
+});
+
+test('valid server-managed demo and trusted real verification retain their bounded bonus', () => {
+  const demo = candidate('valid-demo', 6.1, 90, { synthetic: false, achievements: [{ title: 'Демо' }],
+    fspEvidence: { provider: 'fsp-demo', mode: 'demo', identityVerified: false, activeCount: 1 } });
+  assert.equal(rankingFspEvidence(demo.person), 'synthetic-demo');
+  assert.deepEqual(ids(rankComparableCandidates([candidate('first', 6.2, 90, { synthetic: false }), demo])), ['valid-demo', 'first']);
+  const verified = candidate('verified', 6.1, 90, { synthetic: false });
+  assert.equal(normalizeRankingFspEvidence(verified.person, 'verified-fsp'), 'verified-fsp');
+  const result = rankComparableCandidates([candidate('first', 6.2, 90, { synthetic: false }), verified],
+    { fspEvidence: person => person.id === 'verified' ? 'verified-fsp' : null });
+  assert.deepEqual(ids(result), ['verified', 'first']);
+  assert.match(result[0].reason, /Подтверждённые достижения ФСП/u);
 });
 
 test('nearest results cannot be promoted across the strong-match boundary', () => {

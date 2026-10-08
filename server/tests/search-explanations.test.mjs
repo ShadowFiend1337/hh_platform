@@ -102,6 +102,41 @@ test('server-managed demo achievements on a real profile retain explicit demonst
   assert.equal(explainSearchResults(source, { semantic: true, fspEvidence: () => 'synthetic-demo' })[1].explanation.fsp.status, 'unverified');
 });
 
+for (const activeCount of ['1', 1.5, NaN, 0, -1, Infinity]) {
+  test(`malformed or inactive FSP demo count ${String(activeCount)} has matching ranking and explanation`, () => {
+    const source = [candidate('first', 6.2, 90), candidate('invalid-demo', 6.1, 90, {
+      achievements: [{ title: 'Демо' }],
+      fspEvidence: { provider: 'fsp-demo', mode: 'demo', identityVerified: false, activeCount },
+    })];
+    for (const resolver of [undefined, () => 'synthetic-demo']) {
+      const options = resolver ? { fspEvidence: resolver } : {};
+      const result = explainSearchResults(rankComparableCandidates(source, options), { semantic: true, ...options });
+      assert.deepEqual(result.map(item => item.person.id), ['first', 'invalid-demo']);
+      assert.equal(result[1].explanation.fsp.status, 'unverified');
+      assert.equal(result[1].explanation.fsp.contribution, 'none');
+      assert.match(result[1].explanation.fsp.explanation, /не дают прибавку/u);
+    }
+  });
+}
+
+test('empty demo achievements and unknown resolver sources cannot claim a public contribution', () => {
+  for (const synthetic of [false, true]) {
+    const source = [candidate('first', 6.2), candidate('empty-demo', 6.1, 80, { synthetic,
+      achievements: [], fspEvidence: { provider: 'fsp-demo', mode: 'demo', identityVerified: false, activeCount: 1 } })];
+    const result = explainSearchResults(rankComparableCandidates(source, { fspEvidence: () => 'synthetic-demo' }),
+      { semantic: true, fspEvidence: () => 'synthetic-demo' });
+    assert.deepEqual(result.map(item => item.person.id), ['first', 'empty-demo']);
+    assert.equal(result[1].explanation.fsp.status, 'none');
+    assert.equal(result[1].explanation.fsp.contribution, 'none');
+  }
+  const person = candidate('unknown-source', 6.1, 80, { achievements: [{ title: 'Заявленное достижение' }] });
+  for (const source of [true, 'some-id', { provider: 'verified-fsp' }]) {
+    const explanation = explainSearchResults([person], { fspEvidence: () => source })[0].explanation.fsp;
+    assert.equal(explanation.status, 'unverified');
+    assert.equal(explanation.contribution, 'none');
+  }
+});
+
 test('conditions cite actual matches and never pretend unknown or mismatched fields match', () => {
   const result = explainSearchResults([candidate('match', 6.2)], { filters: { stack: ['python', 'Java'],
     city: 'Казань', format: 'Удалённо', salaryMax: 160000, language: 'en', experienceMin: 12, minScore: 70 } });

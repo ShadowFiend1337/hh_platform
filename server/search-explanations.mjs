@@ -1,7 +1,7 @@
 import { isSpecialization, specializationLabels } from '../shared/catalog.ts';
 import { isGrade, gradeLabels } from '../shared/grading.ts';
 import { languageOptions } from '../shared/search.ts';
-import { CATEGORY_RANKING_POLICY, rankingFspEvidence, semanticOrder } from './search-ranking.mjs';
+import { CATEGORY_RANKING_POLICY, rankingFspEvidence, normalizeRankingFspEvidence, semanticOrder } from './search-ranking.mjs';
 
 export const SEARCH_EXPLANATION_POLICY = 'public-evidence-and-actual-order-v1';
 
@@ -106,10 +106,9 @@ function evidenceExplanation(item, semantic) {
 function fspExplanation(person, source, contribution) {
   // Resolve provenance on the server. A profile's IDs, arbitrary flags and
   // achievement labels are never treated as an authenticated provider answer.
-  const providerDemo = person.fspEvidence?.provider === 'fsp-demo' && person.fspEvidence.mode === 'demo'
-    && person.fspEvidence.identityVerified === false && Number.isInteger(person.fspEvidence.activeCount) && person.fspEvidence.activeCount > 0;
-  const demo = source === 'synthetic-demo' && (person.synthetic === true || providerDemo);
-  const verified = source === 'verified-fsp' && person.synthetic !== true;
+  const evidence = normalizeRankingFspEvidence(person, source);
+  const demo = evidence === 'synthetic-demo';
+  const verified = evidence === 'verified-fsp';
   const supplied = Array.isArray(person.achievements) && person.achievements.length > 0;
   const status = demo ? 'demo' : verified ? 'verified' : supplied ? 'unverified' : 'none';
   const actualContribution = demo || verified ? contribution : 'none';
