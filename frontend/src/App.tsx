@@ -200,11 +200,13 @@ export function App() {
     navigate(role, navigation[role][0].page);
   }
 
-  if (route.privacy) return <Privacy onHome={goHome} onClearLocal={async () => {
-    await persistence.clear();
+  if (route.privacy) return <Privacy isSignedIn={Boolean(authAccount)} onHome={goHome} onClearLocal={async deleteAccount => {
+    const deletedAt = await persistence.clear(Boolean(deleteAccount));
     clearLocalPlatformCache();
     setKnownPeople([]);
     setDialog(null);
+    if (deleteAccount) setAuthAccount(null);
+    return deletedAt;
   }} />;
   if (route.auth) return <Auth key={route.auth} mode={route.auth} initialRole={route.role} onBack={goHome}
     onSwitchMode={mode => openAuth(mode, route.role)} onRoleChange={updateAuthRole} onAuthenticated={completeAuthentication} />;

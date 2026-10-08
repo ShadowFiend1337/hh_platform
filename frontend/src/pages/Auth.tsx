@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { ArrowLeft, ArrowRight, BriefcaseBusiness, Check, KeyRound, LockKeyhole, Mail, ShieldCheck, UserRound } from 'lucide-react';
 import { Brand } from '../components/Brand';
 import type { Role } from '../model';
+import { PRIVACY_POLICY_VERSION } from '../../../shared/privacy';
 
 export type AuthMode = 'login' | 'register';
 
@@ -92,6 +93,7 @@ export function Auth({
     try {
       await authRequest('/api/auth/register/request-code', {
         email: email.trim().toLowerCase(), login, password, role,
+        privacyVersion: PRIVACY_POLICY_VERSION,
         ...(role === 'candidate' ? { name: formName } : { companyName: formName }),
       });
       setStep('code');

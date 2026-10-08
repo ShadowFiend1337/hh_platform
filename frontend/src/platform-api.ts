@@ -173,15 +173,22 @@ export function usePlatformPersistence(state: PlatformState, update: Dispatch<Se
       if (ready) setStatus('saving');
       else { setStatus('loading'); setRetryVersion(value => value + 1); }
     },
-    clear: async () => {
+    clear: async (deleteAccount = false): Promise<string | undefined> => {
       blocked.current = true;
       try {
         await writing.current;
-        await request('DELETE');
+        let deletedAt: string | undefined;
+        if (deleteAccount) {
+          const response = await fetch('/api/auth/account', { method: 'DELETE', credentials: 'same-origin' });
+          const data = await response.json().catch(() => ({})) as { error?: string; deletedAt?: string };
+          if (!response.ok) throw new Error(data.error || 'Не удалось удалить аккаунт.');
+          deletedAt = data.deletedAt;
+        } else await request('DELETE');
         const empty = createInitialState();
         current.current = empty; baseline.current = null; persisted.current = hash(empty); serverRevision.current = 0;
         localStorage.removeItem(syncCacheKey);
         update(empty); setRevision(0); setPeople([]); setError(''); setStatus('saved'); setReady(true);
+        return deletedAt;
       } finally { blocked.current = false; }
     } };
 }
