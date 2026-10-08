@@ -209,9 +209,10 @@ test('a passed category outlives the limited recent history without exposing its
 test('a category switch cannot bypass the server 90 day boundary by forging gradeChangedAt', t => {
   const { platform, assessments, setTime } = fixture(t);
   const first = completed(assessments, ownerA);
-  platform.save(ownerA, candidateState(first), 0);
+  const original = platform.save(ownerA, candidateState(first), 0);
   const second = completed(assessments, ownerA, { grade: 'Middle', at: time + 5000 });
   const input = candidateState(second); input.profile.gradeChangedAt = '1900-01-01';
+  input.surveys.push(...original.state.surveys);
   assert.throws(() => platform.save(ownerA, input, 1), errorStatus(409));
   assert.equal(platform.read(ownerA).state.profile.confirmed.grade, 'Junior');
   setTime(time + 90 * 86400000);
@@ -221,7 +222,8 @@ test('a category switch cannot bypass the server 90 day boundary by forging grad
   assert.equal(saved.state.profile.gradeChangedAt, new Date(time + 90 * 86400000).toISOString());
   const anotherOldProof = completed(assessments, ownerA, { grade: 'Senior', at: time + 15000 });
   setTime(time + 90 * 86400000 + 100000);
-  assert.throws(() => platform.save(ownerA, candidateState(anotherOldProof), saved.revision), errorStatus(409),
+  const replay = candidateState(anotherOldProof); replay.surveys.push(...saved.state.surveys);
+  assert.throws(() => platform.save(ownerA, replay, saved.revision), errorStatus(409),
     'Replaying a second old proof cannot cause another immediate category change');
 });
 
@@ -232,10 +234,12 @@ test('first assignment uses server time even for an old proof; repeating the sam
   assert.equal(saved.state.profile.confirmed.date, old.result.date);
   assert.equal(saved.state.profile.gradeChangedAt, date);
   const otherOld = completed(assessments, ownerA, { grade: 'Middle', at: time - 99 * 86400000 });
-  assert.throws(() => platform.save(ownerA, candidateState(otherOld), saved.revision), errorStatus(409));
+  const change = candidateState(otherOld); change.surveys.push(...saved.state.surveys);
+  assert.throws(() => platform.save(ownerA, change, saved.revision), errorStatus(409));
   setTime(time + 11000);
   const repeated = completed(assessments, ownerA, { at: time + 10000 });
-  const next = platform.save(ownerA, candidateState(repeated), saved.revision);
+  const repeat = candidateState(repeated); repeat.surveys.push(...saved.state.surveys);
+  const next = platform.save(ownerA, repeat, saved.revision);
   assert.equal(next.state.profile.confirmed.date, repeated.result.date);
   assert.equal(next.state.profile.gradeChangedAt, date);
 });

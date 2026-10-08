@@ -626,6 +626,9 @@ try {
   const mobileSnapshot = await mobileContext.request.get(base + '/api/platform/state');
   assert.equal((await mobileContext.request.delete(base + '/api/platform/state', { headers: {
     'X-Platform-Identity': mobileSnapshot.headers()['x-platform-identity'],
+  } })).status(), 403);
+  assert.equal((await mobileContext.request.delete(base + '/api/auth/account', { headers: {
+    'X-Platform-Identity': mobileSnapshot.headers()['x-platform-identity'],
   } })).status(), 200);
   await mobileContext.close();
   console.log('PASS Mobile 390px, 320px and keyboard dialog');

@@ -249,7 +249,7 @@ test('startup backfill republishes a completed questionnaire while stripping an 
   let first, second;
   t.after(async () => {
     await second?.close(); await first?.close();
-    for (const suffix of ['', '-wal', '-shm']) if (existsSync(dbPath + suffix)) unlinkSync(dbPath + suffix);
+    for (const suffix of ['', '-wal', '-shm', '.integrations.key']) if (existsSync(dbPath + suffix)) unlinkSync(dbPath + suffix);
     rmdirSync(directoryPath);
   });
   first = await fixture(t, { dbPath });

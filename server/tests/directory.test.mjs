@@ -407,7 +407,7 @@ test('candidate rows, normalized skills and vectors survive SQLite reopening', a
   } finally { value?.close(); rmSync(temporary, { recursive: true, force: true }); }
 });
 
-test('HTTP platform snapshots are session-owned, CAS-checked and deletable', async t => {
+test('HTTP platform snapshots are session-owned, CAS-checked and erased only with the account', async t => {
   const codes = new Map();
   const { server, directory } = createAssessmentServer({ dbPath: ':memory:', authEnv: {}, authMailer: async ({ email, code }) => { codes.set(email, code); } });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -434,6 +434,8 @@ test('HTTP platform snapshots are session-owned, CAS-checked and deletable', asy
   assert.equal((await (await fetch(base + '/api/platform/state', { headers: { Cookie: otherCookie } })).json()).state, null, 'another account cannot read private state');
   assert.equal(directory.store.all().some(row => row.owner), false, 'a self-declared grade never publishes a real profile');
   assert.equal((await fetch(base + '/api/directory/candidate-anna/contacts', { headers: { cookie } })).status, 200);
-  assert.equal((await fetch(base + '/api/platform/state', { method: 'DELETE', headers: { cookie, 'X-Platform-Identity': identity } })).status, 200);
-  assert.equal((await (await fetch(base + '/api/platform/state', { headers: { cookie } })).json()).state, null);
+  assert.equal((await fetch(base + '/api/platform/state', { method: 'DELETE', headers: { cookie, 'X-Platform-Identity': identity } })).status, 403);
+  assert.equal((await (await fetch(base + '/api/platform/state', { headers: { cookie } })).json()).revision, 1);
+  assert.equal((await fetch(base + '/api/auth/account', { method: 'DELETE', headers: { cookie, 'X-Platform-Identity': identity } })).status, 200);
+  assert.equal((await fetch(base + '/api/platform/state', { headers: { cookie } })).status, 401);
 });

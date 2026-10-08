@@ -45,6 +45,11 @@ await context.route('**/api/**', async route => {
     return backend.consent ? route.fulfill({ json: privateContact })
       : route.fulfill({ status: 403, json: { error: 'Согласие отозвано.' } });
   }
+  if (url.pathname === '/api/directory/' + person.id + '/evidence') {
+    assert.equal(route.request().method(), 'GET');
+    return backend.consent ? route.fulfill({ json: { items: [] } })
+      : route.fulfill({ status: 403, json: { error: 'Согласие отозвано.' } });
+  }
   throw new Error('Unexpected request in authenticated profile privacy fixture: ' + url.pathname);
 });
 

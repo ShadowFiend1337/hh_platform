@@ -190,7 +190,9 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
             }
           }
           if (request.method === 'GET') return send(response, 200, platform.read(session));
-          if (request.method === 'DELETE') { integrations.removeOwner(session); return send(response, 200, platform.delete(session)); }
+          if (request.method === 'DELETE') {
+            throw new RequestError(403, 'Историю анкеты нельзя удалить отдельно от аккаунта.');
+          }
           if (request.method === 'PUT') {
             const input = await body(request, 1000000);
             if (Object.keys(input).some(key => !['state', 'baseRevision'].includes(key))) throw new RequestError(400, 'Недопустимые поля запроса.');
