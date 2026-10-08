@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
+import { isDemoCatalogProfile } from './demo-catalog.mjs';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -111,6 +112,11 @@ export function publicCandidate(person, id = person.id) {
   if (Array.isArray(output.stack)) output.stack = output.stack.map(scrub);
   output.softSkills = Array.isArray(output.softSkills) ? output.softSkills.map(scrub).filter(Boolean) : [];
   return { ...output, id, email: '', phone: '', fspId: '' };
+}
+
+export function publicDirectoryCandidate(row, id = row.id) {
+  const person = publicCandidate(JSON.parse(row.public_payload), id);
+  return isDemoCatalogProfile(row) ? { ...person, synthetic: true, demoProfile: true } : person;
 }
 
 export class DirectoryStore {

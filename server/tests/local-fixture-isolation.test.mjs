@@ -114,8 +114,10 @@ test('registered local accounts stay in an explicitly marked realm despite old r
   assert.equal(localFound.data.items[0].person.synthetic, true);
   assert.equal((await localCandidate('/api/platform/state')).data.state.profile.synthetic, true);
   assert.equal(f.service.auth.accountForPlatformOwner(localCandidate.owner()).testAccount, true);
-  assert.deepEqual((await realEmployer('/api/directory/search?limit=50')).data.items, []);
-  assert.deepEqual((await realEmployer('/api/directory/options')).data.cities, []);
+  const demoCatalogue = await realEmployer('/api/directory/search?limit=50');
+  assert(demoCatalogue.data.items.length > 0);
+  assert(demoCatalogue.data.items.every(item => item.person.demoProfile && item.person.synthetic && item.person.id !== localPerson.id));
+  assert((await realEmployer('/api/directory/options')).data.cities.length > 0);
   assert.deepEqual((await realCandidate('/api/companies')).data.items, []);
   assert.deepEqual((await realCandidate('/api/vacancies')).data.items, []);
   for (const path of ['/api/companies/' + localVacancy.companyId, '/api/vacancies/' + localVacancy.id]) {
@@ -128,7 +130,8 @@ test('registered local accounts stay in an explicitly marked realm despite old r
   assert.equal((await realEmployer('/api/platform/state', 'PUT', { state: companyState, baseRevision: 0 })).status, 200);
   const realPublished = await realEmployer('/api/vacancies', 'POST', vacancy);
   assert.equal(realPublished.status, 201); assert.equal(realPublished.data.synthetic, false);
-  assert.deepEqual((await realEmployer('/api/directory/search?limit=50')).data.items.map(item => item.person.id), [realPerson.id]);
+  const ordinarySearch = '/api/directory/search?filters=' + encodeURIComponent(JSON.stringify({ city: 'Обычный город' }));
+  assert.deepEqual((await realEmployer(ordinarySearch)).data.items.map(item => item.person.id), [realPerson.id]);
   assert.deepEqual((await localEmployer('/api/directory/search?limit=50')).data.items.map(item => item.person.id), [localPerson.id]);
   assert.equal((await realCandidate('/api/vacancies/' + localVacancy.id + '/applications', 'POST', {})).status, 404);
   assert.equal((await localCandidate('/api/vacancies/' + realPublished.data.id + '/applications', 'POST', {})).status, 404);

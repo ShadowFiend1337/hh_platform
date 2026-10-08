@@ -111,6 +111,7 @@ export function CandidateDeck({ items, decisions, favorites, loading, loadingMor
         </div>
         <div className="swipe-person-top"><div className="avatar swipe-avatar">{initials(current.person.name)}</div>
           <div className="swipe-badges">
+            {current.person.demoProfile && <span className="tag" title="Вымышленный профиль для проверки подбора">Демо</span>}
             {current.person.achievements.length > 0 && <Medal size={18} aria-label="Есть достижения ФСП" />}</div>
         </div>
         <div className="swipe-person-heading"><button className="person-link" onClick={() => onProfile(current.person)}>{current.person.name}<ArrowUpRight size={19} /></button>
@@ -125,7 +126,7 @@ export function CandidateDeck({ items, decisions, favorites, loading, loadingMor
         <p className="swipe-bio">{current.person.bio || current.person.workHistory || 'Профессиональные сведения в профиле'}</p>
         <div className="tags swipe-stack">{current.person.stack.slice(0, 6).map(skill => <span className="tag" key={skill}>{skill}</span>)}</div>
         <div className="swipe-card-footer"><div className="swipe-test"><BadgeCheck size={18} /><strong>{current.person.confirmed?.score ?? '—'}<span>/100</span></strong></div>
-          <button className="button secondary compact" disabled={disabled || pendingIds.has(current.person.id)} onClick={() => onInvite(current.person)}>{pendingIds.has(current.person.id) ? 'Отправлено' : 'Пригласить'}</button>
+          {!current.person.demoProfile && <button className="button secondary compact" disabled={disabled || pendingIds.has(current.person.id)} onClick={() => onInvite(current.person)}>{pendingIds.has(current.person.id) ? 'Отправлено' : 'Пригласить'}</button>}
         </div>
         <details className="swipe-reason"><summary>Почему подходит</summary><p>{current.reason}</p></details>
       </article></div>

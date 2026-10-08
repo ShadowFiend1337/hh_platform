@@ -76,6 +76,8 @@ export interface Candidate {
   availableFrom?: string;
   languageCodes?: string[];
   synthetic?: boolean;
+  /** Server-marked built-in catalog sample; it has no account or contact workflow. */
+  demoProfile?: boolean;
 }
 
 export interface Invitation {

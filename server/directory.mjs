@@ -1,6 +1,6 @@
-import { DirectoryStore, semanticMatch, semanticRerankingSections, semanticEvidenceSections, semanticCompetencySections, parseSemanticSegments, PROFILE_INDEX_POLICY, PROFILE_EVIDENCE_POLICY } from './directory-store.mjs';
+import { DirectoryStore, publicDirectoryCandidate, semanticMatch, semanticRerankingSections, semanticEvidenceSections, semanticCompetencySections, parseSemanticSegments, PROFILE_INDEX_POLICY, PROFILE_EVIDENCE_POLICY } from './directory-store.mjs';
 import { queryEvidenceRequirements, assessTaskEvidence, TASK_EVIDENCE_POLICY } from './search-evidence.mjs';
-import { directoryCandidates } from './directory-seed.mjs';
+import { directoryCandidates, legacyDirectoryCandidates } from './directory-seed.mjs';
 import { SemanticWorker, validScoreCalibration } from './semantic-worker.mjs';
 import { industryOptions, isSpecialization, specializationLabels, stackOptions } from '../shared/catalog.ts';
 import { gradeOptions, isGrade } from '../shared/grading.ts';
@@ -8,24 +8,7 @@ import { defaultSearchFilters, normalizeSearchFilters, employmentTypes, language
 import { RequestError } from './assessment.mjs';
 import { unsupportedRequestedRoles } from './query-role-scope.mjs';
 import { accountsShareRealm, isLocalFixtureAccount } from './local-fixtures.mjs';
-
-const legacySeeds = [
-  ['candidate-mikhail','Михаил Соколов','Frontend','Middle',91,['React','TypeScript','JavaScript','CSS'],'Москва',48,true],
-  ['candidate-daria','Дарья Волкова','Frontend','Middle',89,['React','TypeScript','CSS'],'Санкт-Петербург',36,false],
-  ['candidate-artem','Артём Лебедев','Backend','Middle',94,['Python','FastAPI','PostgreSQL','Docker'],'Казань',60,true],
-  ['candidate-sofia','София Белова','Frontend','Junior',82,['React','JavaScript','CSS'],'Москва',12,false],
-  ['candidate-nikita','Никита Орлов','Backend','Middle',88,['Node.js','TypeScript','PostgreSQL','Docker'],'Екатеринбург',36,false],
-  ['candidate-egor','Егор Крылов','Backend','Junior',85,['Python','FastAPI','PostgreSQL'],'Новосибирск',12,false],
-].map(([id,name,specialization,grade,score,stack,city,experienceMonths,fsp]) => ({ id,name,specialization,desiredGrade:grade,
-  confirmed:{ specialization,grade,score,date:'2026-01-01T00:00:00.000Z',synthetic:true }, stack,industry:'ИТ',
-  professionalRole:specialization==='Frontend'?'Frontend разработчик':'Backend разработчик',
-  experience: `${experienceMonths / 12} ${experienceMonths === 12 ? 'год' : experienceMonths === 60 ? 'лет' : 'года'}`, experienceMonths,
-  city,format:'Удалённо',bio:specialization==='Frontend'?'Разрабатываю интерфейсы веб-приложений: доступные формы, дизайн-системы и производительность.'
-    :'Разрабатываю API, интеграции и сервисы с базами данных.',workHistory:'Вымышленный демонстрационный профиль.',
-  employmentType:'Полная занятость',languageCodes:['ru','en'],salaryFrom:experienceMonths===12?90000:160000,salaryTo:experienceMonths===12?120000:200000,
-  email:id.slice(10)+'@example.com',phone:'',fspId:'',softSkills:[],achievements:fsp?[{title:'Демонстрационное соревнование ФСП',result:'Вымышленный финалист',year:'2025'}]:[],
-  visible:true,consent:true,synthetic:true,
-}));
+import { isDemoCatalogProfile } from './demo-catalog.mjs';
 
 function validateFilters(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new RequestError(400,'Некорректные фильтры.');
@@ -257,7 +240,7 @@ export function interpretQuery(query, options) {
 }
 
 export class DirectoryService {
-  constructor(path, { seeds=[...directoryCandidates,...legacySeeds], encoder=new SemanticWorker(), accountForOwner }={}) {
+  constructor(path, { seeds=[...directoryCandidates,...legacyDirectoryCandidates], encoder=new SemanticWorker(), accountForOwner }={}) {
     this.store=new DirectoryStore(path,seeds);
     this.encoder=encoder;
     this.indexing=null;
@@ -268,6 +251,7 @@ export class DirectoryService {
     if (!this.accountForOwner) return true;
     const account=this.accountForOwner(owner);
     if (!account) return false;
+    if (isDemoCatalogProfile(row)) return account.role==='employer' && !isLocalFixtureAccount(account);
     const target=this.accountForOwner(row.owner);
     return account.role==='employer' && target?.role==='candidate' && accountsShareRealm(account,target)
       && (!row.synthetic || isLocalFixtureAccount(target));
@@ -349,7 +333,7 @@ export class DirectoryService {
     const matching=()=>this.store.matching(filters,interpreted.queryConstraints).filter(row=>{
       if (!this.accessible(owner,row)) return false;
       if (!embeddingQuery || !evidenceRequirements.length) return true;
-      const person=JSON.parse(row.public_payload);
+      const person=publicDirectoryCandidate(row);
       return assessTaskEvidence(evidenceRequirements,semanticEvidenceSections(person),
         { competencySections:semanticCompetencySections(person) }).eligible;
     });
@@ -396,7 +380,7 @@ export class DirectoryService {
       const stored=this.currentVector(row,cached)?cached:null;
       const match=stored?semanticMatch(vector,stored.vector):null;
       const semanticScore=match?.score??null;
-      const person=JSON.parse(row.public_payload);
+      const person=publicDirectoryCandidate(row);
       if (this.accountForOwner && isLocalFixtureAccount(this.accountForOwner(row.owner))) person.synthetic=true;
       if (owner&&row.owner===owner) person.id='candidate-anna';
       const evidence=(match?parseSemanticSegments(row.document)[match.index]:person.bio||person.workHistory||person.professionalRole||'')

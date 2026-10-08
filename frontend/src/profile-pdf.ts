@@ -4,6 +4,7 @@ import { dateLabel, gradeLabels, specializationLabels, type Candidate } from './
 
 /** Generates selectable Unicode text locally; contact permission comes from the caller's authorized view. */
 export async function createProfilePdf(person: Candidate, contacts: boolean, fontBytes: Uint8Array): Promise<Uint8Array> {
+  const showContacts = contacts && !person.demoProfile;
   const document = await PDFDocument.create();
   document.registerFontkit(fontkit);
   const font = await document.embedFont(fontBytes, { subset: true });
@@ -29,8 +30,8 @@ export async function createProfilePdf(person: Candidate, contacts: boolean, fon
   layout.section('Языки', person.languages);
   layout.section(person.synthetic ? 'ФСП · демонстрационные сведения' : 'Достижения ФСП',
     person.achievements.length ? person.achievements.map(item => [item.title, item.result, item.year].filter(Boolean).join(' · ')).join('\n') : 'Истории ФСП пока нет');
-  layout.section('Контакты', contacts ? [person.email, person.phone].filter(Boolean).join('\n') : 'Контакты скрыты');
-  if (contacts) layout.section('Портфолио', person.portfolio);
+  layout.section('Контакты', person.demoProfile ? 'Недоступны для демопрофиля' : showContacts ? [person.email, person.phone].filter(Boolean).join('\n') : 'Контакты скрыты');
+  if (showContacts) layout.section('Портфолио', person.portfolio);
   layout.finish();
   return document.save();
 }

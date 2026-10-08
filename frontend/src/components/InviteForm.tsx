@@ -7,6 +7,7 @@ export function InviteForm({ person, state, onSubmit }: {
   const [error, setError] = useState('');
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (person.demoProfile) { setError('Демопрофиль доступен только для просмотра.'); return; }
     const fields = new FormData(event.currentTarget);
     const salaryFrom = Number(fields.get('salaryFrom'));
     const salaryTo = Number(fields.get('salaryTo'));
@@ -30,6 +31,6 @@ export function InviteForm({ person, state, onSubmit }: {
     <label className="field"><span>Условия и задачи</span><textarea name="description" rows={4} required maxLength={3000} placeholder="Что предстоит делать, команда и формат работы" /></label>
     <div className="form-grid"><label className="field"><span>Компания</span><input value={state.company.name} readOnly /></label><label className="field"><span>Контакт для связи</span><input name="contact" type="email" required defaultValue={state.company.contact} /></label></div>
     {error && <p className="form-error" role="alert">{error}</p>}
-    <div className="dialog-actions"><button className="button primary" type="submit">Отправить приглашение</button></div>
+    <div className="dialog-actions"><button className="button primary" type="submit" disabled={person.demoProfile}>Отправить приглашение</button></div>
   </form>;
 }

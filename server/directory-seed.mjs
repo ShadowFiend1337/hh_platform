@@ -1,5 +1,23 @@
 import { industryOptions, specializationLabels } from '../shared/catalog.ts';
 
+export const legacyDirectoryCandidates = [
+  ['candidate-mikhail','Михаил Соколов','Frontend','Middle',91,['React','TypeScript','JavaScript','CSS'],'Москва',48,true],
+  ['candidate-daria','Дарья Волкова','Frontend','Middle',89,['React','TypeScript','CSS'],'Санкт-Петербург',36,false],
+  ['candidate-artem','Артём Лебедев','Backend','Middle',94,['Python','FastAPI','PostgreSQL','Docker'],'Казань',60,true],
+  ['candidate-sofia','София Белова','Frontend','Junior',82,['React','JavaScript','CSS'],'Москва',12,false],
+  ['candidate-nikita','Никита Орлов','Backend','Middle',88,['Node.js','TypeScript','PostgreSQL','Docker'],'Екатеринбург',36,false],
+  ['candidate-egor','Егор Крылов','Backend','Junior',85,['Python','FastAPI','PostgreSQL'],'Новосибирск',12,false],
+].map(([id,name,specialization,grade,score,stack,city,experienceMonths,fsp]) => ({ id,name,specialization,desiredGrade:grade,
+  confirmed:{ specialization,grade,score,date:'2026-01-01T00:00:00.000Z',synthetic:true }, stack,industry:'ИТ',
+  professionalRole:specialization==='Frontend'?'Frontend разработчик':'Backend разработчик',
+  experience: `${experienceMonths / 12} ${experienceMonths === 12 ? 'год' : experienceMonths === 60 ? 'лет' : 'года'}`, experienceMonths,
+  city,format:'Удалённо',bio:specialization==='Frontend'?'Разрабатываю интерфейсы веб-приложений: доступные формы, дизайн-системы и производительность.'
+    :'Разрабатываю API, интеграции и сервисы с базами данных.',workHistory:'Вымышленный демонстрационный профиль.',
+  employmentType:'Полная занятость',languageCodes:['ru','en'],salaryFrom:experienceMonths===12?90000:160000,salaryTo:experienceMonths===12?120000:200000,
+  email:id.slice(10)+'@example.com',phone:'',fspId:'',softSkills:[],achievements:fsp?[{title:'Демонстрационное соревнование ФСП',result:'Вымышленный финалист',year:'2025'}]:[],
+  visible:true,consent:true,synthetic:true,
+}));
+
 // Authored fictional profiles. These people, employers, achievements and
 // assessment results are demo data; none is evidence of a real person's skills.
 // Contacts use the reserved example.com domain and phone numbers are omitted.

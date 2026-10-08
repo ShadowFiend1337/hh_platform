@@ -7,13 +7,14 @@ export function CandidateDetails({ person, contacts, onInvite, contactNote = 'О
 }) {
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState('');
+  const showContacts = contacts && !person.demoProfile;
   async function downloadPdf() {
     if (exporting) return;
     setExporting(true); setExportError('');
     try {
       const [{ createProfilePdf }, response] = await Promise.all([import('../profile-pdf'), fetch('/assets/fonts/manrope.ttf')]);
       if (!response.ok) throw new Error('Не удалось загрузить шрифт для PDF. Повторите попытку.');
-      const bytes = await createProfilePdf(person, contacts, new Uint8Array(await response.arrayBuffer()));
+      const bytes = await createProfilePdf(person, showContacts, new Uint8Array(await response.arrayBuffer()));
       const url = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: 'application/pdf' }));
       const link = document.createElement('a'); link.href = url;
       link.download = 'predel-' + (person.name.replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-|-$/g, '') || 'profile') + '.pdf';
@@ -33,7 +34,7 @@ export function CandidateDetails({ person, contacts, onInvite, contactNote = 'О
   return <div className="candidate-details">
     <div className="detail-person">
       <div className="avatar avatar-large">{initials(person.name)}</div>
-      <div><h3>{person.name}</h3><p>{specializationLabels[person.confirmed?.specialization || person.specialization]}</p>
+      <div><h3>{person.name}</h3>{person.demoProfile && <span className="tag" title="Вымышленный профиль для проверки подбора">Демо</span>}<p>{specializationLabels[person.confirmed?.specialization || person.specialization]}</p>
       {(person.industry || person.professionalRole) && <p className="muted">{[person.industry, person.professionalRole].filter(Boolean).join(' · ')}</p>}
       <span className="metadata">{person.city && <><MapPin size={14} />{person.city} · </>}{person.format}</span></div>
     </div>
@@ -54,13 +55,13 @@ export function CandidateDetails({ person, contacts, onInvite, contactNote = 'О
         : <p className="muted">Истории ФСП пока нет</p>}
     </section>
     <section className="contact-section"><h4>Контакты</h4>
-      {contacts ? <div className="contact-data"><a href={'mailto:' + person.email}>{person.email}</a>{person.phone && <a href={'tel:' + person.phone}>{person.phone}</a>}</div>
-        : <div className="privacy-note"><LockKeyhole size={17} />{contactNote}</div>}
-      {contacts && person.portfolio && <p className="body-copy resume-copy">{person.portfolio}</p>}
+      {showContacts ? <div className="contact-data"><a href={'mailto:' + person.email}>{person.email}</a>{person.phone && <a href={'tel:' + person.phone}>{person.phone}</a>}</div>
+        : <div className="privacy-note"><LockKeyhole size={17} />{person.demoProfile ? 'Недоступны для демопрофиля' : contactNote}</div>}
+      {showContacts && person.portfolio && <p className="body-copy resume-copy">{person.portfolio}</p>}
     </section>
     <div className="dialog-actions no-print">
       <button className="button secondary" disabled={exporting} onClick={() => { void downloadPdf(); }}><Download size={16} />{exporting ? 'Готовим PDF…' : 'PDF-профиль'}</button>
-      {onInvite && <button className="button primary" onClick={onInvite}>Пригласить</button>}
+      {onInvite && !person.demoProfile && <button className="button primary" onClick={onInvite}>Пригласить</button>}
     </div>
     {exportError && <p className="form-error no-print" role="alert">{exportError}</p>}
   </div>;

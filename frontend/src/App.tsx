@@ -113,7 +113,7 @@ function Workspace({ authAccount }: { authAccount: AuthAccount | null }) {
   const candidates = [...new Map([...knownPeople, ...persistence.people, state.profile].map(person => [person.id, person])).values()]
     .map(person => {
       if (person.id === ownCandidateId) return person;
-      if (!persistence.contactCandidateIds.includes(person.id)) return { ...person, email: '', phone: '' };
+      if (person.demoProfile || !persistence.contactCandidateIds.includes(person.id)) return { ...person, email: '', phone: '' };
       const known = knownPeople.find(item => item.id === person.id);
       return { ...person, email: known?.email || '', phone: known?.phone || '' };
     });
@@ -121,7 +121,7 @@ function Workspace({ authAccount }: { authAccount: AuthAccount | null }) {
   const candidatePage = !surveyComplete ? 'onboarding' : !state.profile.confirmed && route.page !== 'onboarding' && route.page !== 'invitations' ? 'assessment' : route.page;
   const page = route.role === 'candidate' ? candidatePage : route.page;
   const candidateStarted = surveyComplete;
-  const contactsAllowed = (id: string) => persistence.contactCandidateIds.includes(id);
+  const contactsAllowed = (id: string) => persistence.contactCandidateIds.includes(id) && !candidates.some(person => person.id === id && person.demoProfile);
   const pending = state.invitations.filter(invitation => (invitation.status === 'sent' || invitation.status === 'viewed')
     && (route.role === 'candidate' ? invitation.candidateId === ownCandidateId : invitation.companyId === state.company.id)).length;
 
@@ -200,7 +200,7 @@ function Workspace({ authAccount }: { authAccount: AuthAccount | null }) {
     });
     for (const id of ids) {
       const person = candidates.find(item => item.id === id);
-      if (!person) continue;
+      if (!person || person.demoProfile) continue;
       void readCandidateContacts(id).then(contacts => {
         if (active) setKnownPeople(previous => [...previous.filter(item => item.id !== id), { ...person, ...contacts }]);
       }).catch(() => {
@@ -243,7 +243,10 @@ function Workspace({ authAccount }: { authAccount: AuthAccount | null }) {
       });
     }
   };
-  const onInvite = (person: Candidate) => { remember(person); setDialog({ type: 'invite', person }); };
+  const onInvite = (person: Candidate) => {
+    if (person.demoProfile) { setToast('Демопрофиль доступен только для просмотра.'); return; }
+    remember(person); setDialog({ type: 'invite', person });
+  };
   function goHome() {
     if (assessmentActiveRef.current) { setToast('Сначала завершите тест.'); return; }
     history.pushState(null, '', '/');
@@ -347,7 +350,7 @@ function Workspace({ authAccount }: { authAccount: AuthAccount | null }) {
     {dialog && <Dialog title={dialog.type === 'profile' ? 'Профиль кандидата' : 'Приглашение'} wide={dialog.type === 'profile'} onClose={() => setDialog(null)}>
       {dialog.type === 'profile' ? <CandidateDetails person={candidates.find(person => person.id === dialog.person.id) || dialog.person}
         contacts={route.role === 'candidate' ? dialog.person.id === ownCandidateId : contactsAllowed(dialog.person.id)}
-        onInvite={route.role === 'employer' ? () => onInvite(dialog.person) : undefined} />
+        onInvite={route.role === 'employer' && !dialog.person.demoProfile ? () => onInvite(dialog.person) : undefined} />
         : <InviteForm person={dialog.person} state={state} onSubmit={invitation => {
           setState(previous => {
             const existing = previous.invitations.some(item => item.candidateId === invitation.candidateId && item.companyId === invitation.companyId && (item.status === 'sent' || item.status === 'viewed'));

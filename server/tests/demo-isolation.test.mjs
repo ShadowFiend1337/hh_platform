@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createAssessmentServer } from '../server.mjs';
 import { DirectoryService } from '../directory.mjs';
+import { directoryCandidates, legacyDirectoryCandidates } from '../directory-seed.mjs';
 import { createAttempt, digest, evaluate } from '../assessment.mjs';
 import { createInitialState } from '../../frontend/src/model.ts';
 
@@ -104,9 +105,11 @@ test('registered employer sees real candidates and registered candidate cannot o
   const f = await fixture(t), employer = await f.register('employer', 'isolation-employer'), candidate = await f.register('candidate', 'isolation-candidate');
   assert.equal((await candidate('/api/platform/state', 'PUT', { state: f.person(candidate.owner(), 'Зарегистрированный профиль', 'Закрытый город кандидата'), baseRevision: 0 })).status, 200);
   const real = await employer('/api/directory/search?limit=50');
-  assert.equal(real.status, 200); assert.equal(real.data.total, 1); assert.equal(real.data.items[0].person.name, 'Зарегистрированный профиль');
-  assert(!real.data.items[0].person.synthetic); assert(!real.data.items[0].person.email);
-  assert.deepEqual((await employer('/api/directory/options')).data.cities, ['Закрытый город кандидата']);
+  assert.equal(real.status, 200); assert.equal(real.data.total, directoryCandidates.length + legacyDirectoryCandidates.length + 1);
+  const filtered = await employer('/api/directory/search?filters=' + encodeURIComponent(JSON.stringify({ city: 'Закрытый город кандидата' })));
+  assert.equal(filtered.data.total, 1); assert.equal(filtered.data.items[0].person.name, 'Зарегистрированный профиль');
+  assert(!filtered.data.items[0].person.synthetic); assert(!filtered.data.items[0].person.demoProfile); assert(!filtered.data.items[0].person.email);
+  assert((await employer('/api/directory/options')).data.cities.includes('Закрытый город кандидата'));
   assert.equal((await candidate('/api/directory/search')).status, 403);
   assert.equal((await candidate('/api/directory/options')).status, 403);
   assert.equal((await employer('/api/assessment/attempts', 'POST', {})).status, 403);
@@ -132,7 +135,7 @@ test('legacy anonymous profiles, invitations and decisions stay inaccessible wit
   assert.equal((await guest(`/api/directory/${personId}/contacts`)).status, 401);
   assert.deepEqual((await candidate('/api/platform/state')).data.state.invitations, []);
   const found = await employer('/api/directory/search?limit=50');
-  assert.equal(found.data.total, 1); assert(!JSON.stringify(found.data).includes('Старая личная демо-анкета'));
+  assert.equal(found.data.total, directoryCandidates.length + legacyDirectoryCandidates.length + 1); assert(!JSON.stringify(found.data).includes('Старая личная демо-анкета'));
   assert(!JSON.stringify((await employer('/api/directory/options')).data).includes('Частный город демо'));
   assert(f.service.directory.store.forOwner(owner), 'guest cannot delete a legacy profile through the public API');
 });

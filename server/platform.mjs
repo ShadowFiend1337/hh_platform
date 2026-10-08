@@ -2,7 +2,8 @@ import { industryOptions, isSpecialization } from '../shared/catalog.ts';
 import { isGrade } from '../shared/grading.ts';
 import { MAX_STACK_SKILLS, resumeTextLimits } from '../shared/resume-limits.ts';
 import { defaultSearchFilters, employmentTypes, languageOptions, normalizeSearchFilters } from '../shared/search.ts';
-import { publicCandidate } from './directory-store.mjs';
+import { publicDirectoryCandidate } from './directory-store.mjs';
+import { isDemoCatalogProfile } from './demo-catalog.mjs';
 import { RequestError, threshold } from './assessment.mjs';
 import { syncMarketplaceCompany } from './marketplace.mjs';
 import { accountsShareRealm, isLocalFixtureAccount } from './local-fixtures.mjs';
@@ -252,12 +253,13 @@ export class PlatformService {
   authorize(owner) {
     if (this.accountForOwner && !this.accountForOwner(owner)) throw new RequestError(401, 'Войдите в аккаунт.');
   }
-  candidateAccessible(owner, candidate) {
+  candidateAccessible(owner, candidate, { includeDemo = false } = {}) {
     if (!candidate) return false;
     if (!this.accountForOwner) return true;
     const account = this.accountForOwner(owner);
     if (!account) return false;
     if (candidate.owner === owner) return true;
+    if (isDemoCatalogProfile(candidate)) return includeDemo && account.role === 'employer' && !isLocalFixtureAccount(account);
     const target = this.accountForOwner(candidate.owner);
     return account.role === 'employer' && target?.role === 'candidate' && accountsShareRealm(account, target)
       && (!candidate.synthetic || isLocalFixtureAccount(target));
@@ -281,7 +283,7 @@ export class PlatformService {
   }
   candidateDecisions(owner) {
     return this.store.db.prepare('SELECT candidate_id,decision,created_at FROM platform_candidate_decisions WHERE owner=? ORDER BY created_at,candidate_id').all(owner)
-      .filter(row => this.candidateAccessible(owner, this.store.get(row.candidate_id)))
+      .filter(row => this.candidateAccessible(owner, this.store.get(row.candidate_id), { includeDemo: true }))
       .map(row => ({ candidateId: row.candidate_id, decision: row.decision, date: row.created_at }));
   }
   read(owner) {
@@ -305,13 +307,13 @@ export class PlatformService {
       ...state.candidateDecisions.filter(item => item.decision === 'liked').map(item => item.candidateId), ...applicants])];
     const directoryPeople = ids.flatMap(id => {
       const row = this.store.get(id);
-      if (!row || !this.candidateAccessible(owner, row) || row.owner !== owner && (!row.consent || !applicantIds.has(id) && (!row.eligible || !row.visible))) return [];
-      const person = JSON.parse(row.public_payload);
+      if (!row || !this.candidateAccessible(owner, row, { includeDemo: true }) || row.owner !== owner && (!row.consent || !applicantIds.has(id) && (!row.eligible || !row.visible))) return [];
+      const person = publicDirectoryCandidate(row, row.owner === owner ? ownCandidateId : row.id);
       if (this.accountForOwner && isLocalFixtureAccount(this.accountForOwner(row.owner))) person.synthetic = true;
-      return [publicCandidate(person, row.owner === owner ? ownCandidateId : row.id)];
+      return [person];
     });
-    const contactCandidateIds = directoryPeople.filter(person => applicantIds.has(person.id)
-      || invitations.some(item => item.candidateId === person.id && item.companyId === ownCompanyId && item.status === 'accepted')).map(person => person.id);
+    const contactCandidateIds = directoryPeople.filter(person => !person.demoProfile && (applicantIds.has(person.id)
+      || invitations.some(item => item.candidateId === person.id && item.companyId === ownCompanyId && item.status === 'accepted'))).map(person => person.id);
     return { state, revision: account.revision, directoryPeople, contactCandidateIds };
   }
   save(owner, input, baseRevision, role = null) {
@@ -388,7 +390,7 @@ export class PlatformService {
         const target = this.store.get(item.candidateId);
         if (item.candidateId === ownCandidateId || item.candidateId === id || target?.owner === owner) fail('Нельзя оценить собственный профиль.');
         const existing = storedDecisions.get(item.candidateId);
-        if (!target || !this.candidateAccessible(owner, target) || (!existing || existing.decision !== item.decision) && (!target.eligible || !target.visible || !target.consent)) {
+        if (!target || !this.candidateAccessible(owner, target, { includeDemo: true }) || (!existing || existing.decision !== item.decision) && (!target.eligible || !target.visible || !target.consent)) {
           throw new RequestError(404, 'Кандидат недоступен для оценки.');
         }
         return { ...item, date: existing?.decision === item.decision ? existing.date : timestamp };
