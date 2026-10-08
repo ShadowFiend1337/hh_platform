@@ -25,6 +25,7 @@ export interface AssessmentAttempt {
   surveyId: string;
   createdAt: string;
   expiresAt: string;
+  serverNow?: string;
   questions: AssessmentQuestion[];
   blueprint: {
     topicCounts: Record<string, number>;
@@ -39,6 +40,18 @@ export interface AssessmentAttempt {
   } | null;
   status?: 'active' | 'completed';
   result?: TestResult;
+  integrity?: AssessmentIntegrity;
+}
+
+export interface AssessmentIntegrity {
+  departures: number;
+  blockedCopies: number;
+  lastEventAt: string | null;
+}
+
+export interface AssessmentIntegrityEvent {
+  id: string;
+  kind: 'focus_lost' | 'visibility_hidden' | 'copy_blocked';
 }
 
 export interface SavedAssessment {
@@ -125,5 +138,12 @@ export function submitAssessment(attempt: AssessmentAttempt, answers: Record<str
   return request<TestResult>('/attempts/' + encodeURIComponent(attempt.id) + '/submit', {
     method: 'POST', signal,
     body: JSON.stringify({ token: attempt.token, answers: attempt.questions.map(question => ({ questionId: question.id, optionId: answers[question.id] })) }),
+  });
+}
+
+export function recordAssessmentIntegrity(attempt: AssessmentAttempt, event: AssessmentIntegrityEvent, signal?: AbortSignal) {
+  return request<AssessmentIntegrity>('/attempts/' + encodeURIComponent(attempt.id) + '/integrity', {
+    method: 'POST', signal, keepalive: true,
+    body: JSON.stringify({ token: attempt.token, event: { id: event.id, kind: event.kind } }),
   });
 }

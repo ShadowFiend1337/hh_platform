@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Check, ChevronDown, X } from 'lucide-react';
 import { Employer } from './pages/Employer';
 import { Company } from './pages/Company';
@@ -98,6 +98,12 @@ function Workspace({ authAccount }: { authAccount: AuthAccount | null }) {
   const [roleMenu, setRoleMenu] = useState(false);
   const [toast, setToast] = useState('');
   const [signingOut, setSigningOut] = useState(false);
+  const [assessmentActive, setAssessmentActive] = useState(false);
+  const assessmentActiveRef = useRef(false);
+  const onAssessmentActive = useCallback((active: boolean) => {
+    assessmentActiveRef.current = active;
+    setAssessmentActive(active);
+  }, []);
   const [dialog, setDialog] = useState<{ type: 'profile' | 'invite'; person: Candidate } | null>(null);
   const [knownPeople, setKnownPeople] = useState<Candidate[]>([]);
   const persistence = usePlatformPersistence(state, setState, authAccount ? 'auth:' + authAccount.id : undefined, Boolean(authAccount));
@@ -151,7 +157,14 @@ function Workspace({ authAccount }: { authAccount: AuthAccount | null }) {
     setRoute(previous => ({ ...previous, page: candidatePage }));
   }, [route, candidatePage, persistence.ready]);
   useEffect(() => {
-    const pop = () => { setRoute(routeFromLocation()); setDialog(null); setRoleMenu(false); };
+    const pop = () => {
+      if (assessmentActiveRef.current) {
+        history.pushState(null, '', '/app?role=candidate&tab=assessment');
+        setToast('Сначала завершите тест.');
+        return;
+      }
+      setRoute(routeFromLocation()); setDialog(null); setRoleMenu(false);
+    };
     const sync = (event: StorageEvent) => { if (event.key === storageKey || event.key === null) setState(readState()); };
     window.addEventListener('popstate', pop); window.addEventListener('storage', sync);
     return () => { window.removeEventListener('popstate', pop); window.removeEventListener('storage', sync); };
@@ -203,6 +216,10 @@ function Workspace({ authAccount }: { authAccount: AuthAccount | null }) {
   }
 
   function navigate(requestedRole: Role, requestedPage: Page) {
+    if (assessmentActiveRef.current) {
+      if (requestedPage !== 'assessment') setToast('Сначала завершите тест.');
+      return;
+    }
     if (!authAccount) { openAuth('register', requestedRole); return; }
     const role = authAccount?.role || requestedRole;
     const page = role === requestedRole && (role === 'candidate' && requestedPage === 'onboarding' || navigation[role].some(item => item.page === requestedPage))
@@ -228,6 +245,7 @@ function Workspace({ authAccount }: { authAccount: AuthAccount | null }) {
   };
   const onInvite = (person: Candidate) => { remember(person); setDialog({ type: 'invite', person }); };
   function goHome() {
+    if (assessmentActiveRef.current) { setToast('Сначала завершите тест.'); return; }
     history.pushState(null, '', '/');
     setRoute({ role: 'employer', page: 'candidates', home: true, privacy: false, auth: null }); setRoleMenu(false); setDialog(null);
     window.scrollTo({ top: 0, behavior: 'instant' });
@@ -253,6 +271,7 @@ function Workspace({ authAccount }: { authAccount: AuthAccount | null }) {
     window.location.assign('/app?role=' + role + '&tab=' + page);
   }
   async function signOut() {
+    if (assessmentActiveRef.current) { setToast('Сначала завершите тест.'); return; }
     setSigningOut(true);
     try {
       const response = await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
@@ -290,6 +309,7 @@ function Workspace({ authAccount }: { authAccount: AuthAccount | null }) {
       <Brand onHome={goHome} />
       <nav className="main-nav" aria-label="Основная навигация">{(route.role === 'candidate' && !candidateStarted ? [{ page: 'onboarding' as Page, label: 'Анкета' }, { page: 'assessment' as Page, label: 'Тестирование' }] : navigation[route.role]).map(item =>
         <a href={'?role=' + route.role + '&tab=' + item.page} key={item.page} aria-current={page === item.page ? 'page' : undefined}
+          aria-disabled={assessmentActive && item.page !== 'assessment' ? true : undefined}
           onClick={event => { event.preventDefault(); navigate(route.role, item.page); }}>{item.label}{item.page === 'invitations' && pending > 0 && <span className="nav-count">{pending}</span>}</a>,
       )}</nav>
       <div className="header-account">{authAccount ? <>
@@ -316,7 +336,7 @@ function Workspace({ authAccount }: { authAccount: AuthAccount | null }) {
       {page === 'profile' && <Profile state={state} update={setState} notify={setToast} onTest={() => navigate('candidate', 'assessment')} onPreview={() => onProfile(state.profile)} />}
       {page === 'onboarding' && <Onboarding state={state} update={setState} onComplete={() => navigate('candidate', 'assessment')}
         accountPrefill={authAccount?.role === 'candidate' ? { name: authAccount.name, email: authAccount.email } : undefined} />}
-      {page === 'assessment' && <Assessment state={state} update={setState} notify={setToast} onProfile={() => navigate('candidate', 'profile')} onSurvey={() => navigate('candidate', 'onboarding')} />}
+      {page === 'assessment' && <Assessment state={state} update={setState} notify={setToast} onActiveChange={onAssessmentActive} onProfile={() => navigate('candidate', 'profile')} onSurvey={() => navigate('candidate', 'onboarding')} />}
       </>}
     </main>
     <footer className="site-footer"><div className="footer-inner"><span className="footer-brand">predel</span><div className="partner-logos">

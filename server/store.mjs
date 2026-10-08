@@ -7,12 +7,18 @@ export function openStore(path) {
   const db = new DatabaseSync(path, { timeout: 5000 });
   db.exec(`
     PRAGMA journal_mode = WAL;
+    PRAGMA foreign_keys = ON;
     CREATE TABLE IF NOT EXISTS attempts (
       id TEXT PRIMARY KEY, owner TEXT NOT NULL, token_hash TEXT NOT NULL,
       specialization TEXT NOT NULL, grade TEXT NOT NULL, created_at TEXT NOT NULL,
       expires_at TEXT NOT NULL, payload TEXT NOT NULL, answer_digest TEXT, result TEXT
     ) STRICT;
     CREATE INDEX IF NOT EXISTS attempts_owner ON attempts(owner, specialization, grade, created_at DESC);
+    CREATE TABLE IF NOT EXISTS attempt_integrity_events (
+      attempt_id TEXT NOT NULL REFERENCES attempts(id) ON DELETE CASCADE,
+      event_id TEXT NOT NULL, kind TEXT NOT NULL CHECK(kind IN ('focus_lost', 'visibility_hidden', 'copy_blocked')),
+      received_at TEXT NOT NULL, PRIMARY KEY (attempt_id, event_id)
+    ) STRICT;
   `);
   return {
     insert(attempt, owner, tokenHash) {
@@ -35,6 +41,22 @@ export function openStore(path) {
     },
     countSince(owner, date) {
       return db.prepare('SELECT COUNT(*) AS count FROM attempts WHERE owner = ? AND created_at >= ?').get(owner, date).count;
+    },
+    integrity(id) {
+      const row = db.prepare(`SELECT
+        COALESCE(SUM(kind IN ('focus_lost', 'visibility_hidden')), 0) AS departures,
+        COALESCE(SUM(kind = 'copy_blocked'), 0) AS blockedCopies,
+        MAX(received_at) AS lastEventAt FROM attempt_integrity_events WHERE attempt_id = ?`).get(id);
+      return { ...row };
+    },
+    recordIntegrity(id, event, receivedAt) {
+      const existing = db.prepare('SELECT kind FROM attempt_integrity_events WHERE attempt_id = ? AND event_id = ?').get(id, event.id);
+      if (existing) return existing.kind === event.kind ? 'duplicate' : 'conflict';
+      // Bound retained telemetry without changing the candidate's answers or grade.
+      const written = db.prepare(`INSERT INTO attempt_integrity_events (attempt_id, event_id, kind, received_at)
+        SELECT ?, ?, ?, ? WHERE (SELECT COUNT(*) FROM attempt_integrity_events WHERE attempt_id = ?) < 128
+        ON CONFLICT(attempt_id, event_id) DO NOTHING`).run(id, event.id, event.kind, receivedAt, id);
+      return written.changes ? 'inserted' : 'limit';
     },
     complete(id, digest, result) {
       const update = db.prepare('UPDATE attempts SET answer_digest = ?, result = ? WHERE id = ? AND result IS NULL').run(digest, JSON.stringify(result), id);

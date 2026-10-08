@@ -228,13 +228,32 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
           const attempt = createAttempt(survey, input.vacancyDescription, previous, now());
           const token = randomBytes(32).toString('hex');
           store.insert(attempt, session, digest(token));
-          return send(response, 201, { ...publicAttempt(attempt), token });
+          return send(response, 201, { ...publicAttempt(attempt), token, serverNow: new Date(now()).toISOString(), integrity: store.integrity(attempt.id) });
+        }
+        const integrity = /^\/api\/assessment\/attempts\/([a-f0-9-]{36})\/integrity$/.exec(url.pathname);
+        if (integrity && request.method === 'POST') {
+          allowRole(identity, 'candidate', 'Тестирование доступно соискателю.');
+          const input = await body(request, 2048);
+          if (Object.keys(input).some(key => !['token', 'event'].includes(key))) throw new RequestError(400, 'Недопустимые поля события.');
+          const row = authorized(integrity[1], session, input.token);
+          if (row.result) throw new RequestError(409, 'Тест уже завершён.');
+          const event = input.event;
+          if (!event || typeof event !== 'object' || Array.isArray(event)
+            || Object.keys(event).some(key => !['id', 'kind'].includes(key))
+            || typeof event.id !== 'string' || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(event.id)
+            || !['focus_lost', 'visibility_hidden', 'copy_blocked'].includes(event.kind)) {
+            throw new RequestError(400, 'Некорректное событие контроля теста.');
+          }
+          const saved = store.recordIntegrity(row.id, event, new Date(now()).toISOString());
+          if (saved === 'conflict') throw new RequestError(409, 'Событие уже сохранено с другим типом.');
+          if (saved === 'limit') throw new RequestError(429, 'Достигнут лимит событий контроля теста.');
+          return send(response, 200, store.integrity(row.id));
         }
         const match = /^\/api\/assessment\/attempts\/([a-f0-9-]{36})(\/submit)?$/.exec(url.pathname);
         if (match && !match[2] && request.method === 'GET') {
           allowRole(identity, 'candidate', 'Тестирование доступно соискателю.');
           const row = authorized(match[1], session, request.headers['x-attempt-token']);
-          return send(response, 200, { ...publicAttempt(row.attempt), status: row.result ? 'completed' : 'active', ...(row.result ? { result: row.result } : {}) });
+          return send(response, 200, { ...publicAttempt(row.attempt), serverNow: new Date(now()).toISOString(), integrity: store.integrity(row.id), status: row.result ? 'completed' : 'active', ...(row.result ? { result: row.result } : {}) });
         }
         if (match?.[2] && request.method === 'POST') {
           allowRole(identity, 'candidate', 'Тестирование доступно соискателю.');

@@ -53,6 +53,7 @@ npm run dev
 | `POST` | `/api/assessment/attempts` | Создаёт попытку и возвращает одноразовый токен |
 | `GET` | `/api/assessment/attempts/{id}` | Требует `X-Attempt-Token` для восстановления попытки |
 | `POST` | `/api/assessment/attempts/{id}/submit` | Проверяет `{token, answers}`; повтор идентичных ответов возвращает прежний результат |
+| `POST` | `/api/assessment/attempts/{id}/integrity` | Принимает `{token, event: {id, kind}}` только от владельца активной попытки; сохраняет событие контроля без изменения балла |
 | `GET`, `PUT`, `DELETE` | `/api/platform/state` | Читает, сохраняет с `baseRevision` или удаляет состояние владельца |
 | `GET` | `/api/directory/options` | Возвращает варианты фильтров |
 | `GET` | `/api/directory/search` | Принимает `q`, JSON-параметр `filters`, `offset`, `limit` до 50 |
@@ -65,6 +66,8 @@ npm run dev
 | `PATCH` | `/api/applications/{id}` | Решение работодателя по своему входящему отклику |
 
 Ошибки имеют форму `{ "error": "сообщение" }`. Интерфейс отправляет cookie через `credentials: 'same-origin'` и не читает токены из JavaScript.
+
+Контроль теста описан в [assessment_integrity.md](../docs/assessment_integrity.md). Создание и восстановление попытки возвращают `integrity` с `departures`, `blockedCopies` и `lastEventAt`. Клиентское событие не удостоверяет списывание и не влияет на категорию; журнал не доступен работодателю.
 
 `GET /api/platform/state` возвращает текущую идентичность в `X-Platform-Identity`. Для зарегистрированного аккаунта этот заголовок обязателен при `PUT` и `DELETE`: отправляйте значение последнего чтения вместе с `baseRevision` при сохранении. Если аккаунт изменился, API возвращает конфликт; старый черновик нужно очистить и заново прочитать данные текущего аккаунта. `GET /api/auth/me` без входа возвращает статус отсутствующей авторизации.
 

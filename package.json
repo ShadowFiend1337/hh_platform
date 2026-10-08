@@ -13,6 +13,7 @@
     "test:server": "node --test server/tests/*.test.mjs",
     "test:auth": "node frontend/tests/auth.mjs",
     "test:access": "node frontend/tests/access-gate.mjs",
+    "test:assessment-guard": "node frontend/tests/assessment-guard.mjs",
     "test:contact-privacy": "node frontend/tests/application-privacy.mjs",
     "test:profile-privacy": "node frontend/tests/profile-privacy.mjs",
     "test:browser": "npm --prefix frontend run test:browser",

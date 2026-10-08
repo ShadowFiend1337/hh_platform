@@ -3,6 +3,7 @@ import { BadgeCheck, Check, ClipboardCheck, Clock3, RotateCcw } from 'lucide-rea
 import { AssessmentError, createAssessment, getAssessmentProgram, readAssessment, resumeAssessment, saveAssessment, submitAssessment, type AssessmentAttempt, type AssessmentProgram } from '../assessment';
 import { CandidateSteps } from '../components/CandidateSteps';
 import { categoryChangeUnlock, currentSurvey, dateLabel, gradeLabels, specializationNames, type PlatformState, type TestResult } from '../model';
+import { clearAssessmentGuard, useAssessmentGuard } from '../use-assessment-guard';
 
 function errorMessage(error: unknown) {
   return error instanceof AssessmentError ? error.message : 'Не удалось загрузить тест. Попробуйте ещё раз.';
@@ -12,9 +13,10 @@ function unavailableAttempt(error: unknown) {
   return error instanceof AssessmentError && [403, 404, 410].includes(error.status);
 }
 
-export function Assessment({ state, update, notify, onProfile, onSurvey }: {
+export function Assessment({ state, update, notify, onProfile, onSurvey, onActiveChange }: {
   state: PlatformState; update: (fn: (state: PlatformState) => PlatformState) => void;
   notify: (message: string) => void; onProfile: () => void; onSurvey: () => void;
+  onActiveChange?: (active: boolean) => void;
 }) {
   const [initialPath] = useState(!state.profile.confirmed);
   const [session, setSession] = useState<AssessmentAttempt | null>(null);
@@ -32,6 +34,9 @@ export function Assessment({ state, update, notify, onProfile, onSurvey }: {
   const [error, setError] = useState('');
   const [vacancyDescription, setVacancyDescription] = useState('');
   const actionController = useRef<AbortController | null>(null);
+  const deadlineRef = useRef<{ id: string; expiresAt: string; serverNow: string; deadline: number } | null>(null);
+  const protectedContent = useRef<HTMLDivElement | null>(null);
+  const guard = useAssessmentGuard(session, busy === 'submitting', protectedContent);
   const stateRef = useRef(state);
   stateRef.current = state;
   const survey = currentSurvey(state);
@@ -43,7 +48,13 @@ export function Assessment({ state, update, notify, onProfile, onSurvey }: {
   const unlock = categoryChangeUnlock(state.profile, specialization, grade);
   const locked = unlock > Date.now();
 
+  useEffect(() => {
+    onActiveChange?.(!!session && !result);
+    return () => onActiveChange?.(false);
+  }, [session, result, onActiveChange]);
+
   const receiveResult = useCallback((attempt: TestResult, expectedSurveyId: string) => {
+    clearAssessmentGuard(attempt.id);
     const latestState = stateRef.current;
     if (attempt.surveyId !== expectedSurveyId || currentSurvey(latestState)?.id !== expectedSurveyId
       || categoryChangeUnlock(latestState.profile, attempt.specialization, attempt.grade) > Date.now()) {
@@ -121,6 +132,33 @@ export function Assessment({ state, update, notify, onProfile, onSurvey }: {
     if (session) saveAssessment({ id: session.id, token: session.token, surveyId: session.surveyId, answers, index });
   }, [session, answers, index]);
 
+  useEffect(() => {
+    if (!session || !session.serverNow) {
+      deadlineRef.current = null;
+      return;
+    }
+    const expiresAt = Date.parse(session.expiresAt);
+    const serverNow = Date.parse(session.serverNow);
+    if (!Number.isFinite(expiresAt) || !Number.isFinite(serverNow)) return;
+    let deadline = deadlineRef.current;
+    if (!deadline || deadline.id !== session.id || deadline.expiresAt !== session.expiresAt || deadline.serverNow !== session.serverNow) {
+      deadline = { id: session.id, expiresAt: session.expiresAt, serverNow: session.serverNow,
+        deadline: performance.now() + Math.max(0, expiresAt - serverNow) };
+      deadlineRef.current = deadline;
+    }
+    if (busy) return;
+    const deadlineAt = deadline.deadline;
+    const checkDeadline = () => {
+      if (performance.now() < deadlineAt) return;
+      clearAssessmentGuard(session.id);
+      saveAssessment(null); setSession(null); setAnswers({});
+      setError('Время теста истекло. Начните новую попытку.');
+    };
+    checkDeadline();
+    const timer = window.setInterval(checkDeadline, 1000);
+    return () => window.clearInterval(timer);
+  }, [session, busy]);
+
   useEffect(() => () => actionController.current?.abort(), []);
 
   async function start() {
@@ -194,9 +232,14 @@ export function Assessment({ state, update, notify, onProfile, onSurvey }: {
           {session.vacancy.matchedSkills.length ? <div className="tags" aria-label="Навыки из вакансии">{session.vacancy.matchedSkills.map(skill => <span key={skill}>{skill}</span>)}</div> : <p className="field-help">Совпадений для этого варианта нет. Используется стандартная программа.</p>}
           {session.vacancy.unmatchedSkills.length > 0 && <p className="field-help">Без проверки: {session.vacancy.unmatchedSkills.join(', ')}.</p>}
         </div>}
-        <span className="question-topic">{current.topic}</span><h2 className="question-text">{current.text}</h2>
-        <fieldset className="answer-options" disabled={busy === 'submitting'}><legend className="sr-only">Варианты ответа</legend>{current.options.map(option => <label key={option.id} className={'answer-option' + (answers[current.id] === option.id ? ' selected' : '')}><input type="radio" name={current.id} checked={answers[current.id] === option.id} onChange={() => setAnswers(previousAnswers => ({ ...previousAnswers, [current.id]: option.id }))} /><span>{option.text}</span>{answers[current.id] === option.id && <Check size={17} />}</label>)}</fieldset>
-        <div className="exam-actions"><button className="button secondary" disabled={index === 0 || busy === 'submitting'} onClick={() => { setError(''); setIndex(index - 1); }}>Назад</button><button className="button primary" disabled={!answers[current.id] || busy === 'submitting'} onClick={() => index === exam.length - 1 ? finish() : setIndex(index + 1)}>{busy === 'submitting' ? 'Проверяем…' : index === exam.length - 1 ? 'Завершить тест' : 'Далее'}</button></div>
+        {guard.paused ? <div className="exam-focus-cover" role="status"><h2>Вернитесь к тесту</h2><p className="muted">Вопросы скрыты. Время теста продолжается.</p><button className="button primary" onClick={guard.continueTest}>Продолжить тест</button></div> : <>
+          <div className="exam-protected-content" ref={protectedContent}>
+            <span className="question-topic">{current.topic}</span><h2 className="question-text">{current.text}</h2>
+            <fieldset className="answer-options" disabled={busy === 'submitting'}><legend className="sr-only">Варианты ответа</legend>{current.options.map(option => <label key={option.id} className={'answer-option' + (answers[current.id] === option.id ? ' selected' : '')}><input type="radio" name={current.id} checked={answers[current.id] === option.id} onChange={() => setAnswers(previousAnswers => ({ ...previousAnswers, [current.id]: option.id }))} /><span>{option.text}</span>{answers[current.id] === option.id && <Check size={17} />}</label>)}</fieldset>
+          </div>
+          <div className="exam-actions"><button className="button secondary" disabled={index === 0 || busy === 'submitting'} onClick={() => { setError(''); setIndex(index - 1); }}>Назад</button><button className="button primary" disabled={!answers[current.id] || busy === 'submitting'} onClick={() => index === exam.length - 1 ? finish() : setIndex(index + 1)}>{busy === 'submitting' ? 'Проверяем…' : index === exam.length - 1 ? 'Завершить тест' : 'Далее'}</button></div>
+        </>}
+        {guard.auditUnavailable && <p className="field-help" role="status">Событие контроля не сохранено.</p>}
       </section> : <div className="assessment-layout">
         <section className="panel assessment-setup"><div className="assessment-category"><strong>{specializationNames[specialization]} · {gradeLabels[grade]}</strong><button className="text-button" onClick={onSurvey}>Изменить анкету</button></div>
           {programBusy ? <p className="muted" role="status">Загружаем программу…</p> : programError ? <div className="assessment-error" role="alert"><span>{programError}</span><button className="text-button" onClick={() => setProgramVersion(value => value + 1)}>Повторить</button></div> : program && <>
@@ -208,6 +251,7 @@ export function Assessment({ state, update, notify, onProfile, onSurvey }: {
             </details>
           </>}
           {state.profile.confirmed && <p className="assessment-rules">Неудачный тест сохраняет грейд. Смена категории — раз в 90 дней.</p>}
+          <p className="assessment-rules">Во время теста оставайтесь на этой вкладке. Копирование вопросов отключено, уход со страницы фиксируется.</p>
           {locked && <div className="inline-notice"><Clock3 size={17} />Смена категории доступна с {dateLabel(new Date(unlock).toISOString())}</div>}
           <div className="form-actions"><button className="button primary" disabled={!survey || locked || !program || programBusy || !!busy || resumePending} onClick={start}>{busy === 'starting' ? 'Формируем тест…' : 'Начать тест'}</button></div>
         </section>
