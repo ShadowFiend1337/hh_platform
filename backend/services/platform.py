@@ -1,14 +1,15 @@
 from __future__ import annotations
 
+import secrets
 from copy import deepcopy
 from datetime import timedelta
 from typing import Any
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from backend.models import Account, PlatformState
+from backend.models import Account, AssessmentAttempt, ConsentEvent, PlatformState
 from backend.services import assessment, directory
 from backend.services.common import ApiError, clone_json, company_id, json_size, public_id, utcnow
 
@@ -30,6 +31,8 @@ def _validate_state(value: Any) -> dict[str, Any]:
         raise ApiError(413, "Данные профиля слишком велики.")
     if not isinstance(value.get("profile"), dict) or not isinstance(value.get("company"), dict):
         raise ApiError(400, "Некорректные данные профиля.")
+    if "consent" in value["profile"] and not isinstance(value["profile"]["consent"], bool):
+        raise ApiError(400, "Некорректное согласие на обработку данных.")
     for key, maximum in (("invitations", 500), ("history", 500), ("surveys", 100), ("savedSearches", 100)):
         if not isinstance(value.get(key), list) or len(value[key]) > maximum:
             raise ApiError(400, "Некорректный список данных.")
@@ -298,7 +301,7 @@ def _merge_invitations(session: Session, owner: str, role: str | None, state: di
     return stored
 
 
-def save(session: Session, owner: str, value: Any, base_revision: Any, role: str | None) -> dict[str, Any]:
+def save(session: Session, owner: str, value: Any, base_revision: Any, role: str | None, account_id: str | None = None) -> dict[str, Any]:
     if role is not None and role not in {"candidate", "employer"}:
         raise ApiError(403, "Роль аккаунта недоступна.")
     if not isinstance(base_revision, int) or isinstance(base_revision, bool) or base_revision < 0:
@@ -317,6 +320,13 @@ def save(session: Session, owner: str, value: Any, base_revision: Any, role: str
         raise ApiError(403, "Сохранённые поиски доступны работодателю.")
     old_state = clone_json(row.state) if row else None
     old_profile = old_state.get("profile") if isinstance(old_state, dict) and isinstance(old_state.get("profile"), dict) else None
+    old_surveys = {item["id"]: item for item in _valid_surveys(old_state.get("surveys", []))} if old_state else {}
+    new_surveys = {item["id"]: item for item in surveys}
+    for survey_id, old_survey in old_surveys.items():
+        if survey_id not in new_surveys:
+            raise ApiError(403, "Сохранённую анкету нельзя удалить из истории.")
+        if new_surveys[survey_id] != old_survey:
+            raise ApiError(403, "Сохранённую анкету нельзя изменить.")
     if role == "employer" and (_has_private_profile(profile) or bool(profile.get("consent")) or surveys):
         raise ApiError(403, "Профиль и анкеты доступны соискателю.")
     if not profile.get("consent") and (_has_private_profile(profile) or surveys) and not _has_private_profile(old_profile or {}):
@@ -328,6 +338,14 @@ def save(session: Session, owner: str, value: Any, base_revision: Any, role: str
     state.update({"profile": profile, "company": company, "surveys": surveys, "savedSearches": searches, "history": results})
     state["invitations"] = _merge_invitations(session, owner, role, state, company, old_state)
     now = utcnow()
+    if bool(old_profile and old_profile.get("consent")) != bool(profile.get("consent")):
+        from backend.services.auth import PRIVACY_POLICY_VERSION
+
+        session.add(ConsentEvent(
+            id=secrets.token_hex(16), owner=owner, account_id=account_id,
+            policy_version=PRIVACY_POLICY_VERSION, scope="candidate_profile",
+            action="accepted" if profile.get("consent") is True else "withdrawn", occurred_at=now,
+        ))
     if row is None:
         session.add(PlatformState(owner=owner, revision=1, state=state, updated_at=now))
         try:
@@ -375,7 +393,9 @@ def contacts(session: Session, owner: str, candidate_id: str) -> dict[str, str]:
     return {"email": str(profile.get("email", "")), "phone": str(profile.get("phone", ""))}
 
 
-def delete(session: Session, owner: str) -> dict[str, Any]:
+def erase_owner_data(session: Session, owner: str, *, include_consent_events: bool = False) -> None:
+    """Erase a platform owner and their references without committing."""
+
     own_public_id = public_id(owner)
     for row in session.scalars(select(PlatformState)).all():
         if row.owner == owner:
@@ -388,6 +408,12 @@ def delete(session: Session, owner: str) -> dict[str, Any]:
             row.state = state
             row.revision += 1
             row.updated_at = utcnow()
+    session.execute(delete(AssessmentAttempt).where(AssessmentAttempt.owner == owner))
+    if include_consent_events:
+        session.execute(delete(ConsentEvent).where(ConsentEvent.owner == owner))
+
+
+def delete(session: Session, owner: str) -> dict[str, Any]:
+    erase_owner_data(session, owner, include_consent_events=True)
     session.commit()
-    assessment.delete_owner_attempts(session, owner)
     return {"state": None, "revision": 0, "directoryPeople": []}

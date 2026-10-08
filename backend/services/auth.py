@@ -17,7 +17,7 @@ from sqlalchemy import delete, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from backend.models import Account, AuthSession, PendingRegistration
+from backend.models import Account, AccountDeletionEvent, AuthSession, ConsentEvent, PendingRegistration, PendingRegistrationConsent
 from backend.services.common import ApiError, is_email, require_string, sha256, utcnow
 
 
@@ -29,6 +29,7 @@ PASSWORD_R = 8
 PASSWORD_P = 1
 PASSWORD_MAXMEM = 64 * 1024 * 1024
 LOGGER = logging.getLogger(__name__)
+PRIVACY_POLICY_VERSION = "2026-10-08"
 
 
 def _aware(value: datetime) -> datetime:
@@ -117,11 +118,13 @@ def validate_password(value: Any) -> str:
 def validate_registration(value: Any) -> dict[str, str]:
     if not isinstance(value, dict):
         raise ApiError(400, "Некорректные данные регистрации.")
-    allowed = {"email", "login", "password", "role", "name", "companyName", "consent"}
+    allowed = {"email", "login", "password", "role", "name", "companyName", "consent", "privacyVersion"}
     if set(value) - allowed:
         raise ApiError(400, "Недопустимые поля регистрации.")
     if value.get("consent") is not True:
         raise ApiError(400, "Для регистрации необходимо согласие на обработку данных.")
+    if value.get("privacyVersion") != PRIVACY_POLICY_VERSION:
+        raise ApiError(400, "Примите актуальную версию политики конфиденциальности.")
     role = value.get("role")
     if role not in {"candidate", "employer"}:
         raise ApiError(400, "Выберите роль: соискатель или работодатель.")
@@ -237,6 +240,16 @@ def request_registration(session: Session, input_value: Any, platform_owner: str
         for key, item in values.items():
             setattr(pending, key, item)
     try:
+        session.flush()
+        consent = session.get(PendingRegistrationConsent, registration["email"])
+        if consent is None:
+            consent = PendingRegistrationConsent(
+                email=registration["email"], policy_version=PRIVACY_POLICY_VERSION, accepted_at=now,
+            )
+            session.add(consent)
+        else:
+            consent.policy_version = PRIVACY_POLICY_VERSION
+            consent.accepted_at = now
         session.commit()
     except IntegrityError as error:
         # A repeated click can race with another registration request.  The
@@ -259,6 +272,9 @@ def verify_registration(session: Session, value: Any) -> Account:
     if pending is None:
         raise ApiError(400, "Код истёк. Запросите новый.")
     now = utcnow()
+    pending_consent = session.get(PendingRegistrationConsent, email)
+    if pending_consent is None or pending_consent.policy_version != PRIVACY_POLICY_VERSION:
+        raise ApiError(409, "Примите актуальную политику конфиденциальности и запросите новый код.")
     if _aware(pending.code_expires_at) <= now:
         session.delete(pending)
         session.commit()
@@ -284,8 +300,14 @@ def verify_registration(session: Session, value: Any) -> Account:
         platform_owner=pending.platform_owner, created_at=now, updated_at=now,
     )
     session.add(account)
-    session.delete(pending)
     try:
+        session.flush()
+        session.add(ConsentEvent(
+            id=secrets.token_hex(16), owner=account.platform_owner, account_id=account.id,
+            policy_version=pending_consent.policy_version,
+            scope="registration", action="accepted", occurred_at=_aware(pending_consent.accepted_at),
+        ))
+        session.delete(pending)
         session.commit()
     except IntegrityError as error:
         # Two tabs can submit the same code at once.  Only one account may be
@@ -341,6 +363,14 @@ def account_for_token(session: Session, token: Any) -> Account | None:
     return account
 
 
+def cleanup_expired_registrations(session: Session) -> None:
+    """Remove pending registration data as soon as a later API request arrives."""
+
+    deleted = session.execute(delete(PendingRegistration).where(PendingRegistration.code_expires_at <= utcnow()))
+    if deleted.rowcount:
+        session.commit()
+
+
 def account_for_owner(session: Session, owner: str) -> Account | None:
     return session.scalar(select(Account).where(Account.platform_owner == owner))
 
@@ -349,3 +379,16 @@ def revoke_token(session: Session, token: Any) -> None:
     if isinstance(token, str) and len(token) == 64 and all(char in "0123456789abcdef" for char in token):
         session.execute(delete(AuthSession).where(AuthSession.token_hash == sha256(token)))
         session.commit()
+
+
+def delete_account(session: Session, account_id: str) -> datetime:
+    """Remove an account and write only an unlinked deletion timestamp."""
+
+    account = session.get(Account, account_id)
+    if account is None:
+        raise ApiError(401, "Войдите в аккаунт.")
+    deleted_at = utcnow()
+    session.add(AccountDeletionEvent(id=secrets.token_hex(16), deleted_at=deleted_at))
+    session.delete(account)
+    session.commit()
+    return deleted_at

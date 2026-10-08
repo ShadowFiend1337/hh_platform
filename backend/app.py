@@ -140,6 +140,7 @@ def _delete_cookie(response: Response, key: str) -> None:
 
 
 def resolve_identity(request: Request, response: Response, session: Session) -> Identity:
+    auth.cleanup_expired_registrations(session)
     auth_token = request.cookies.get(auth.AUTH_COOKIE)
     account = auth.account_for_token(session, auth_token)
     if account is not None:
@@ -285,6 +286,21 @@ def logout(request: Request, response: Response, session: Session = Depends(get_
     return {"status": "signed_out"}
 
 
+@app.delete("/api/auth/account")
+def delete_account(request: Request, response: Response, session: Session = Depends(get_session)) -> dict[str, str]:
+    identity = _identity(request, response, session)
+    if identity.account is None:
+        raise ApiError(401, "Войдите в аккаунт, чтобы удалить его.")
+    expected_identity = request.headers.get("X-Platform-Identity")
+    if expected_identity and expected_identity != "auth:" + identity.account["id"]:
+        raise ApiError(403, "Аккаунт изменился. Обновите страницу.")
+    platform.erase_owner_data(session, identity.owner, include_consent_events=True)
+    deleted_at = auth.delete_account(session, identity.account["id"])
+    _delete_cookie(response, auth.AUTH_COOKIE)
+    _delete_cookie(response, auth.ANONYMOUS_COOKIE)
+    return {"status": "account_deleted", "deletedAt": deleted_at.isoformat().replace("+00:00", "Z")}
+
+
 @app.get("/api/platform/state")
 def platform_read(request: Request, response: Response, session: Session = Depends(get_session)) -> dict[str, Any]:
     identity = _identity(request, response, session)
@@ -297,12 +313,18 @@ async def platform_save(request: Request, response: Response, session: Session =
     body = await json_object(request, 1_000_000)
     if set(body) - {"state", "baseRevision"}:
         raise ApiError(400, "Недопустимые поля запроса.")
-    return platform.save(session, identity.owner, body.get("state"), body.get("baseRevision"), identity.account.get("role") if identity.account else None)
+    return platform.save(
+        session, identity.owner, body.get("state"), body.get("baseRevision"),
+        identity.account.get("role") if identity.account else None,
+        identity.account.get("id") if identity.account else None,
+    )
 
 
 @app.delete("/api/platform/state")
 def platform_delete(request: Request, response: Response, session: Session = Depends(get_session)) -> dict[str, Any]:
     identity = _identity(request, response, session)
+    if identity.account is not None:
+        raise ApiError(403, "Удалите аккаунт, чтобы удалить его историю и связанные данные.")
     return platform.delete(session, identity.owner)
 
 

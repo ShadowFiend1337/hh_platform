@@ -63,6 +63,47 @@ class PendingRegistration(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
 
 
+class PendingRegistrationConsent(Base):
+    """Consent attached to a pending registration until email verification."""
+
+    __tablename__ = "auth_pending_registration_consents"
+
+    email: Mapped[str] = mapped_column(
+        String(254), ForeignKey("auth_pending_registrations.email", ondelete="CASCADE"), primary_key=True
+    )
+    policy_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    accepted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ConsentEvent(Base):
+    """A versioned account consent decision with its exact UTC timestamp."""
+
+    __tablename__ = "auth_consent_events"
+    __table_args__ = (
+        Index("ix_auth_consent_events_account_time", "account_id", "occurred_at"),
+        Index("ix_auth_consent_events_owner_time", "owner", "occurred_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    owner: Mapped[str] = mapped_column(String(128), nullable=False)
+    account_id: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("auth_accounts.id", ondelete="CASCADE"), nullable=True
+    )
+    policy_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    scope: Mapped[str] = mapped_column(String(32), nullable=False)
+    action: Mapped[str] = mapped_column(String(16), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class AccountDeletionEvent(Base):
+    """Anonymous deletion-operation timestamp, intentionally not linked to an account."""
+
+    __tablename__ = "auth_account_deletion_events"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    deleted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class AuthSession(Base):
     """A server-side session represented by a hash of its browser token."""
 

@@ -92,7 +92,8 @@ export function App() {
   return <Workspace key={identity.account?.id || 'anonymous'} authAccount={identity.account} />;
 }
 
-function Workspace({ authAccount }: { authAccount: AuthAccount | null }) {
+function Workspace({ authAccount: initialAccount }: { authAccount: AuthAccount | null }) {
+  const [authAccount, setAuthAccount] = useState(initialAccount);
   const [state, setState] = useState(readState);
   const [route, setRoute] = useState(routeFromLocation);
   const [roleMenu, setRoleMenu] = useState(false);
@@ -298,11 +299,17 @@ function Workspace({ authAccount }: { authAccount: AuthAccount | null }) {
     else openAuth('register', role);
   }
 
-  if (route.privacy) return <Privacy onHome={goHome} onClearLocal={authAccount ? async () => {
-    await persistence.clear();
+  if (route.privacy) return <Privacy isSignedIn={Boolean(authAccount)} onHome={goHome} onClearLocal={authAccount ? async deleteAccount => {
+    const deletedAt = await persistence.clear(Boolean(deleteAccount));
     clearLocalPlatformCache();
     setKnownPeople([]);
     setDialog(null);
+    if (deleteAccount) {
+      setAuthAccount(null);
+      localStorage.setItem(accountCacheKey, 'anonymous');
+      sessionStorage.removeItem(pendingSearchKey);
+    }
+    return deletedAt;
   } : undefined} />;
   if (route.auth) return <Auth key={route.auth} mode={route.auth} initialRole={route.role} onBack={goHome}
     onSwitchMode={mode => openAuth(mode, route.role)} onRoleChange={updateAuthRole} onAuthenticated={completeAuthentication} />;

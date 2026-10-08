@@ -248,17 +248,25 @@ export function usePlatformPersistence(state: PlatformState, update: Dispatch<Se
       if (ready) setStatus('saving');
       else { setStatus('loading'); setRetryVersion(value => value + 1); }
     },
-    clear: async () => {
+    clear: async (deleteAccount = false): Promise<string | undefined> => {
       if (!enabled) throw new ApiError('Войдите в аккаунт.', 401);
       blocked.current = true;
       try {
         await writing.current;
-        await request('DELETE', undefined, serverIdentity.current);
+        let deletedAt: string | undefined;
+        if (deleteAccount) {
+          const response = await fetch('/api/auth/account', { method: 'DELETE', credentials: 'same-origin',
+            headers: serverIdentity.current ? { 'X-Platform-Identity': serverIdentity.current } : {} });
+          const data = await response.json().catch(() => ({})) as { error?: string; deletedAt?: string };
+          if (!response.ok) throw new Error(data.error || 'Не удалось удалить аккаунт.');
+          deletedAt = data.deletedAt;
+        } else await request('DELETE', undefined, serverIdentity.current);
         const empty = createInitialState();
         current.current = empty; baseline.current = null; persisted.current = hash(empty); serverRevision.current = 0;
         directoryHash.current = null; likedPeople.current = new Map(); setDirectoryRevision(0);
         localStorage.removeItem(syncCacheKey);
         update(empty); setRevision(0); setPeople([]); setContactCandidateIds([]); setError(''); setStatus('saved'); setReady(true);
+        return deletedAt;
       } finally { blocked.current = false; }
     } };
 }
