@@ -366,9 +366,10 @@ def account_for_token(session: Session, token: Any) -> Account | None:
 def cleanup_expired_registrations(session: Session) -> None:
     """Remove pending registration data as soon as a later API request arrives."""
 
-    deleted = session.execute(delete(PendingRegistration).where(PendingRegistration.code_expires_at <= utcnow()))
-    if deleted.rowcount:
-        session.commit()
+    session.execute(delete(PendingRegistration).where(PendingRegistration.code_expires_at <= utcnow()))
+    # Even a DELETE matching no rows takes SQLite's write lock. Release it
+    # before the request starts a registration/login worker with its own session.
+    session.commit()
 
 
 def account_for_owner(session: Session, owner: str) -> Account | None:

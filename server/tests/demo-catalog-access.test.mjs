@@ -1,3 +1,4 @@
+import { PRIVACY_POLICY_VERSION } from '../../shared/privacy.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createAssessmentServer } from '../server.mjs';
@@ -43,7 +44,7 @@ async function setup(t) {
   async function register(role, login) {
     const client = browser(), email = `${login}@example.invalid`;
     const requested = await client('/api/auth/register/request-code', 'POST', {
-      role, login, email, password, consent: true,
+      role, login, email, password, consent: true, privacyVersion: PRIVACY_POLICY_VERSION,
       ...(role === 'candidate' ? { name: 'Проверочный кандидат каталога' }
         : { companyName: 'Проверочная компания каталога' }),
     });

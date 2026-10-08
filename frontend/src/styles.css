@@ -672,3 +672,21 @@ fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
   .body-copy { font-size: 12px; }
   dialog::backdrop { display: none; }
 }
+
+.integration-panel h2 { font-size: 1.1rem; margin-bottom: 12px; }
+.integration-source { border-top: 1px solid var(--border, #e5e7eb); padding-top: 16px; margin-top: 16px; }
+.integration-source h3 { font-size: 1rem; margin-bottom: 8px; }
+.integration-source p { overflow-wrap: anywhere; }
+.integration-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.evidence-list .achievement { display: flex; flex-direction: column; gap: 6px; overflow-wrap: anywhere; }
+.integration-panel .checkbox-field { margin: 16px 0; }
+
+.claim-form { border-top: 1px solid var(--line, #e4e7eb); margin-top: 16px; padding-top: 16px; }
+.claim-form .field { margin-bottom: 12px; }
+.claim-card { border-top: 1px solid var(--line, #e4e7eb); padding: 16px 0; }
+.claim-statement { white-space: pre-wrap; overflow-wrap: anywhere; }
+.claim-panel details { margin: 12px 0; }
+.moderation-layout { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(360px, 2fr); gap: 24px; align-items: start; }
+.moderation-detail .field { margin-top: 12px; }
+@media (max-width: 800px) { .moderation-layout { grid-template-columns: 1fr; } }
+.verification-code { display: inline-block; overflow-wrap: anywhere; word-break: break-all; padding: .5rem; background: var(--surface-muted, #f4f0f8); border-radius: .4rem; }

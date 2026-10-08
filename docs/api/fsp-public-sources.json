@@ -1,0 +1,73 @@
+{
+  "checkedAt": "2026-10-07T17:45:06.013754Z",
+  "discoveryUrl": "https://fsp-russia.ru/about/documents/",
+  "oidcIssuer": "https://sso.fsp-russia.ru/realms/fsp",
+  "oidcDiscoveryUrl": "https://sso.fsp-russia.ru/realms/fsp/.well-known/openid-configuration",
+  "achievementApiDiscovered": false,
+  "protocols": [
+    {
+      "title": "Итоговые протоколы ЧР-2025 Программирование Продуктовое",
+      "sourceUrl": "https://fsp-russia.ru/upload/iblock/138/tb1vnqokiid4fiwdb40evznavplvmysg.pdf"
+    },
+    {
+      "title": "Итоговый протокол финал ИБ",
+      "sourceUrl": "https://fsp-russia.ru/upload/iblock/27f/5hs99w6a2n362vlqnonn51110vlhkvc5.pdf"
+    },
+    {
+      "title": "ИТОГОВЫЙ ПРОТОКОЛ отборочного этапа Кубка России по спортивному программированию \"робототехника\"",
+      "sourceUrl": "https://fsp-russia.ru/upload/iblock/b0d/f4ikw0r1e2qwmvt3usudy5ve81r3ykrf.pdf"
+    },
+    {
+      "title": "Итоговый протокол отборочного этапа без состава Алгоритмика 2",
+      "sourceUrl": "https://fsp-russia.ru/upload/iblock/969/h77wns4jpn7z3pmkrm0azxfye6era08y.pdf"
+    },
+    {
+      "title": "Итоговый протокол отборочного этапа без состава Хакатон",
+      "sourceUrl": "https://fsp-russia.ru/upload/iblock/6cb/txbuswvkginckkbtbwtkata1wbfukqda.pdf"
+    },
+    {
+      "title": "Итоговый протокол отборочного этапа ИБ",
+      "sourceUrl": "https://fsp-russia.ru/upload/iblock/922/9uxtofnr07t1n3lha1o0ku1anbqndqe1.pdf"
+    },
+    {
+      "title": "ИТОГОВЫЙ ПРОТОКОЛ Кубка России Хакатон",
+      "sourceUrl": "https://fsp-russia.ru/upload/iblock/f5e/8ma6l935b05m4q88wi5n24ne23p7qbya.pdf"
+    },
+    {
+      "title": "ИТОГОВЫЙ ПРОТОКОЛ Кубка России Алгоритмика",
+      "sourceUrl": "https://fsp-russia.ru/upload/iblock/2fd/go7v4ekr13s1wwepx7poocbxgxd2u92i.pdf"
+    },
+    {
+      "title": "Протокол отборочного этапа Кубка России робототехника 2026 справка",
+      "sourceUrl": "https://fsp-russia.ru/upload/iblock/092/us9qvdfvm0kwathyo67wjuvje8c9v1ra.pdf"
+    },
+    {
+      "title": "Протокол отборочного этапа Кубка России продуктовое 2026 справка",
+      "sourceUrl": "https://fsp-russia.ru/upload/iblock/120/f8mtqy9398owua73i24f999rly5fovnf.pdf"
+    },
+    {
+      "title": "Протокол отборочного этапа Кубка России БАС 2026 справки по ГСК",
+      "sourceUrl": "https://fsp-russia.ru/upload/iblock/5c8/p3ikqnt1g9iw1kvczvxgv5qjhv2x9tya.pdf"
+    },
+    {
+      "title": "Протокол отборочного этапа Кубка России СИБ 2026 справка о ГСК субъектах",
+      "sourceUrl": "https://fsp-russia.ru/upload/iblock/9db/e6rp6ekcljtfofzw99bao13a8mpav8i9.pdf"
+    },
+    {
+      "title": "Протокол отборочного этапа Кубка России (алгоритмика) 2026 (справка о ГСК, субъектах РФ)",
+      "sourceUrl": "https://fsp-russia.ru/upload/iblock/fff/rof2o18vujo5me8hfep08nn3bp6sd3lv.pdf"
+    },
+    {
+      "title": "Турнирная таблица Кубка России (алгоритмика) 2026",
+      "sourceUrl": "https://fsp-russia.ru/upload/iblock/a0b/f0gja1njckgfwu6heobl1o3z4021wlpg.pdf"
+    },
+    {
+      "title": "Протоколы ПФО 2026 Продуктовка",
+      "sourceUrl": "https://fsp-russia.ru/upload/iblock/f68/xqhh07qp40z3mfi8lraxt53842qlw772.pdf"
+    },
+    {
+      "title": "Протоколы ЧФО 2026 Продуктовка",
+      "sourceUrl": "https://fsp-russia.ru/upload/iblock/a3d/u4g6723ljtd8cxp3fa1kfhbs01f7cfbs.pdf"
+    }
+  ]
+}

@@ -1,3 +1,4 @@
+import { PRIVACY_POLICY_VERSION } from '../../shared/privacy.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:net';
@@ -14,7 +15,7 @@ const ownerA = 'a'.repeat(64);
 const ownerB = 'b'.repeat(64);
 const password = 'example password';
 const registration = (overrides = {}) => ({ email: 'candidate@example.com', login: 'candidate', password,
-  role: 'candidate', name: 'Example Candidate', consent: true, ...overrides });
+  role: 'candidate', name: 'Example Candidate', consent: true, privacyVersion: PRIVACY_POLICY_VERSION, ...overrides });
 const status = expected => error => error instanceof AuthError && error.status === expected;
 
 function fixture(t, options = {}) {
@@ -36,7 +37,7 @@ test('registration validates role and rejects forged fields before storing crede
   }
   assert.throws(() => validateRegistration(registration({ role: 'employer', companyName: 'Example Company' })), status(400));
   assert.equal(validateRegistration({ email: 'employer@example.com', login: 'employer', password,
-    role: 'employer', companyName: 'Example Company', consent: true }).role, 'employer');
+    role: 'employer', companyName: 'Example Company', consent: true, privacyVersion: PRIVACY_POLICY_VERSION }).role, 'employer');
 });
 
 test('password hashes are salted and invalid or altered credentials never authenticate', async () => {
@@ -334,7 +335,7 @@ test('HTTP registered roles restrict protected actions and anonymous business ro
   }
   await register(candidate, registration());
   await register(employer, { email: 'employer@example.com', login: 'employer', password,
-    role: 'employer', companyName: 'Example Company', consent: true });
+    role: 'employer', companyName: 'Example Company', consent: true, privacyVersion: PRIVACY_POLICY_VERSION });
   assert.equal((await candidate('/api/directory/search')).status, 403);
   assert.equal((await employer('/api/assessment/attempts', { method: 'POST', body: {} })).status, 403);
   assert.equal((await anonymous('/api/companies')).status, 401);

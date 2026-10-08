@@ -1,3 +1,4 @@
+import { PRIVACY_POLICY_VERSION } from '../../shared/privacy.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DirectoryService } from '../directory.mjs';
@@ -149,7 +150,7 @@ test('HTTP category selection requires an employer account and validates JSON', 
     const email = `categories.${role}@example.test`;
     const request = await fetch(base + '/api/auth/register/request-code', { method: 'POST',
       headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role, login: 'categories.' + role, email,
-        password: 'CategoryFixturePassword887!', consent: true,
+        password: 'CategoryFixturePassword887!', consent: true, privacyVersion: PRIVACY_POLICY_VERSION,
         ...(role === 'candidate' ? { name: 'Проверочный кандидат' } : { companyName: 'Проверочная компания' }) }) });
     assert.equal(request.status, 202);
     const verified = await fetch(base + '/api/auth/register/verify', { method: 'POST',

@@ -1,3 +1,4 @@
+import { PRIVACY_POLICY_VERSION } from '../../shared/privacy.ts';
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -53,7 +54,7 @@ async function actor(login) {
   contexts.push(context);
   const account = { role: 'employer', login, email: `${login}@example.invalid`,
     companyName: `Проверочная команда ${login}`, password: 'HiringNeedsFixture973!' };
-  const requested = await context.request.post(base + '/api/auth/register/request-code', { data: { ...account, consent: true } });
+  const requested = await context.request.post(base + '/api/auth/register/request-code', { data: { ...account, consent: true, privacyVersion: PRIVACY_POLICY_VERSION } });
   assert.equal(requested.status(), 202, await requested.text());
   assert.match(codes.get(account.email), /^\d{6}$/u);
   const verified = await context.request.post(base + '/api/auth/register/verify', {

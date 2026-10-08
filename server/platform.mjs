@@ -9,6 +9,8 @@ import { isDemoCatalogProfile } from './demo-catalog.mjs';
 import { RequestError, threshold } from './assessment.mjs';
 import { syncMarketplaceCompany } from './marketplace.mjs';
 import { accountsShareRealm, isLocalFixtureAccount } from './local-fixtures.mjs';
+import { randomBytes } from 'node:crypto';
+import { PRIVACY_POLICY_VERSION } from '../shared/privacy.ts';
 
 const ownCandidateId = 'candidate-anna';
 const ownCompanyId = 'company-line';
@@ -265,6 +267,10 @@ export class PlatformService {
   constructor(directoryStore, assessmentStore, { now = () => Date.now(), accountForOwner } = {}) {
     this.store = directoryStore; this.assessments = assessmentStore; this.now = now;
     this.accountForOwner = accountForOwner;
+    this.store.db.exec(`CREATE TABLE IF NOT EXISTS privacy_consent_events (
+      id TEXT PRIMARY KEY, owner TEXT NOT NULL, scope TEXT NOT NULL,
+      accepted INTEGER NOT NULL CHECK(accepted IN (0,1)), policy_version TEXT NOT NULL, occurred_at TEXT NOT NULL
+    ) STRICT; CREATE INDEX IF NOT EXISTS privacy_consent_owner ON privacy_consent_events(owner, occurred_at);`);
     this.rebuildPublicProfiles();
   }
   publication(owner, person, surveys, proof) {
@@ -387,6 +393,13 @@ export class PlatformService {
         throw new RequestError(403, 'Изменять потребности в специалистах может только работодатель.');
       }
       const oldProfile = account ? JSON.parse(account.profile) : null;
+      const existingSurveys = this.store.db.prepare('SELECT id,payload FROM platform_surveys WHERE owner=?').all(owner);
+      for (const existing of existingSurveys) {
+        const incoming = incomingSurveys.find(item => item.id === existing.id);
+        if (!incoming || JSON.stringify(survey(JSON.parse(existing.payload))) !== JSON.stringify(incoming)) {
+          throw new RequestError(403, 'Сохранённые анкеты нельзя изменять или удалять. Добавьте новую анкету.');
+        }
+      }
       const person = profile(value.profile, oldProfile);
       this.profileSource?.(owner, person);
       if (this.accountForOwner) person.synthetic = isLocalFixtureAccount(this.accountForOwner(owner));
@@ -448,11 +461,16 @@ export class PlatformService {
       this.store.db.prepare(`INSERT INTO platform_accounts(owner,public_id,revision,profile,company,updated_at) VALUES(?,?,?,?,?,?)
         ON CONFLICT(owner) DO UPDATE SET revision=excluded.revision,profile=excluded.profile,company=excluded.company,updated_at=excluded.updated_at`)
         .run(owner, id, revision, JSON.stringify({ ...person, ...(selectedProof ? { _proofId: selectedProof.id } : {}) }), JSON.stringify(employer), timestamp);
+      if (Boolean(oldProfile?.consent) !== person.consent) {
+        this.store.db.prepare('INSERT INTO privacy_consent_events VALUES(?,?,?,?,?,?)')
+          .run(randomBytes(16).toString('hex'), owner, 'profile', Number(person.consent), PRIVACY_POLICY_VERSION, timestamp);
+      }
       if (this.accountForOwner ? role === 'employer' : role !== 'candidate') syncMarketplaceCompany(this.store, owner, employer, id);
       const publication = this.publication(owner, person, incomingSurveys, selectedProof || null);
       this.store.upsert({ ...publication.person, id }, owner, publication.eligible);
-      this.store.db.prepare('DELETE FROM platform_surveys WHERE owner=?').run(owner);
-      for (const item of incomingSurveys) this.store.db.prepare('INSERT INTO platform_surveys VALUES(?,?,?,?)').run(owner, item.id, item.date, JSON.stringify(item));
+      for (const item of incomingSurveys) {
+        this.store.db.prepare('INSERT OR IGNORE INTO platform_surveys VALUES(?,?,?,?)').run(owner, item.id, item.date, JSON.stringify(item));
+      }
       this.store.db.prepare('DELETE FROM platform_searches WHERE owner=?').run(owner);
       savedSearches.forEach((item, position) => this.store.db.prepare('INSERT INTO platform_searches VALUES(?,?,?,?)').run(owner, item.id, position, JSON.stringify(item)));
       if (hiringNeeds !== null) {
@@ -519,10 +537,10 @@ export class PlatformService {
     if (candidate.owner !== owner && (!person.consent || !accepted && !applied)) throw new RequestError(403, 'Контакты доступны после отклика или принятия приглашения и при действующем согласии.');
     return { email: person.email, phone: person.phone };
   }
-  delete(owner) {
+  delete(owner, { withinTransaction = false, deleteAssessmentRecords = false } = {}) {
     ownerKey(owner);
     this.authorize(owner);
-    this.store.transaction(() => {
+    const erase = () => {
       const account = this.store.db.prepare('SELECT * FROM platform_accounts WHERE owner=?').get(owner);
       if (!account) return;
       const affected = this.store.db.prepare('SELECT sender,candidate_id FROM platform_invitations WHERE sender=? OR candidate_id=?').all(owner, account.public_id);
@@ -543,10 +561,13 @@ export class PlatformService {
       this.store.db.prepare('DELETE FROM platform_invitations WHERE sender=? OR candidate_id=?').run(owner, account.public_id);
       this.store.db.prepare('DELETE FROM directory_candidates WHERE owner=?').run(owner);
       this.store.db.prepare('DELETE FROM platform_accounts WHERE owner=?').run(owner);
+      this.store.db.prepare('DELETE FROM privacy_consent_events WHERE owner=? AND scope=\'profile\'').run(owner);
       const timestamp = new Date(this.now()).toISOString();
       for (const other of others) this.store.db.prepare('UPDATE platform_accounts SET revision=revision+1,updated_at=? WHERE owner=?').run(timestamp, other);
-    });
-    this.assessments.deleteOwner?.(owner);
+    };
+    if (withinTransaction) erase(); else this.store.transaction(erase);
+    if (deleteAssessmentRecords) this.store.db.prepare('DELETE FROM attempts WHERE owner=?').run(owner);
+    else this.assessments.deleteOwner?.(owner);
     return { state: null, revision: 0, directoryPeople: [] };
   }
 }

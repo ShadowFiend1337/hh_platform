@@ -1,3 +1,4 @@
+import { PRIVACY_POLICY_VERSION } from '../../shared/privacy.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -277,7 +278,7 @@ test('HTTP marketplace flow is session-owned, no-store and keeps contact access 
   async function register(client, role, login) {
     const email = `${login}@example.test`;
     assert.equal((await client('/api/auth/register/request-code', 'POST', {
-      role, email, login, password: 'marketplace fixture password', consent: true,
+      role, email, login, password: 'marketplace fixture password', consent: true, privacyVersion: PRIVACY_POLICY_VERSION,
       ...(role === 'candidate' ? { name: 'Вымышленный кандидат' } : { companyName: 'Вымышленная компания' }),
     })).status, 202);
     assert.equal((await client('/api/auth/register/verify', 'POST', { email, code: codes.get(email) })).status, 201);

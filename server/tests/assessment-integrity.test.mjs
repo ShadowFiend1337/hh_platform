@@ -1,3 +1,4 @@
+import { PRIVACY_POLICY_VERSION } from '../../shared/privacy.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -37,7 +38,7 @@ async function fixture(t) {
   async function register(role = 'candidate') {
     const request = client(), login = 'integrity.' + randomUUID().slice(0, 8), email = `${login}@example.test`;
     assert.equal((await request('/api/auth/register/request-code', 'POST', {
-      role, email, login, password: 'IntegrityFixture2026!', consent: true,
+      role, email, login, password: 'IntegrityFixture2026!', consent: true, privacyVersion: PRIVACY_POLICY_VERSION,
       ...(role === 'candidate' ? { name: 'Вымышленный кандидат' } : { companyName: 'Вымышленная компания' }),
     })).status, 202);
     assert.equal((await request('/api/auth/register/verify', 'POST', { email, code: codes.get(email) })).status, 201);

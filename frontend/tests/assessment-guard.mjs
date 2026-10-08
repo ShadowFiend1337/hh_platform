@@ -1,3 +1,4 @@
+import { PRIVACY_POLICY_VERSION } from '../../shared/privacy.ts';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { chromium } from 'playwright';
@@ -16,7 +17,7 @@ const requests = [];
 const outbound = [];
 const isIntegrity = request => /\/api\/assessment\/attempts\/[^/]+\/integrity$/u.test(new URL(request.url()).pathname);
 const account = { role: 'candidate', login: 'guard.candidate', name: 'Проверка тестирования',
-  email: 'guard.candidate@example.invalid', password: 'FixtureGuard927!', consent: true };
+  email: 'guard.candidate@example.invalid', password: 'FixtureGuard927!', consent: true, privacyVersion: PRIVACY_POLICY_VERSION };
 const keys = new Map(programs.Frontend.Junior.families.flatMap(family =>
   family.variants.map(variant => [variant.text, variant.options[variant.correct]])));
 

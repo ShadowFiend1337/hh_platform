@@ -1,3 +1,4 @@
+import { PRIVACY_POLICY_VERSION } from '../../shared/privacy.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -415,7 +416,7 @@ test('HTTP platform snapshots are session-owned, CAS-checked and deletable', asy
   async function registered(login) {
     const email = `${login}@example.test`;
     assert.equal((await fetch(base + '/api/auth/register/request-code', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ role: 'candidate', login, email, password: 'directory fixture password', name: 'Вымышленный кандидат', consent: true }) })).status, 202);
+      body: JSON.stringify({ role: 'candidate', login, email, password: 'directory fixture password', name: 'Вымышленный кандидат', consent: true, privacyVersion: PRIVACY_POLICY_VERSION }) })).status, 202);
     const verified = await fetch(base + '/api/auth/register/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, code: codes.get(email) }) });
     assert.equal(verified.status, 201);

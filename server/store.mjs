@@ -21,6 +21,7 @@ export function openStore(path) {
     ) STRICT;
   `);
   return {
+    db,
     insert(attempt, owner, tokenHash) {
       db.prepare('INSERT INTO attempts (id, owner, token_hash, specialization, grade, created_at, expires_at, payload) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
         .run(attempt.id, owner, tokenHash, attempt.specialization, attempt.grade, attempt.createdAt, attempt.expiresAt, JSON.stringify(attempt));

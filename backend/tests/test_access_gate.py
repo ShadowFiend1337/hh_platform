@@ -9,20 +9,25 @@ import os
 import tempfile
 import unittest
 from copy import deepcopy
+from datetime import timedelta
 from pathlib import Path
 from unittest.mock import patch
 
 _database_directory = tempfile.TemporaryDirectory(prefix="predel-access-")
 os.environ["DATABASE_URL"] = "sqlite:///" + (Path(_database_directory.name) / "test.sqlite3").as_posix()
+os.environ["PYTHON_DOTENV_DISABLED"] = "1"
 
 from fastapi.testclient import TestClient
 from sqlalchemy import delete, select
 
 from backend.app import app
 from backend.database import SessionLocal, engine
-from backend.models import Account, AssessmentAttempt, PlatformState
+from backend.models import (
+    Account, AccountDeletionEvent, AssessmentAttempt, AuthSession, ConsentEvent,
+    PendingRegistration, PendingRegistrationConsent, PlatformState,
+)
 from backend.services import auth
-from backend.services.common import company_id, iso, public_id
+from backend.services.common import ApiError, company_id, iso, public_id, utcnow
 
 # Fail before any request if another importer already initialised a live engine.
 if Path(engine.url.database).resolve() != (Path(_database_directory.name) / "test.sqlite3").resolve():
@@ -52,7 +57,7 @@ class AccessGateTest(unittest.TestCase):
         account_label = role + ("_" + label if label else "")
         email = account_label + "@example.invalid"
         payload = {"role": role, "login": "access_" + account_label, "email": email,
-                   "password": "IsolatedAccess927!", "consent": True}
+                   "password": "IsolatedAccess927!", "consent": True, "privacyVersion": auth.PRIVACY_POLICY_VERSION}
         payload["companyName" if role == "employer" else "name"] = "Изолированная проверка"
         response = client.post("/api/auth/register/request-code", json=payload)
         assert response.status_code == 202, response.text
@@ -74,6 +79,7 @@ class AccessGateTest(unittest.TestCase):
         with SessionLocal() as session:
             session.execute(delete(PlatformState))
             session.execute(delete(AssessmentAttempt))
+            session.execute(delete(ConsentEvent).where(ConsentEvent.scope == "candidate_profile"))
             session.commit()
 
     def owner(self, client):
@@ -255,6 +261,128 @@ class AccessGateTest(unittest.TestCase):
             client.cookies.set(auth.AUTH_COOKIE, saved_token, path="/api")
             self.assertEqual(client.get("/api/platform/state").status_code, 401)
             self.assertEqual(client.get("/api/auth/me").status_code, 401)
+
+    def test_registration_requires_consent_and_the_current_policy(self):
+        payload = {"role": "candidate", "login": "consent_check", "email": "consent@example.invalid",
+                   "name": "Consent check", "password": "IsolatedAccess927!",
+                   "consent": True, "privacyVersion": auth.PRIVACY_POLICY_VERSION}
+        self.assertEqual(auth.validate_registration(payload)["role"], "candidate")
+        for change in ({"consent": False}, {"consent": "true"}, {"privacyVersion": "outdated"}, {"privacyVersion": None}):
+            with self.subTest(change=change), self.assertRaises(ApiError) as rejected:
+                auth.validate_registration({**payload, **change})
+            self.assertEqual(rejected.exception.status, 400)
+
+    def test_registration_consent_keeps_the_request_timestamp_after_verification(self):
+        accepted_at = utcnow()
+        email = "exact-consent@example.invalid"
+        with TestClient(app) as client:
+            with patch.object(auth, "utcnow", return_value=accepted_at):
+                response = client.post("/api/auth/register/request-code", json={
+                    "role": "candidate", "login": "exact_consent", "email": email,
+                    "name": "Consent timestamp", "password": "IsolatedAccess927!",
+                    "consent": True, "privacyVersion": auth.PRIVACY_POLICY_VERSION,
+                })
+            self.assertEqual(response.status_code, 202, response.text)
+            self.assertEqual(response.json()["delivery"], "development")
+            response = client.post("/api/auth/register/verify", json={"email": email, "code": self.mail[email]})
+            self.assertEqual(response.status_code, 201, response.text)
+            account_id = response.json()["account"]["id"]
+            with SessionLocal() as session:
+                event = session.scalar(select(ConsentEvent).where(ConsentEvent.account_id == account_id))
+                self.assertEqual((event.scope, event.action, event.policy_version),
+                                 ("registration", "accepted", auth.PRIVACY_POLICY_VERSION))
+                self.assertEqual(auth._aware(event.occurred_at), accepted_at)
+                self.assertIsNone(session.get(PendingRegistration, email))
+                self.assertIsNone(session.get(PendingRegistrationConsent, email))
+
+    def test_saved_questionnaire_cannot_be_edited_or_removed_and_new_versions_can_be_added(self):
+        survey = {"id": "immutable-survey", "date": iso(), "industry": "ИТ",
+                  "professionalRole": "Разработчик", "experience": "3 года", "stack": ["React"],
+                  "softSkills": [], "specialization": "Frontend", "desiredGrade": "Middle",
+                  "workHistory": "Saved experience"}
+        state = self.empty_state()
+        state["profile"].update({"name": "Questionnaire history", "consent": True})
+        state["surveys"] = [survey]
+        response = self.candidate.put("/api/platform/state", json={"state": state, "baseRevision": 0})
+        self.assertEqual(response.status_code, 200, response.text)
+        saved = response.json()
+        for surveys in ([], [{**survey, "experience": "5 лет"}], [{**survey, "workHistory": "Rewritten experience"}]):
+            edited = {**saved["state"], "surveys": surveys}
+            response = self.candidate.put("/api/platform/state", json={"state": edited, "baseRevision": saved["revision"]})
+            self.assertEqual(response.status_code, 403, response.text)
+            self.assertEqual(self.candidate.get("/api/platform/state").json()["state"]["surveys"], [survey])
+        appended = {**saved["state"], "surveys": [survey, {**survey, "id": "new-survey", "experience": "5 лет"}]}
+        response = self.candidate.put("/api/platform/state", json={"state": appended, "baseRevision": saved["revision"]})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(len(response.json()["state"]["surveys"]), 2)
+
+    def test_profile_consent_records_only_transitions_with_policy_and_time(self):
+        owner = self.owner(self.candidate)
+        account_id = self.candidate.get("/api/auth/me").json()["account"]["id"]
+        state = self.empty_state()
+        state["profile"].update({"name": "Consent history", "consent": True})
+        revision = 0
+        for consent in (True, True, False, False, True):
+            state["profile"]["consent"] = consent
+            response = self.candidate.put("/api/platform/state", json={"state": state, "baseRevision": revision})
+            self.assertEqual(response.status_code, 200, response.text)
+            revision = response.json()["revision"]
+            state = response.json()["state"]
+        with SessionLocal() as session:
+            events = session.scalars(select(ConsentEvent).where(
+                ConsentEvent.owner == owner, ConsentEvent.scope == "candidate_profile",
+            ).order_by(ConsentEvent.occurred_at)).all()
+            self.assertEqual([event.action for event in events], ["accepted", "withdrawn", "accepted"])
+            self.assertTrue(all(event.account_id == account_id and event.policy_version == auth.PRIVACY_POLICY_VERSION
+                                and auth._aware(event.occurred_at).utcoffset() == timedelta(0) for event in events))
+
+    def test_account_deletion_removes_history_consent_sessions_and_other_owners_references(self):
+        client = self.register("candidate", "deletion")
+        self.addCleanup(client.close)
+        owner = self.publish_assessed_candidate(client)
+        account = client.get("/api/auth/me").json()["account"]
+        token = client.cookies.get(auth.AUTH_COOKIE)
+        employer_owner = self.owner(self.employer)
+        employer_state = self.empty_state()
+        employer_state["invitations"] = [self.invitation("deletion-offer", owner, employer_owner)]
+        self.insert_state(employer_owner, employer_state)
+        self.assertEqual(client.delete("/api/platform/state").status_code, 403)
+        rejected = client.delete("/api/auth/account", headers={"X-Platform-Identity": "auth:another-account"})
+        self.assertEqual(rejected.status_code, 403, rejected.text)
+        self.assertEqual(client.get("/api/auth/me").status_code, 200)
+        with SessionLocal() as session:
+            before = len(session.scalars(select(AccountDeletionEvent)).all())
+        response = client.delete("/api/auth/account", headers={"X-Platform-Identity": "auth:" + account["id"]})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["status"], "account_deleted")
+        self.assertTrue(response.json()["deletedAt"].endswith("Z"))
+        with SessionLocal() as session:
+            self.assertIsNone(session.get(Account, account["id"]))
+            self.assertIsNone(session.get(PlatformState, owner))
+            self.assertEqual(session.scalars(select(AssessmentAttempt).where(AssessmentAttempt.owner == owner)).all(), [])
+            self.assertEqual(session.scalars(select(ConsentEvent).where(ConsentEvent.owner == owner)).all(), [])
+            self.assertEqual(session.scalars(select(AuthSession).where(AuthSession.account_id == account["id"])).all(), [])
+            self.assertEqual(session.get(PlatformState, employer_owner).state["invitations"], [])
+            self.assertEqual(len(session.scalars(select(AccountDeletionEvent)).all()), before + 1)
+            self.assertEqual(set(AccountDeletionEvent.__table__.columns.keys()), {"id", "deleted_at"})
+        with TestClient(app) as other_device:
+            other_device.cookies.set(auth.AUTH_COOKIE, token, path="/api")
+            self.assertEqual(other_device.get("/api/platform/state").status_code, 401)
+            self.assertEqual(other_device.post("/api/auth/login", json={
+                "login": account["login"], "password": "IsolatedAccess927!",
+            }).status_code, 401)
+
+    def test_expired_pending_registration_and_its_consent_are_cleaned_together(self):
+        email = "expired-consent@example.invalid"
+        expired_at = utcnow() - timedelta(minutes=20)
+        with SessionLocal() as session, patch.object(auth, "utcnow", return_value=expired_at):
+            auth.request_registration(session, {"role": "candidate", "login": "expired_consent", "email": email,
+                "name": "Expired registration", "password": "IsolatedAccess927!", "consent": True,
+                "privacyVersion": auth.PRIVACY_POLICY_VERSION}, "a" * 64)
+        self.assertEqual(self.candidate.get("/api/auth/me").status_code, 200)
+        with SessionLocal() as session:
+            self.assertIsNone(session.get(PendingRegistration, email))
+            self.assertIsNone(session.get(PendingRegistrationConsent, email))
 
 
 if __name__ == "__main__":

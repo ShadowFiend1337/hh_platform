@@ -1,3 +1,4 @@
+import { PRIVACY_POLICY_VERSION } from '../../shared/privacy.ts';
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -20,7 +21,7 @@ const artifacts = fileURLToPath(new URL('../../server/data/fsp-link-ui/', import
 async function register(role, login) {
   const context = await browser.newContext({ viewport: { width: 1440, height: 1050 } });
   contexts.push(context);
-  const account = { role, login, email: `${login}@example.invalid`, password: 'Fsp UI isolated 482!', consent: true,
+  const account = { role, login, email: `${login}@example.invalid`, password: 'Fsp UI isolated 482!', consent: true, privacyVersion: PRIVACY_POLICY_VERSION,
     ...(role === 'candidate' ? { name: login.endsWith('fake') ? 'Кандидат неподтверждённых достижений' : 'Кандидат демонстрации ФСП' } : { companyName: 'Компания демонстрации ФСП' }) };
   const requested = await context.request.post(base + '/api/auth/register/request-code', { data: account });
   assert.equal(requested.status(), 202, await requested.text());

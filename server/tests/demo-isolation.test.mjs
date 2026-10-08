@@ -1,3 +1,4 @@
+import { PRIVACY_POLICY_VERSION } from '../../shared/privacy.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createAssessmentServer } from '../server.mjs';
@@ -40,7 +41,7 @@ async function fixture(t, options = {}) {
   async function register(role, login) {
     const client = browser(), email = `${login}@example.test`;
     assert.equal((await client('/api/auth/register/request-code', 'POST', {
-      role, login, email, password: 'demo isolation fixture password', consent: true,
+      role, login, email, password: 'demo isolation fixture password', consent: true, privacyVersion: PRIVACY_POLICY_VERSION,
       ...(role === 'candidate' ? { name: 'Вымышленный зарегистрированный кандидат' } : { companyName: 'Вымышленная зарегистрированная компания' }),
     })).status, 202);
     assert.equal((await client('/api/auth/register/verify', 'POST', { email, code: codes.get(email) })).status, 201);

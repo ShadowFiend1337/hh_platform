@@ -7,6 +7,7 @@ import { connect as connectSocket } from 'node:net';
 import { connect as connectTls } from 'node:tls';
 import { fileURLToPath } from 'node:url';
 import { isLocalFixtureAccount } from './local-fixtures.mjs';
+import { PRIVACY_POLICY_VERSION } from '../shared/privacy.ts';
 
 const scrypt = promisify(scryptCallback);
 const passwordParameters = { cost: 16384, blockSize: 8, parallelization: 1, maxmem: 64 * 1024 * 1024 };
@@ -64,9 +65,10 @@ function role(value) {
 
 export function validateRegistration(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new AuthError(400, 'Некорректные данные регистрации.');
-  const allowed = new Set(['email', 'login', 'password', 'role', 'name', 'companyName', 'consent']);
+  const allowed = new Set(['email', 'login', 'password', 'role', 'name', 'companyName', 'consent', 'privacyVersion']);
   if (Object.keys(input).some(key => !allowed.has(key))) throw new AuthError(400, 'Недопустимые поля регистрации.');
   if (input.consent !== true) throw new AuthError(400, 'Для регистрации необходимо согласие на обработку данных.');
+  if (input.privacyVersion !== PRIVACY_POLICY_VERSION) throw new AuthError(400, 'Примите актуальную политику конфиденциальности.');
   const selectedRole = role(input.role);
   const parsedLogin = normalizeLogin(input.login);
   const result = {
@@ -77,6 +79,7 @@ export function validateRegistration(input) {
     role: selectedRole,
     name: '',
     companyName: '',
+    privacyVersion: PRIVACY_POLICY_VERSION,
   };
   if (selectedRole === 'candidate') {
     result.name = asText(input.name, 'имя', 100);
@@ -117,9 +120,10 @@ export async function passwordMatches(value, stored) {
   return derived.length === expected.length && timingSafeEqual(derived, expected);
 }
 
-function accountPayload(row) {
+function accountPayload(row, canModerate = false) {
   return {
     id: row.id,
+    canModerate,
     email: row.email,
     login: row.login,
     role: row.role,
@@ -132,9 +136,10 @@ function accountPayload(row) {
 function timestamp(now) { return new Date(now()).toISOString(); }
 
 export class AuthStore {
-  constructor(path) {
-    if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
-    this.db = new DatabaseSync(path, { timeout: 5000 });
+  constructor(path, { database } = {}) {
+    this.ownsDatabase = !database;
+    if (!database && path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
+    this.db = database || new DatabaseSync(path, { timeout: 5000 });
     this.db.exec(`
       PRAGMA journal_mode = WAL;
       PRAGMA foreign_keys = ON;
@@ -150,6 +155,14 @@ export class AuthStore {
         platform_owner TEXT NOT NULL UNIQUE,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
+      ) STRICT;
+      CREATE TABLE IF NOT EXISTS auth_moderator_grants (
+        account_id TEXT PRIMARY KEY REFERENCES auth_accounts(id) ON DELETE CASCADE,
+        granted_at TEXT NOT NULL, granted_by TEXT NOT NULL
+      ) STRICT;
+      CREATE TABLE IF NOT EXISTS auth_moderator_audit (
+        id INTEGER PRIMARY KEY, account_id TEXT NOT NULL, action TEXT NOT NULL,
+        actor TEXT NOT NULL, created_at TEXT NOT NULL
       ) STRICT;
       CREATE TABLE IF NOT EXISTS auth_pending_registrations (
         email TEXT PRIMARY KEY,
@@ -174,7 +187,19 @@ export class AuthStore {
       ) STRICT;
       CREATE INDEX IF NOT EXISTS auth_sessions_account ON auth_sessions(account_id, expires_at);
       CREATE INDEX IF NOT EXISTS auth_sessions_expiry ON auth_sessions(expires_at);
+      CREATE TABLE IF NOT EXISTS privacy_consent_events (
+        id TEXT PRIMARY KEY, owner TEXT NOT NULL, scope TEXT NOT NULL,
+        accepted INTEGER NOT NULL CHECK(accepted IN (0,1)), policy_version TEXT NOT NULL, occurred_at TEXT NOT NULL
+      ) STRICT;
+      CREATE INDEX IF NOT EXISTS privacy_consent_owner ON privacy_consent_events(owner, occurred_at);
+      CREATE TABLE IF NOT EXISTS account_deletions (
+        id TEXT PRIMARY KEY, deleted_at TEXT NOT NULL
+      ) STRICT;
     `);
+    const pendingColumns = new Set(this.db.prepare('PRAGMA table_info(auth_pending_registrations)').all().map(column => column.name));
+    for (const column of ['privacy_version', 'consent_at']) {
+      if (!pendingColumns.has(column)) this.db.exec(`ALTER TABLE auth_pending_registrations ADD COLUMN ${column} TEXT`);
+    }
   }
 
   transaction(fn) {
@@ -192,13 +217,15 @@ export class AuthStore {
         .get(registration.loginNormalized, registration.email);
       if (pendingLogin) return { state: 'login_pending' };
       this.db.prepare(`INSERT INTO auth_pending_registrations
-        (email,login,login_normalized,role,name,company_name,password_hash,platform_owner,code_hash,code_expires_at,attempts,created_at,updated_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,0,?,?)
+        (email,login,login_normalized,role,name,company_name,password_hash,platform_owner,code_hash,code_expires_at,attempts,created_at,updated_at,privacy_version,consent_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,0,?,?,?,?)
         ON CONFLICT(email) DO UPDATE SET login=excluded.login,login_normalized=excluded.login_normalized,role=excluded.role,
           name=excluded.name,company_name=excluded.company_name,password_hash=excluded.password_hash,platform_owner=excluded.platform_owner,
-          code_hash=excluded.code_hash,code_expires_at=excluded.code_expires_at,attempts=0,updated_at=excluded.updated_at`)
+          code_hash=excluded.code_hash,code_expires_at=excluded.code_expires_at,attempts=0,updated_at=excluded.updated_at,
+          privacy_version=excluded.privacy_version,consent_at=excluded.consent_at`)
         .run(registration.email, registration.login, registration.loginNormalized, registration.role, registration.name, registration.companyName,
-          registration.passwordHash, registration.platformOwner, registration.codeHash, registration.expiresAt, registration.createdAt, registration.createdAt);
+          registration.passwordHash, registration.platformOwner, registration.codeHash, registration.expiresAt, registration.createdAt, registration.createdAt,
+          registration.privacyVersion, registration.createdAt);
       return { state: 'saved' };
     });
   }
@@ -210,6 +237,10 @@ export class AuthStore {
       if (row.code_expires_at <= nowText) {
         this.db.prepare('DELETE FROM auth_pending_registrations WHERE email=?').run(email);
         return { state: 'expired' };
+      }
+      if (row.privacy_version !== PRIVACY_POLICY_VERSION) {
+        this.db.prepare('DELETE FROM auth_pending_registrations WHERE email=?').run(email);
+        return { state: 'policy_changed' };
       }
       const supplied = Buffer.from(codeHash, 'hex');
       const expected = Buffer.from(row.code_hash, 'hex');
@@ -228,6 +259,9 @@ export class AuthStore {
         VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
         .run(id, row.email, row.login, row.login_normalized, row.role, row.name, row.company_name, row.password_hash,
           row.platform_owner, nowText, nowText);
+      this.db.prepare('INSERT INTO privacy_consent_events VALUES(?,?,?,?,?,?)')
+        .run(randomBytes(16).toString('hex'), row.platform_owner, 'registration', 1,
+          row.privacy_version, row.consent_at || row.created_at);
       this.db.prepare('DELETE FROM auth_pending_registrations WHERE email=?').run(email);
       return { state: 'verified', account: this.db.prepare('SELECT * FROM auth_accounts WHERE id=?').get(id) };
     });
@@ -259,9 +293,30 @@ export class AuthStore {
       .run(tokenHash, accountId, createdAt, expiresAt);
   }
 
+  canModerate(accountId) { return Boolean(this.db.prepare('SELECT 1 FROM auth_moderator_grants WHERE account_id=?').get(accountId)); }
+  setModerator(accountId, enabled, actor = 'local-operator', nowText = new Date().toISOString()) {
+    if (!this.db.prepare('SELECT 1 FROM auth_accounts WHERE id=?').get(accountId)) throw new AuthError(404, 'Аккаунт не найден.');
+    this.transaction(() => {
+      if (enabled) this.db.prepare('INSERT INTO auth_moderator_grants VALUES(?,?,?) ON CONFLICT(account_id) DO NOTHING').run(accountId,nowText,actor);
+      else this.db.prepare('DELETE FROM auth_moderator_grants WHERE account_id=?').run(accountId);
+      this.db.prepare('INSERT INTO auth_moderator_audit(account_id,action,actor,created_at) VALUES(?,?,?,?)').run(accountId,enabled ? 'grant' : 'revoke',actor,nowText);
+    });
+  }
   revokeSession(tokenHash) { this.db.prepare('DELETE FROM auth_sessions WHERE token_hash=?').run(tokenHash); }
 
-  close() { this.db.close(); }
+  eraseAccount(owner, db, deletedAt) {
+    const account = db.prepare('SELECT id,email,login_normalized FROM auth_accounts WHERE platform_owner=?').get(owner);
+    if (!account) throw new AuthError(401, 'Войдите в аккаунт.');
+    db.prepare('DELETE FROM auth_pending_registrations WHERE platform_owner=? OR email=? OR login_normalized=?')
+      .run(owner, account.email, account.login_normalized);
+    db.prepare('DELETE FROM privacy_consent_events WHERE owner=?').run(owner);
+    db.prepare('DELETE FROM auth_moderator_audit WHERE account_id=?').run(account.id);
+    db.prepare('DELETE FROM auth_accounts WHERE id=?').run(account.id);
+    const deletionId = randomBytes(16).toString('hex');
+    db.prepare('INSERT INTO account_deletions VALUES(?,?)').run(deletionId, deletedAt);
+  }
+
+  close() { if (this.ownsDatabase) this.db.close(); }
 }
 
 function positiveInteger(value, fallback, minimum, maximum) {
@@ -462,8 +517,8 @@ export function createVerificationMailer({ env = process.env, logger = console, 
 }
 
 export class AuthService {
-  constructor(path, { now = Date.now, env = process.env, mailer = createVerificationMailer({ env }), codeTtlMinutes, sessionDays } = {}) {
-    this.store = new AuthStore(path);
+  constructor(path, { now = Date.now, env = process.env, mailer = createVerificationMailer({ env }), codeTtlMinutes, sessionDays, database } = {}) {
+    this.store = new AuthStore(path, { database });
     this.now = now;
     this.mailer = mailer;
     this.codeTtlMs = 60000 * positiveInteger(codeTtlMinutes ?? env.AUTH_CODE_TTL_MINUTES, 10, 1, 60);
@@ -511,6 +566,7 @@ export class AuthService {
     const result = this.store.verifyPending(email, hash(input.code), nowText);
     if (result.state === 'verified') return result.account;
     if (result.state === 'missing' || result.state === 'expired') throw new AuthError(400, 'Код истёк. Запросите новый.');
+    if (result.state === 'policy_changed') throw new AuthError(409, 'Политика изменилась. Примите актуальную версию и запросите новый код.');
     if (result.state === 'locked') throw new AuthError(429, 'Слишком много неверных попыток. Запросите новый код.');
     if (result.state === 'account_exists') throw new AuthError(409, 'Этот e-mail или логин уже зарегистрирован.');
     throw new AuthError(400, 'Неверный код.');
@@ -537,18 +593,18 @@ export class AuthService {
     const raw = randomBytes(32).toString('hex');
     const now = this.now();
     this.store.createSession(account.id, hash(raw), timestamp(() => now), new Date(now + this.sessionMs).toISOString());
-    return { token: raw, maxAge: Math.floor(this.sessionMs / 1000), account: accountPayload(account) };
+    return { token: raw, maxAge: Math.floor(this.sessionMs / 1000), account: accountPayload(account, this.store.canModerate(account.id)) };
   }
 
   accountForToken(token) {
     if (typeof token !== 'string' || !/^[a-f0-9]{64}$/u.test(token)) return null;
     const account = this.store.accountBySession(hash(token), timestamp(this.now));
-    return account ? { account: accountPayload(account), platformOwner: account.platform_owner } : null;
+    return account ? { account: accountPayload(account, this.store.canModerate(account.id)), platformOwner: account.platform_owner } : null;
   }
 
   accountForPlatformOwner(platformOwner) {
     const account = this.store.accountByPlatformOwner(platformOwner);
-    return account ? accountPayload(account) : null;
+    return account ? accountPayload(account, this.store.canModerate(account.id)) : null;
   }
 
   revokeToken(token) {

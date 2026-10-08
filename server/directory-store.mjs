@@ -4,6 +4,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { createHash } from 'node:crypto';
 import { positiveProfessionalContent } from './search-evidence.mjs';
+import { rankingFspEvidence } from './search-ranking.mjs';
 
 export const textHash = text => createHash('sha256').update(text).digest('hex');
 export const PROFILE_INDEX_POLICY = 'positive-profile-sections-max-v3';
@@ -120,9 +121,10 @@ export function publicDirectoryCandidate(row, id = row.id) {
 }
 
 export class DirectoryStore {
-  constructor(path, seeds = []) {
-    if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
-    this.db = new DatabaseSync(path, { timeout: 5000 });
+  constructor(path, seeds = [], { database } = {}) {
+    this.ownsDatabase = !database;
+    if (!database && path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
+    this.db = database || new DatabaseSync(path, { timeout: 5000 });
     this.db.exec(`
       PRAGMA journal_mode = WAL;
       PRAGMA foreign_keys = ON;
@@ -247,7 +249,8 @@ export class DirectoryStore {
       .run(person.id, owner, Number(person.synthetic === true), Number(person.visible === true), Number(person.consent === true), Number(eligible),
         person.confirmed?.specialization || person.specialization || '', person.confirmed?.grade || '', person.confirmed?.score || 0,
         person.city || '', person.industry || '', person.format || '', person.salaryFrom ?? null, person.salaryTo ?? null, person.experienceMonths ?? null,
-        person.employmentType || '', Number(Boolean(person.portfolio)), Number((person.achievements || []).length > 0), JSON.stringify(payload), document, textHash(document));
+        person.employmentType || '', Number(Boolean(person.portfolio)), Number(Boolean(rankingFspEvidence(person))
+          || person.synthetic !== true && Boolean(owner) && Boolean(this.integrationCount?.(owner))), JSON.stringify(payload), document, textHash(document));
     this.replaceSkills(person.id, payload.stack || []);
     this.db.prepare('DELETE FROM directory_languages WHERE candidate_id=?').run(person.id);
     for (const language of new Set(person.languageCodes || [])) this.db.prepare('INSERT INTO directory_languages VALUES (?,?)').run(person.id, language);
@@ -331,7 +334,7 @@ export class DirectoryStore {
     const unique = column => this.db.prepare(`SELECT DISTINCT ${column} AS value FROM directory_candidates WHERE eligible=1 AND visible=1 AND consent=1 AND ${column}<>'' ORDER BY ${column}`).all().map(row => row.value);
     return { cities: unique('city'), industries: unique('industry') };
   }
-  close() { this.db.close(); }
+  close() { if (this.ownsDatabase) this.db.close(); }
 }
 
 export function semanticMatch(vector, blob) {

@@ -1,3 +1,4 @@
+import { PRIVACY_POLICY_VERSION } from '../../shared/privacy.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -69,7 +70,7 @@ function client(base) {
     if (!registration) registration = (async () => {
       const login = `assessment-fixture-${++nextClient}`, email = `${login}@example.test`;
       const sent = await raw('/api/auth/register/request-code', { method: 'POST', body: {
-        role: 'candidate', login, email, password: 'assessment fixture password', name: 'Вымышленный кандидат', consent: true,
+        role: 'candidate', login, email, password: 'assessment fixture password', name: 'Вымышленный кандидат', consent: true, privacyVersion: PRIVACY_POLICY_VERSION,
       } });
       assert.equal(sent.status, 202);
       const verified = await raw('/api/auth/register/verify', { method: 'POST', body: { email, code: registrationCodes.get(base).get(email) } });

@@ -1,3 +1,4 @@
+import { PRIVACY_POLICY_VERSION } from '../../shared/privacy.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createAssessmentServer } from '../server.mjs';
@@ -31,7 +32,7 @@ test('registered candidate category, employer invitation and accepted contacts s
   }
   async function register(client, role, email, login) {
     assert.equal((await client('/api/auth/register/request-code', 'POST', {
-      role, email, login, password: 'test account password', consent: true,
+      role, email, login, password: 'test account password', consent: true, privacyVersion: PRIVACY_POLICY_VERSION,
       ...(role === 'candidate' ? { name: 'Тестовый кандидат' } : { companyName: 'Тестовая компания' }),
     })).status, 202);
     assert.equal((await client('/api/auth/register/verify', 'POST', { email, code: codes.get(email) })).status, 201);

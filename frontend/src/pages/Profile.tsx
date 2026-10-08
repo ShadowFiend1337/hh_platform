@@ -8,6 +8,7 @@ import { deriveExperienceMonths, deriveLanguageCodes } from '../candidate-prefer
 import { SoftSkillsField } from '../components/SoftSkillsField';
 import { CandidateHistory } from '../components/CandidateHistory';
 import { FspLink } from '../components/FspLink';
+import { IntegrationPanel } from '../components/IntegrationPanel';
 
 function sameValues(left: string[], right: string[]) {
   const leftValues = new Set(left);
@@ -15,10 +16,11 @@ function sameValues(left: string[], right: string[]) {
   return leftValues.size === rightValues.size && [...leftValues].every(value => rightValues.has(value));
 }
 
-export function Profile({ state, update, notify, onTest, onPreview, onFspChange, syncStatus }: {
+export function Profile({ state, update, notify, onTest, onPreview, onFspChange, syncStatus, accountId }: {
   state: PlatformState; update: (fn: (state: PlatformState) => PlatformState) => void;
   notify: (message: string) => void; onTest: () => void; onPreview: () => void;
   onFspChange: () => Promise<void>; syncStatus: string;
+  accountId?: string;
 }) {
   const [fspId, setFspId] = useState(state.profile.fspId);
   const [consent, setConsent] = useState(state.profile.consent);
@@ -124,6 +126,7 @@ export function Profile({ state, update, notify, onTest, onPreview, onFspChange,
         <div className="form-actions"><button type="submit" className="button primary">Сохранить изменения</button></div>
       </form>
       <aside className="profile-sidebar">
+        <IntegrationPanel accountId={accountId} consent={consent && profile.consent && syncStatus === 'saved'} onChange={onFspChange} />
         <section className="panel category-panel"><h2 className="sr-only">Подтверждённая категория</h2><p className="muted">{specializationLabels[profile.confirmed?.specialization || profile.specialization]}</p>
           <div className="category-status"><BadgeCheck size={20} /><div><span className="field-caption">Подтверждённый грейд</span><strong>{profile.confirmed ? gradeLabels[profile.confirmed.grade] : 'Не подтверждён'}</strong></div></div>
           {profile.confirmed && <div className="category-score" aria-label={'Результат теста: ' + profile.confirmed.score + ' из 100'}><strong>{profile.confirmed.score}<span>/100</span></strong></div>}

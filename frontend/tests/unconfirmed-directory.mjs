@@ -1,3 +1,4 @@
+import { PRIVACY_POLICY_VERSION } from '../../shared/privacy.ts';
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -21,7 +22,7 @@ async function register(role, suffix) {
   const context = await browser.newContext({ viewport: { width: 1440, height: 1100 }, reducedMotion: 'reduce' });
   contexts.push(context);
   const login = `publication.ui.${suffix}`;
-  const account = { role, login, email: `${login}@example.invalid`, password: 'Publication UI isolated 193!', consent: true,
+  const account = { role, login, email: `${login}@example.invalid`, password: 'Publication UI isolated 193!', consent: true, privacyVersion: PRIVACY_POLICY_VERSION,
     ...(role === 'candidate' ? { name: `Кандидат ${suffix}` } : { companyName: 'Компания проверки анкеты' }) };
   const requested = await context.request.post(base + '/api/auth/register/request-code', { data: account });
   assert.equal(requested.status(), 202, await requested.text());

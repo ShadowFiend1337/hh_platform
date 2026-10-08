@@ -1,3 +1,4 @@
+import { PRIVACY_POLICY_VERSION } from '../../shared/privacy.ts';
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import { createRequire } from 'node:module';
@@ -115,7 +116,7 @@ try {
     } else await route.continue();
   });
   const account = { role: 'candidate', login: 'code.editor.ml', name: 'Проверка редактора ML',
-    email: 'code.editor.ml@example.invalid', password: 'FixtureCode927!', consent: true };
+    email: 'code.editor.ml@example.invalid', password: 'FixtureCode927!', consent: true, privacyVersion: PRIVACY_POLICY_VERSION };
   const requested = await context.request.post(base + '/api/auth/register/request-code', { data: account });
   assert.equal(requested.status(), 202, await requested.text());
   assert.equal((await requested.json()).delivery, 'development');

@@ -10,6 +10,9 @@ import { PlatformService } from './platform.mjs';
 import { MarketplaceService } from './marketplace.mjs';
 import { AuthError, AuthService } from './auth.mjs';
 import { FspIntegrationService } from './fsp-integration.mjs';
+import { IntegrationService } from './integrations/service.mjs';
+import { claimRoutes } from './integrations/claims-http.mjs';
+import { callbackPage, readWebhook, integrationRoutes } from './integrations/http.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const cookieName = 'predel_session';
@@ -22,16 +25,18 @@ const mime = {
   '.json': 'application/json; charset=utf-8', '.txt': 'text/plain; charset=utf-8',
 };
 
-export function createAssessmentServer({ dbPath = resolve(root, 'server/data/assessment.sqlite'), now = Date.now, webOrigin = process.env.WEB_ORIGIN, secureCookie = process.env.COOKIE_SECURE === '1', distPath = resolve(root, 'frontend/dist'), authEnv = process.env, authMailer, authCodeTtlMinutes, authSessionDays } = {}) {
+export function createAssessmentServer({ dbPath = resolve(root, 'server/data/assessment.sqlite'), now = Date.now, webOrigin = process.env.WEB_ORIGIN, secureCookie = process.env.COOKIE_SECURE === '1', distPath = resolve(root, 'frontend/dist'), authEnv = process.env, authMailer, authCodeTtlMinutes, authSessionDays, integrationOptions = {} } = {}) {
   const store = openStore(dbPath);
-  const auth = new AuthService(dbPath, { now, env: authEnv, mailer: authMailer, codeTtlMinutes: authCodeTtlMinutes, sessionDays: authSessionDays });
+  const auth = new AuthService(dbPath, { now, env: authEnv, mailer: authMailer, codeTtlMinutes: authCodeTtlMinutes, sessionDays: authSessionDays, database: store.db });
   const accountForOwner = owner => typeof owner === 'string' ? auth.accountForPlatformOwner(owner) : null;
-  const directory = new DirectoryService(dbPath, { accountForOwner });
+  const directory = new DirectoryService(dbPath, { accountForOwner, database: store.db });
   const platform = new PlatformService(directory.store, store, { now, accountForOwner });
   const fsp = new FspIntegrationService(directory.store, { now, accountForOwner, env: authEnv });
   platform.profileSource = (owner, person) => fsp.applyProfile(owner, person);
   fsp.publishProfile = (owner, person) => platform.publication(owner, person).person;
   const marketplace = new MarketplaceService(directory.store, { now, accountForOwner });
+  const integrations = new IntegrationService(directory.store, { dbPath, env: authEnv, now, ...integrationOptions, projectProfile: (owner, profile) => platform.publication(owner, profile), candidateAccessible: (owner, row) => platform.candidateAccessible(owner, row), reservedProviders: ['fsp-demo'] });
+  directory.fspEvidence = person => integrations.rankingFspEvidence(person);
   const limits = new Map();
   function send(response, status, value) {
     response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
@@ -106,8 +111,18 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
           ...(webOrigin ? [webOrigin] : ['http://127.0.0.1:5173', 'http://127.0.0.1:4173', 'http://localhost:5173', 'http://localhost:4173'])]);
         if (origin && !allowed.has(origin)) throw new RequestError(403, 'Источник запроса не разрешён.');
         if (request.method === 'GET' && url.pathname === '/api/health') return send(response, 200, { status: 'ok' });
+        if (url.pathname === '/api/integrations/openapi.json' && request.method === 'GET') {
+          return send(response, 200, JSON.parse(await readFile(resolve(root, 'docs/api/integrations.openapi.json'), 'utf8')));
+        }
+        if (['/api/integrations/fsp/callback','/api/integrations/github/callback'].includes(url.pathname) && request.method === 'GET') return callbackPage(response);
+        if (url.pathname === '/api/integrations/fsp/webhook' && request.method === 'POST') {
+          limit('integration-webhook:' + request.socket.remoteAddress, 60, 60000);
+          return send(response, 202, integrations.webhook(await readWebhook(request), request.headers));
+        }
         const identity = owner(request, response);
         const session = identity.owner;
+        if (await claimRoutes({ request, response, url, identity, integrations, body, send, limit })) return;
+        if (await integrationRoutes({ request, response, url, identity, integrations, body, send, limit })) return;
         if (url.pathname === '/api/auth/register/request-code') {
           if (request.method !== 'POST') throw new RequestError(405, 'Метод не поддерживается.');
           limit('auth-code-ip:' + request.socket.remoteAddress, 12, 600000);
@@ -146,6 +161,21 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
           return send(response, 200, { status: 'signed_out' });
         }
         if (!identity.account) throw new RequestError(401, 'Войдите в аккаунт.');
+        if (url.pathname === '/api/auth/account') {
+          if (request.method !== 'DELETE') throw new RequestError(405, 'Метод не поддерживается.');
+          if (request.headers['x-platform-identity'] !== 'auth:' + identity.account.id) {
+            throw new RequestError(409, 'Аккаунт изменился. Обновите страницу.');
+          }
+          const deletedAt = new Date(now()).toISOString();
+          directory.store.transaction(() => {
+            platform.delete(session, { withinTransaction: true, deleteAssessmentRecords: true });
+            directory.store.db.prepare('DELETE FROM fsp_demo_connections WHERE owner=?').run(session);
+            auth.store.eraseAccount(session, directory.store.db, deletedAt);
+          });
+          expireCookie(response, authCookieName);
+          expireCookie(response, cookieName);
+          return send(response, 200, { status: 'deleted', deletedAt });
+        }
         if (request.method === 'GET' && url.pathname === '/api/assessment/program') {
           allowRole(identity, 'candidate', 'Тестирование доступно соискателю.');
           return send(response, 200, programInfo(url.searchParams.get('specialization'), url.searchParams.get('grade')));
@@ -160,11 +190,13 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
             }
           }
           if (request.method === 'GET') return send(response, 200, platform.read(session));
-          if (request.method === 'DELETE') return send(response, 200, platform.delete(session));
+          if (request.method === 'DELETE') { integrations.removeOwner(session); return send(response, 200, platform.delete(session)); }
           if (request.method === 'PUT') {
             const input = await body(request, 1000000);
             if (Object.keys(input).some(key => !['state', 'baseRevision'].includes(key))) throw new RequestError(400, 'Недопустимые поля запроса.');
-            return send(response, 200, platform.save(session, input.state, input.baseRevision, identity.account?.role || null));
+            const saved = platform.save(session, input.state, input.baseRevision, identity.account?.role || null);
+            if (saved.state && !saved.state.profile.consent) { integrations.removeOwner(session); return send(response, 200, platform.read(session)); }
+            return send(response, 200, saved);
           }
           throw new RequestError(405, 'Метод не поддерживается.');
         }
@@ -295,7 +327,7 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
       }
       if (!['GET', 'HEAD'].includes(request.method)) throw new RequestError(405, 'Метод не поддерживается.');
       const path = decodeURIComponent(url.pathname);
-      const file = ['/', '/app', '/auth', '/privacy'].includes(path) ? resolve(distPath, 'index.html') : resolve(distPath, '.' + path);
+      const file = ['/', '/app', '/auth', '/privacy', '/moderation'].includes(path) ? resolve(distPath, 'index.html') : resolve(distPath, '.' + path);
       const within = relative(distPath, file);
       if (within.startsWith('..') || within.includes(':') || !mime[extname(file)]) throw new RequestError(404, 'Страница не найдена.');
       let content;
@@ -310,8 +342,8 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
   });
   server.requestTimeout = 15000;
   server.headersTimeout = 10000;
-  server.on('close', () => { auth.close(); directory.close(); store.close(); });
-  return { server, store, directory, platform, marketplace, auth, fsp };
+  server.on('close', () => { integrations.close(); auth.close(); directory.close(); store.close(); });
+  return { server, store, directory, platform, marketplace, auth, fsp, integrations };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

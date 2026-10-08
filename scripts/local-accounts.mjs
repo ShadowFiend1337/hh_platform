@@ -1,3 +1,4 @@
+import { PRIVACY_POLICY_VERSION } from '../shared/privacy.ts';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -33,7 +34,7 @@ export async function prepareLocalAccounts(dbPath = resolve(root, 'server/data/a
     for (const fixture of localAccountFixtures) {
       let account = auth.store.accountByIdentifier(fixture.login);
       if (!account) {
-        await auth.requestRegistration({ ...fixture, password: localAccountPassword, consent: true }, randomBytes(32).toString('hex'));
+        await auth.requestRegistration({ ...fixture, password: localAccountPassword, consent: true, privacyVersion: PRIVACY_POLICY_VERSION }, randomBytes(32).toString('hex'));
         account = auth.verifyRegistration({ email: fixture.email, code: codes.get(fixture.email) });
       }
       await auth.login({ loginOrEmail: fixture.login, password: localAccountPassword });

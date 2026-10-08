@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { BadgeCheck, Download, LockKeyhole, MapPin, Medal } from 'lucide-react';
 import { dateLabel, gradeLabels, initials, specializationLabels, type Candidate } from '../model';
 
+import { CandidateEvidence } from './EvidenceList';
+
 export function CandidateDetails({ person, contacts, onInvite, contactNote = 'Откроются после принятия приглашения' }: {
   person: Candidate; contacts: boolean; onInvite?: () => void; contactNote?: string;
 }) {
@@ -50,10 +52,11 @@ export function CandidateDetails({ person, contacts, onInvite, contactNote = 'О
     {careerAchievements && <section><h4>Достижения</h4><p className="body-copy resume-copy">{careerAchievements}</p></section>}
     {education && <section><h4>Образование</h4><p className="body-copy resume-copy">{education}</p></section>}
     {person.languages && <section><h4>Языки</h4><p className="body-copy resume-copy">{person.languages}</p></section>}
-    <section><h4 className="inline-icon" title={person.synthetic || person.fspEvidence?.mode === 'demo' ? 'Вымышленные результаты; личность ФСП не подтверждена' : 'Сведения из профиля'}><Medal size={17} />{person.synthetic || person.fspEvidence?.mode === 'demo' ? 'ФСП · демо' : 'Достижения ФСП'}</h4>
+    {(person.synthetic || person.fspEvidence?.mode === 'demo' || achievements.length > 0) && <section><h4 className="inline-icon" title={person.synthetic || person.fspEvidence?.mode === 'demo' ? 'Вымышленные результаты; личность ФСП не подтверждена' : 'Сведения из профиля'}><Medal size={17} />{person.synthetic || person.fspEvidence?.mode === 'demo' ? 'ФСП · демо' : 'Достижения ФСП'}</h4>
       {achievements.length ? achievements.map((achievement, index) => <div key={index} className="achievement"><strong>{achievement.title}</strong><span>{achievement.result} · {achievement.year}</span></div>)
         : <p className="muted">Истории ФСП пока нет</p>}
-    </section>
+    </section>}
+    {!person.synthetic && <CandidateEvidence candidateId={person.id} />}
     <section className="contact-section"><h4>Контакты</h4>
       {showContacts ? <div className="contact-data"><a href={'mailto:' + person.email}>{person.email}</a>{person.phone && <a href={'tel:' + person.phone}>{person.phone}</a>}</div>
         : <div className="privacy-note"><LockKeyhole size={17} />{person.demoProfile ? 'Недоступны для демопрофиля' : contactNote}</div>}

@@ -1,0 +1,65 @@
+import assert from 'node:assert/strict';
+import { PRIVACY_POLICY_VERSION } from '../../shared/privacy.ts';
+import { createHash } from 'node:crypto';
+import { chromium } from 'playwright';
+import { createAssessmentServer } from '../../server/server.mjs';
+import { PublicFspCatalog } from '../../server/integrations/public-fsp.mjs';
+import { createInitialState } from '../src/model.ts';
+const codes=new Map(),sourceBytes=Buffer.from('%PDF-1.4\nfictional-source-fixture'),data=structuredClone(new PublicFspCatalog().read());
+data.sources[0].documentHash=createHash('sha256').update(sourceBytes).digest('hex');
+const app=createAssessmentServer({dbPath:':memory:',authEnv:{},authMailer:async({email,code})=>codes.set(email,code),integrationOptions:{automatic:false,publicCatalog:new PublicFspCatalog({data}),publicFetcher:async()=>new Response(sourceBytes)}});
+await new Promise(resolve=>app.server.listen(0,'127.0.0.1',resolve));
+const base='http://127.0.0.1:'+app.server.address().port;
+let browser;
+try {
+  browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHANNEL?{channel:process.env.PLAYWRIGHT_CHANNEL}:{})});
+  const candidate=await browser.newContext({viewport:{width:1440,height:1100}}),moderator=await browser.newContext({viewport:{width:1440,height:1100}});
+  async function register(context,login,role){
+    const api=context.request,email=login+'@example.invalid';
+    assert.equal((await api.post(base+'/api/auth/register/request-code',{data:{email,login,role,password:'browser fixture password',consent:true,privacyVersion:PRIVACY_POLICY_VERSION,...(role==='candidate'?{name:'Ромашов Фёдор Викторович'}:{companyName:'Модерация'})}})).status(),202);
+    const verified=await api.post(base+'/api/auth/register/verify',{data:{email,code:codes.get(email)}});assert.equal(verified.status(),201);return (await verified.json()).account;
+  }
+  const account=await register(candidate,'moderation-candidate','candidate'),reviewer=await register(moderator,'moderation-reviewer','employer');
+  app.auth.store.setModerator(reviewer.id,true,'browser-fixture');
+  const state=createInitialState(),survey={id:'claim-browser-survey',date:new Date().toISOString(),industry:'ИТ',professionalRole:'Frontend разработчик',specialization:'Frontend',desiredGrade:'Junior',experience:'1 год',stack:['React'],softSkills:[]};
+  Object.assign(state.profile,survey,{id:'candidate-anna',name:'Ромашов Фёдор Викторович',email:account.email,consent:true,visible:true,surveyCompletedAt:survey.date});state.surveys=[survey];
+  async function save(){const snapshot=await candidate.request.get(base+'/api/platform/state'),payload=await snapshot.json();const saved=await candidate.request.put(base+'/api/platform/state',{headers:{'X-Platform-Identity':snapshot.headers()['x-platform-identity']},data:{state,baseRevision:payload.revision}});assert.equal(saved.status(),200,await saved.text());}
+  await save();
+  const started=await candidate.request.post(base+'/api/assessment/attempts',{data:{survey,vacancyDescription:''}}),attempt=await started.json(),internal=app.store.get(attempt.id).attempt;
+  const submitted=await candidate.request.post(base+`/api/assessment/attempts/${attempt.id}/submit`,{data:{token:attempt.token,answers:internal.questions.map(question=>({questionId:question.id,optionId:question.correctOptionId}))}}),result=await submitted.json();assert(result.passed);
+  state.history=[result];state.profile.confirmed={specialization:result.specialization,grade:result.grade,score:result.score,date:result.date,surveyId:survey.id};await save();
+  const page=await candidate.newPage(),reviewPage=await moderator.newPage(),errors=[];
+  for(const p of [page,reviewPage])p.on('pageerror',error=>errors.push(error.message));
+  await page.goto(base+'/app?role=candidate&tab=profile');
+  await page.getByRole('heading',{name:'Внешние подтверждения',exact:true}).waitFor();
+  const search=page.locator('.integration-source').filter({has:page.getByRole('heading',{name:'Результаты из открытых источников',exact:true})});
+  await search.getByLabel('Имя участника или команда').fill('Ромашов Федор');await search.getByRole('button',{name:'Найти результат'}).click();
+  await search.getByRole('button',{name:'Это мой результат'}).click();
+  const form=search.locator('.claim-form');await form.getByLabel('Описание участия').fill('Участвовал в финале. Подтверждающий документ содержит сведения об участнике.');
+  await form.getByLabel('Подтверждающий файл — до 2 МБ').setInputFiles({name:'certificate.png',mimeType:'image/png',buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRuoAAAAASUVORK5CYII=','base64')});
+  await form.getByRole('checkbox',{name:/Это мой результат/u}).check();await form.getByRole('button',{name:'Отправить на проверку'}).click();
+  const claims=page.locator('.claim-panel');await claims.getByText('На проверке',{exact:true}).waitFor();
+  const claim=(await (await candidate.request.get(base+'/api/achievement-claims')).json()).claims[0];
+  const owner=app.integrations.claims.get(claim.id).owner;assert.equal(app.directory.store.forOwner(owner).fsp,0);
+  assert.deepEqual((await (await candidate.request.get(base+'/api/profile/evidence')).json()).items,[]);
+  await reviewPage.goto(base+'/moderation');await reviewPage.getByRole('button',{name:'Рассмотреть заявку'}).click();
+  const detail=reviewPage.locator('.moderation-detail');await detail.getByText('Материалы кандидата',{exact:true}).waitFor();
+  await detail.getByRole('combobox',{name:/^Решение/u}).selectOption('request_information');await detail.getByLabel('Обоснование решения для кандидата').fill('Пожалуйста, дополните описание роли в соревновании.');await detail.getByRole('button',{name:'Сохранить решение'}).click();
+  await reviewPage.getByText('Всего заявок: 0',{exact:true}).waitFor();
+  await page.reload();await claims.getByText('Нужно дополнить материалы',{exact:true}).waitFor();await claims.getByRole('button',{name:'Дополнить и отправить'}).click();
+  const edit=claims.locator('.claim-form');await edit.getByLabel('Описание участия').fill('Я решал алгоритмические задачи лично в индивидуальном финале. Прилагаю подтверждающий документ.');
+  assert(await edit.getByRole('checkbox',{name:'Сохранить файл certificate.png'}).isChecked());await edit.getByRole('checkbox',{name:/Это мой результат/u}).check();await edit.getByRole('button',{name:'Отправить на проверку'}).click();await claims.getByText('На проверке',{exact:true}).waitFor();
+  await reviewPage.getByRole('button',{name:'Обновить очередь'}).click();await reviewPage.getByRole('button',{name:'Рассмотреть заявку'}).click();
+  await detail.getByRole('button',{name:'Проверить свежесть источника'}).click();await detail.getByText(/Последняя проверка источника:/u).waitFor();
+  await detail.getByLabel('Обоснование решения для кандидата').fill('Материалы и принадлежность результата проверены.');await detail.getByLabel('Основание проверки — доступно модераторам').fill('Тестовый сценарий: сверены сведения участника и независимое подтверждение организатора.');
+  await detail.getByRole('checkbox',{name:/Проверил материалы/u}).check();await reviewPage.screenshot({path:'/tmp/hh-moderation-review.png',fullPage:true});
+  await detail.getByRole('button',{name:'Сохранить решение'}).click();await reviewPage.getByText('Всего заявок: 0',{exact:true}).waitFor();
+  await page.reload();await claims.getByText('Одобрено',{exact:true}).waitFor();await page.getByText(/^Подтверждено модератором ·/u).waitFor();assert.equal(app.directory.store.forOwner(owner).fsp,1);
+  const publicId=app.directory.store.forOwner(owner).id,response=await moderator.request.get(base+'/api/directory/'+publicId+'/evidence');assert.equal(response.status(),200);
+  const publicItems=(await response.json()).items;assert.equal(publicItems[0].verificationMethod,'manual_review');assert(!JSON.stringify(publicItems).includes('Подтверждающий документ'));assert(!JSON.stringify(publicItems).includes('certificate.png'));
+  assert.equal((await (await candidate.request.get(base+'/api/platform/state')).json()).state.profile.confirmed.grade,'Junior');
+  await page.screenshot({path:'/tmp/hh-achievement-approved.png',fullPage:true});
+  await claims.getByRole('button',{name:'Отозвать заявку'}).click();await claims.getByText('Отозвано кандидатом',{exact:true}).waitFor();assert.equal(app.directory.store.forOwner(owner).fsp,0);
+  assert.equal((await (await candidate.request.get(base+'/api/profile/evidence')).json()).items.length,0);
+  assert.deepEqual(errors,[]);console.log('Moderation browser flow passed: upload, pending, request information, resubmit, source hash check, approval, private materials, employer evidence and withdrawal.');
+} catch(error) {for(const context of browser?.contexts()||[])for(const page of context.pages()){console.error(page.url(),(await page.locator('body').innerText()).slice(0,4000));}throw error;} finally {await browser?.close();await new Promise(resolve=>{app.server.close(resolve);app.server.closeAllConnections();});}

@@ -1,3 +1,4 @@
+import { PRIVACY_POLICY_VERSION } from '../../shared/privacy.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createAssessmentServer } from '../server.mjs';
@@ -29,7 +30,7 @@ test('FSP demonstration routes require a candidate session and protect ownership
   async function register(client, role, login) {
     const email = `${login}@example.invalid`;
     assert.equal((await client('/api/auth/register/request-code', 'POST', { role, email, login,
-      password: 'Fsp isolated password 928!', consent: true,
+      password: 'Fsp isolated password 928!', consent: true, privacyVersion: PRIVACY_POLICY_VERSION,
       ...(role === 'candidate' ? { name: 'Кандидат проверки ФСП' } : { companyName: 'Компания проверки ФСП' }) })).status, 202);
     assert.equal((await client('/api/auth/register/verify', 'POST', { email, code: codes.get(email) })).status, 201);
     const current = await client('/api/platform/state');

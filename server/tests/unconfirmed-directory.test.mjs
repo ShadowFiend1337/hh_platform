@@ -1,3 +1,4 @@
+import { PRIVACY_POLICY_VERSION } from '../../shared/privacy.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
@@ -34,7 +35,7 @@ async function fixture(t, { dbPath = ':memory:', clearCatalog = true } = {}) {
   const base = `http://127.0.0.1:${service.server.address().port}`;
   async function register(role, suffix) {
     const login = `unconfirmed.${suffix}`, email = `${login}@example.invalid`;
-    await service.auth.requestRegistration({ role, login, email, password: 'Publication isolated 349!', consent: true,
+    await service.auth.requestRegistration({ role, login, email, password: 'Publication isolated 349!', consent: true, privacyVersion: PRIVACY_POLICY_VERSION,
       ...(role === 'candidate' ? { name: `Кандидат ${suffix}` } : { companyName: `Компания ${suffix}` }) },
     createHash('sha256').update(`isolated visitor ${suffix}`).digest('hex'));
     const account = service.auth.verifyRegistration({ email, code: codes.get(email) });

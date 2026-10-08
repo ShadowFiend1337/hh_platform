@@ -1,3 +1,4 @@
+import { PRIVACY_POLICY_VERSION } from '../../shared/privacy.ts';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { mkdir } from 'node:fs/promises';
@@ -166,7 +167,7 @@ async function registeredActor(role, label, name, suppliedContext) {
   if (!suppliedContext) { contexts.push(actorContext); await prepareContext(actorContext); }
   const email = label + '.' + suffix + '@example.invalid';
   const requested = await actorContext.request.post(base + '/api/auth/register/request-code', {
-    data: { role, login: label + '.' + suffix, email, password: 'LocalSmoke927!', consent: true,
+    data: { role, login: label + '.' + suffix, email, password: 'LocalSmoke927!', consent: true, privacyVersion: PRIVACY_POLICY_VERSION,
       ...(role === 'candidate' ? { name } : { companyName: name }) },
   });
   assert.equal(requested.status(), 202, await requested.text());
@@ -194,7 +195,7 @@ async function localFixture(role) {
   const fixtureContext = await browser.newContext();
   contexts.push(fixtureContext);
   const email = role === 'candidate' ? 'candidate@local.example.test' : 'employer@local.example.test';
-  const input = { role, login: 'local_' + role, email, password: 'LocalFixture927!', consent: true,
+  const input = { role, login: 'local_' + role, email, password: 'LocalFixture927!', consent: true, privacyVersion: PRIVACY_POLICY_VERSION,
     ...(role === 'candidate' ? { name: 'Изолированный локальный профиль' } : { companyName: 'Изолированная локальная команда' }) };
   const requested = await fixtureContext.request.post(base + '/api/auth/register/request-code', { data: input });
   assert.equal(requested.status(), 202, await requested.text());

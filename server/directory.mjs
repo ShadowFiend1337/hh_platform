@@ -244,8 +244,8 @@ export function interpretQuery(query, options) {
 }
 
 export class DirectoryService {
-  constructor(path, { seeds=[...directoryCandidates,...legacyDirectoryCandidates], encoder=new SemanticWorker(), accountForOwner }={}) {
-    this.store=new DirectoryStore(path,seeds);
+  constructor(path, { seeds=[...directoryCandidates,...legacyDirectoryCandidates], encoder=new SemanticWorker(), accountForOwner, database }={}) {
+    this.store=new DirectoryStore(path,seeds,{database});
     this.encoder=encoder;
     this.indexing=null;
     this.queryCache=new Map();
@@ -505,7 +505,7 @@ export class DirectoryService {
     // Admission and the nearest-list limit have already been applied using
     // unchanged neural scores. Evidence can only exchange comparable slots
     // within the same confirmed category, before response pagination.
-    if (embeddingQuery) items=rankComparableCandidates(items,{scoreKind:stage?'logit':'cosine'});
+    if (embeddingQuery) items=rankComparableCandidates(items,{scoreKind:stage?'logit':'cosine', ...(this.fspEvidence ? {fspEvidence:this.fspEvidence} : {})});
     else items.sort(filterOrder);
     // Category navigation narrows the current recommendation; it never changes
     // employer constraints, neural admission, or recommendations for other groups.

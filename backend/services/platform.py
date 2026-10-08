@@ -5,7 +5,7 @@ from copy import deepcopy
 from datetime import timedelta
 from typing import Any
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete as sql_delete, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -408,9 +408,9 @@ def erase_owner_data(session: Session, owner: str, *, include_consent_events: bo
             row.state = state
             row.revision += 1
             row.updated_at = utcnow()
-    session.execute(delete(AssessmentAttempt).where(AssessmentAttempt.owner == owner))
+    session.execute(sql_delete(AssessmentAttempt).where(AssessmentAttempt.owner == owner))
     if include_consent_events:
-        session.execute(delete(ConsentEvent).where(ConsentEvent.owner == owner))
+        session.execute(sql_delete(ConsentEvent).where(ConsentEvent.owner == owner))
 
 
 def delete(session: Session, owner: str) -> dict[str, Any]:

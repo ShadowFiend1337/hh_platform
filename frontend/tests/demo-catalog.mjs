@@ -1,3 +1,4 @@
+import { PRIVACY_POLICY_VERSION } from '../../shared/privacy.ts';
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -95,7 +96,7 @@ async function decide(page, name) {
   return id;
 }
 async function registerApi(context, account) {
-  const requested = await context.request.post(base + '/api/auth/register/request-code', { data: { ...account, consent: true } });
+  const requested = await context.request.post(base + '/api/auth/register/request-code', { data: { ...account, consent: true, privacyVersion: PRIVACY_POLICY_VERSION } });
   assert.equal(requested.status(), 202, await requested.text());
   const verified = await context.request.post(base + '/api/auth/register/verify', {
     data: { email: account.email, code: codes.get(account.email) },
