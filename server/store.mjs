@@ -59,6 +59,9 @@ export function openStore(path) {
       return db.prepare(`SELECT payload FROM attempts WHERE owner = ? ORDER BY (specialization = ? AND grade = ?) DESC, created_at DESC, rowid DESC LIMIT ?`)
         .all(owner, specialization, grade, limit).map(row => JSON.parse(row.payload));
     },
+    activeAttempt(owner, nowText) {
+      return db.prepare('SELECT id FROM attempts WHERE owner = ? AND result IS NULL AND expires_at > ? LIMIT 1').get(owner, nowText) || null;
+    },
     countSince(owner, date) {
       return db.prepare('SELECT COUNT(*) AS count FROM attempts WHERE owner = ? AND created_at >= ?').get(owner, date).count;
     },

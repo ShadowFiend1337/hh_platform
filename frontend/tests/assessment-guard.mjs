@@ -158,7 +158,9 @@ try {
   const page = await registeredPage();
   await auditAccessibility(page, 'Assessment setup');
   assert.equal(await dispatch(page, '.page-heading h1', 'copy'), true, 'Copying is ordinary before the test starts');
+  assert.equal(await page.locator('.assistant-launcher').count(), 1, 'The assistant is available before the test');
   const attempt = await start(page);
+  assert.equal(await page.locator('.assistant-launcher, .assistant-panel').count(), 0, 'The assistant is hidden during the attempt');
   assert.deepEqual(attempt.integrity, { departures: 0, blockedCopies: 0, blockedActions: 0, fullscreenExits: 0, lastEventAt: null });
   assert.equal(await page.getByRole('button', { name: 'Назад', exact: true }).count(), 0, 'There is no way back to a locked answer');
   assert.ok(await page.locator('.exam-protected-content').evaluate(element => getComputedStyle(element).backgroundImage.includes('svg')),

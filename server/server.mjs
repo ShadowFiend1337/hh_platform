@@ -10,6 +10,8 @@ import { programs } from './bank.mjs';
 import { ItemBank } from './item-bank.mjs';
 import { ItemGenerationQueue } from './item-generator.mjs';
 import { createLlmClient } from './llm.mjs';
+import { createAssistant } from './assistant.mjs';
+import { applyProxyFromEnv } from './proxy.mjs';
 import { DirectoryService } from './directory.mjs';
 import { PlatformService } from './platform.mjs';
 import { MarketplaceService } from './marketplace.mjs';
@@ -37,6 +39,7 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
   try { llm = llmOverride || createLlmClient({ env: authEnv }); }
   catch (error) { console.error('OpenRouter:', error.message); llm = createLlmClient({ env: {} }); }
   // Background generation only for the real process environment, never for isolated test servers.
+  const assistant = createAssistant({ llm });
   const generation = new ItemGenerationQueue({ llm, bank, enabled: authEnv === process.env && authEnv.ITEM_BANK_AUTOGEN !== '0' });
   const auth = new AuthService(dbPath, { now, env: authEnv, mailer: authMailer, codeTtlMinutes: authCodeTtlMinutes, sessionDays: authSessionDays, database: store.db });
   const accountForOwner = owner => typeof owner === 'string' ? auth.accountForPlatformOwner(owner) : null;
@@ -173,6 +176,16 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
           return send(response, 200, { status: 'signed_out' });
         }
         if (!identity.account) throw new RequestError(401, 'Войдите в аккаунт.');
+        if (url.pathname === '/api/assistant/info' && request.method === 'GET') return send(response, 200, assistant.info());
+        if (url.pathname === '/api/assistant/chat') {
+          if (request.method !== 'POST') throw new RequestError(405, 'Метод не поддерживается.');
+          // The assistant must not become a hint channel during an attempt.
+          if (identity.account.role === 'candidate' && store.activeAttempt(session, new Date(now()).toISOString())) {
+            throw new RequestError(409, 'Помощник недоступен во время теста.');
+          }
+          limit('assistant:' + identity.account.id, 20, 600000);
+          return send(response, 200, await assistant.reply(identity.account.role, await body(request, 30000)));
+        }
         if (url.pathname === '/api/auth/account') {
           if (request.method !== 'DELETE') throw new RequestError(405, 'Метод не поддерживается.');
           if (request.headers['x-platform-identity'] !== 'auth:' + identity.account.id) {
@@ -430,6 +443,8 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     try { process.loadEnvFile(resolve(root, '.env')); }
     catch (error) { if (error?.code !== 'ENOENT') console.error('Cannot load .env:', error.message); }
   }
+  const proxy = applyProxyFromEnv();
+  if (proxy) console.log('Outbound proxy: ' + proxy.replace(/\/\/[^@/]*@/u, '//***@'));
   const port = Number(process.env.PORT || 8787);
   const { server, directory } = createAssessmentServer({ dbPath: process.env.ASSESSMENT_DB || undefined });
   server.listen(port, process.env.HOST || '127.0.0.1', () => {

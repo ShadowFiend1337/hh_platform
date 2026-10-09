@@ -12,6 +12,8 @@ import { Dialog } from './components/Dialog';
 import { CandidateDetails } from './components/CandidateDetails';
 import { InviteForm } from './components/InviteForm';
 import { Brand } from './components/Brand';
+import { AssistantWidget } from './components/AssistantWidget';
+import { readinessFor } from './components/ReadinessPanel';
 import { Landing } from './pages/Landing';
 import { Auth, type AuthMode } from './pages/Auth';
 import { readCandidateContacts, syncCacheKey, usePlatformPersistence } from './platform-api';
@@ -360,6 +362,15 @@ function Workspace({ authAccount: initialAccount }: { authAccount: AuthAccount |
       <img className="fsp-logo" src="/brand/fsp.png" alt="Федерация спортивного программирования России" />
       <img className="partners-logo" src="/brand/partners.png" alt="Проект мэра Москвы, Бизнес Москвы, Развитие человеческого капитала, Лидеры цифровой трансформации" />
     </div><a className="footer-year" href="/privacy" target="_blank" rel="noopener noreferrer">Конфиденциальность</a><span className="footer-year">2026</span></div></footer>
+    {authAccount && persistence.ready && !assessmentActive && <AssistantWidget role={authAccount.role} accountId={authAccount.id} page={page}
+      context={authAccount.role === 'candidate' ? (() => {
+        const readiness = readinessFor(state);
+        return { readiness: readiness.percent, missing: readiness.items.filter(item => !item.done).map(item => item.key),
+          confirmed: Boolean(state.profile.confirmed), specialization: state.profile.confirmed?.specialization || state.profile.specialization,
+          grade: state.profile.confirmed?.grade, newInvitations: pending };
+      })() : { needs: state.hiringNeeds?.length || 0, pendingInvitations: pending,
+        acceptedInvitations: state.invitations.filter(invitation => invitation.companyId === state.company.id && invitation.status === 'accepted').length }}
+      onNavigate={target => { if (target === 'privacy') window.open('/privacy', '_blank', 'noopener'); else navigate(authAccount.role, target as Page); }} />}
     {toast && <div className="toast" role="status"><Check size={17} /><span>{toast}</span><button className="icon-button" onClick={() => setToast('')} aria-label="Закрыть уведомление"><X size={15} /></button></div>}
     {dialog && <Dialog title={dialog.type === 'profile' ? 'Профиль кандидата' : 'Приглашение'} wide={dialog.type === 'profile'} onClose={() => setDialog(null)}>
       {dialog.type === 'profile' ? <CandidateDetails person={candidates.find(person => person.id === dialog.person.id) || dialog.person}

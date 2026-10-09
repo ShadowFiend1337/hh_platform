@@ -50,6 +50,10 @@ try {
   await page.getByRole('button', { name: 'К профилю', exact: true }).click();
   await page.getByRole('heading', { name: 'Мой профиль', exact: true }).waitFor();
   await page.screenshot({ path: resolve(output, 'candidate-profile.png'), fullPage: true });
+  await page.getByRole('button', { name: 'Помощник', exact: true }).click();
+  await page.getByRole('button', { name: 'Как проходит тест и что запрещено?', exact: true }).click();
+  await page.locator('.assistant-message.from-assistant').nth(1).waitFor();
+  await page.screenshot({ path: resolve(output, 'candidate-assistant.png') });
 
   const employer = await actor('employer', 'tour.employer', { companyName: 'Северный код' });
   page = employer.page;
@@ -58,6 +62,13 @@ try {
   await page.screenshot({ path: resolve(output, 'employer-candidates.png'), fullPage: false });
   await page.locator('.match-details summary').first().click();
   await page.screenshot({ path: resolve(output, 'employer-match-details.png') });
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Помощник', exact: true }).click();
+  await page.getByRole('button', { name: 'Напишите текст приглашения', exact: true }).click();
+  await page.locator('.assistant-message.from-assistant').nth(1).waitFor();
+  await page.screenshot({ path: resolve(output, 'employer-assistant.png') });
+  await page.setViewportSize({ width: 390, height: 800 });
+  await page.screenshot({ path: resolve(output, 'employer-assistant-mobile.png') });
   console.log(JSON.stringify({ output, errors }));
 } finally {
   await browser.close();

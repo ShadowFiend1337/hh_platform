@@ -11,9 +11,11 @@ import { programs } from '../server/bank.mjs';
 import { ItemBank } from '../server/item-bank.mjs';
 import { generateFamilyItems } from '../server/item-generator.mjs';
 import { createLlmClient } from '../server/llm.mjs';
+import { applyProxyFromEnv } from '../server/proxy.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 try { process.loadEnvFile(resolve(root, '.env')); } catch { /* .env is optional */ }
+applyProxyFromEnv();
 const [command = 'stats', ...rest] = process.argv.slice(2);
 const option = name => { const index = rest.indexOf('--' + name); return index >= 0 ? rest[index + 1] : undefined; };
 const store = openStore(process.env.ASSESSMENT_DB || resolve(root, 'server/data/assessment.sqlite'));
