@@ -13,7 +13,8 @@ const python = process.env.PYTHON_BIN || (existsSync(venvPython) ? venvPython : 
 const children = [
   process.argv.includes('--fastapi')
     ? spawn(python, ['-m', 'backend', '--reload'], { cwd: root, stdio: 'inherit', windowsHide: true })
-    : spawn(process.execPath, ['--watch', 'server/server.mjs'], { cwd: root, stdio: 'inherit', windowsHide: true }),
+    : // OpenRouter and public sources may be reachable only through the system proxy (HTTPS_PROXY).
+    spawn(process.execPath, ['--watch', '--use-env-proxy', 'server/server.mjs'], { cwd: root, stdio: 'inherit', windowsHide: true }),
   spawn(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1'], { cwd: fileURLToPath(new URL('../frontend/', import.meta.url)), stdio: 'inherit' }),
 ];
 let stopping = false;

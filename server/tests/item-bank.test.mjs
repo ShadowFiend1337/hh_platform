@@ -113,6 +113,23 @@ test('local checks reject answer cues, banned options, personal data and paraphr
   assert.equal(pointBiserial({ responses: 4, correct: 4, scoreSum: 3, scoreCorrectSum: 3, scoreSquareSum: 2.5 }), null);
 });
 
+test('the solver rejects a paraphrase of an existing item even with the right answer', async () => {
+  const { bank } = bankFixture();
+  let solverInput = '';
+  const llm = { configured: true, models: { chat: 'qwen/mock', verifier: 'deepseek/mock' }, async chat(options) {
+    if (options.model === 'deepseek/mock') {
+      solverInput = options.messages[1].content;
+      const line = solverInput.split('\n').find(row => row.includes(good.options[0]));
+      return { model: 'deepseek/mock', json: { answer: line.slice(0, 1), confidence: 0.9, ambiguous: false, duplicateOf: 2 } };
+    }
+    return { model: 'qwen/mock', json: { items: [good] } };
+  } };
+  const result = await generateFamilyItems({ llm, bank, familyId, count: 1 });
+  assert.equal(result.accepted.length, 0);
+  assert.deepEqual(result.rejected, ['Пересказ существующего вопроса.']);
+  assert(solverInput.includes('Существующие вопросы банка'), 'The solver sees the family items and their answers');
+});
+
 test('generation keeps only items the independent solver answers with the key', async () => {
   const { bank } = bankFixture();
   const wrong = { ...good, text: 'Сервис платежей получает повторный запрос после таймаута клиента. Какое решение исключит двойное списание при повторе?',

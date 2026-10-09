@@ -25,7 +25,7 @@ const personalData = [/[\w.+-]+@[\w-]+\.[\w.]+/u, /\+?\d[\d\s()-]{9,}\d/u];
 const systemPrompt = `Ты — ведущий методист технических собеседований в ИТ. Ты пишешь тестовые вопросы с одним правильным ответом для квалификационного теста платформы найма.
 Вопрос проверяет практическое понимание, а не память определений: короткая рабочая ситуация (2–4 предложения) и вопрос «что сделать», «почему» или «какой вариант корректен».
 Правила:
-1. Тема, слот сложности и проверяемые навыки — строго как в задании. Примеры показывают уровень и формат: не копируй их сюжет, формулировки и варианты, придумай новые ситуации из рабочей практики.
+1. Тема, слот сложности и проверяемые навыки — строго как в задании. Примеры показывают уровень и формат. Каждый новый вопрос — другая проблема и другое решение, чем в examples и doNotRepeat: пересказ известной ситуации другими словами запрещён. Делай упор на focusSkills.
 2. Ровно 4 варианта ответа и ровно один бесспорно правильный. Неправильные варианты — правдоподобные типичные ошибки специалистов этого уровня, без абсурда и шуток.
 3. Варианты примерно одинаковой длины и стиля. Правильный вариант не должен выделяться длиной, точностью, словами «всегда», «никогда», «обязательно».
 4. Запрещено: «все перечисленное», «ни один из вариантов», ссылки на примеры, персональные данные, реальные компании.
@@ -36,7 +36,8 @@ const systemPrompt = `Ты — ведущий методист техничес�
 
 const solverPrompt = `Ты решаешь тестовый вопрос для ИТ-специалиста. Выбери единственный правильный вариант.
 Если правильных несколько, правильного нет или формулировка двусмысленна — укажи ambiguous: true.
-Ответь только JSON: {"answer":"А|Б|В|Г","confidence":0.0-1.0,"ambiguous":false,"issue":"кратко, если есть проблема"}`;
+После вопроса перечислены уже существующие вопросы банка с их ответами. Если новый вопрос проверяет ту же ситуацию и то же решение, что один из них (пересказ другими словами), укажи номер в duplicateOf, иначе 0.
+Ответь только JSON: {"answer":"А|Б|В|Г","confidence":0.0-1.0,"ambiguous":false,"duplicateOf":0,"issue":"кратко, если есть проблема"}`;
 
 const letters = ['А', 'Б', 'В', 'Г'];
 
@@ -86,23 +87,25 @@ function generationRequest(family, count, bank) {
     grade: gradeLabels[family.grade] || family.grade, gradeMeaning: gradeMeaning[family.grade],
     topic: family.topic,
     difficulty: family.difficulty === 1 ? 'базовый слот грейда: типовая ситуация' : 'повышенный слот грейда: компромиссы, сбои, нетиповые условия',
-    skills: family.skills, examples, domainContext, doNotRepeat: recent,
+    skills: family.skills, focusSkills: sample(family.skills, Math.min(2, family.skills.length)), examples, domainContext, doNotRepeat: recent,
   };
 }
 
 /** Independent check: a different model must solve the item without the key. */
-export async function verifyItem(llm, item, { signal } = {}) {
+export async function verifyItem(llm, item, { signal, references = [] } = {}) {
   const order = sample([0, 1, 2, 3], 4);
-  const question = `${item.text}\n\n${order.map((source, position) => `${letters[position]}) ${item.options[source]}`).join('\n')}`;
-  const reply = await llm.chat({ model: llm.models.verifier, fallback: null, temperature: 0, maxTokens: 300, json: true, signal,
+  const question = `${item.text}\n\n${order.map((source, position) => `${letters[position]}) ${item.options[source]}`).join('\n')}${references.length ? '\n\nСуществующие вопросы банка:\n' + references.map((reference, index) => `${index + 1}. ${reference.text} — ответ: ${reference.answer}`).join('\n') : ''}`;
+  const reply = await llm.chat({ model: llm.models.verifier, fallback: null, temperature: 0, maxTokens: 400, json: true, signal, timeoutMs: 40_000,
     messages: [{ role: 'system', content: solverPrompt }, { role: 'user', content: question }] });
   const answer = String(reply.json?.answer || '').trim().toUpperCase().replace('A', 'А').replace('B', 'Б').replace('C', 'В').replace('D', 'Г');
   const position = letters.indexOf(answer.slice(0, 1));
   const confidence = Number(reply.json?.confidence);
   const ambiguous = reply.json?.ambiguous === true;
   const chosen = position >= 0 ? order[position] : -1;
-  const accepted = chosen === item.correct && !ambiguous && (!Number.isFinite(confidence) || confidence >= 0.6);
-  return { accepted, model: reply.model, chosen, confidence: Number.isFinite(confidence) ? confidence : null, ambiguous,
+  const duplicate = Number(reply.json?.duplicateOf);
+  const duplicateOf = Number.isInteger(duplicate) && duplicate > 0 && duplicate <= references.length ? duplicate : 0;
+  const accepted = chosen === item.correct && !ambiguous && !duplicateOf && (!Number.isFinite(confidence) || confidence >= 0.6);
+  return { accepted, model: reply.model, chosen, confidence: Number.isFinite(confidence) ? confidence : null, ambiguous, duplicateOf,
     issue: typeof reply.json?.issue === 'string' ? reply.json.issue.slice(0, 300) : '' };
 }
 
@@ -110,7 +113,7 @@ export async function generateFamilyItems({ llm, bank, familyId, count = 3, sign
   const family = bank.family(familyId);
   if (!family) throw new RangeError('Unknown family ' + familyId);
   if (!llm?.configured) throw new Error('OpenRouter не настроен.');
-  const reply = await llm.chat({ temperature: 0.85, maxTokens: 2600, json: true, signal,
+  const reply = await llm.chat({ temperature: 0.85, maxTokens: 2600, json: true, signal, timeoutMs: 90_000,
     messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: JSON.stringify(generationRequest(family, count, bank)) }] });
   const items = Array.isArray(reply.json?.items) ? reply.json.items.slice(0, count + 2) : [];
   const accepted = [], rejected = [];
@@ -118,10 +121,10 @@ export async function generateFamilyItems({ llm, bank, familyId, count = 3, sign
     const checked = checkGeneratedItem(raw, family, bank.familyTexts(family.id));
     if (checked.error) { rejected.push(checked.error); bank.log(family.id, 'rejected', checked.error, reply.model); continue; }
     let verification;
-    try { verification = await verifyItem(llm, checked.item, { signal }); }
+    try { verification = await verifyItem(llm, checked.item, { signal, references: bank.familyReferences(family.id) }); }
     catch (error) { rejected.push('Проверяющая модель недоступна.'); bank.log(family.id, 'deferred', error.message, reply.model); continue; }
     if (!verification.accepted) {
-      const reason = verification.ambiguous ? 'Проверяющая модель сочла вопрос двусмысленным.' : 'Проверяющая модель выбрала другой ответ.';
+      const reason = verification.duplicateOf ? 'Пересказ существующего вопроса.' : verification.ambiguous ? 'Проверяющая модель сочла вопрос двусмысленным.' : 'Проверяющая модель выбрала другой ответ.';
       rejected.push(reason); bank.log(family.id, 'rejected', reason + (verification.issue ? ' ' + verification.issue : ''), reply.model); continue;
     }
     const stored = bank.addGenerated(family, { ...checked.item, derivedFrom: null },

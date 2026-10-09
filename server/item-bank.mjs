@@ -252,6 +252,15 @@ export class ItemBank {
     return [...seed, ...generated];
   }
 
+  /** Question and keyed answer of the family's live items, for the solver's paraphrase check. */
+  familyReferences(familyId, limit = 12) {
+    const family = this.family(familyId);
+    const seed = family ? family.variants.map(variant => ({ text: variant.text, answer: variant.options[variant.correct] })) : [];
+    const generated = this.db.prepare("SELECT text, options, correct FROM bank_items WHERE family_id=? AND status IN ('pilot','active') ORDER BY created_at DESC LIMIT ?")
+      .all(familyId, limit).map(row => ({ text: row.text, answer: JSON.parse(row.options)[row.correct] }));
+    return [...seed, ...generated];
+  }
+
   log(familyId, outcome, reason, model) {
     this.db.prepare('INSERT INTO item_generation_log VALUES(?,?,?,?,?,?)').run(randomUUID(), familyId, outcome, String(reason).slice(0, 500), model, this.timestamp());
   }

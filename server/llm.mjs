@@ -67,13 +67,13 @@ export function createLlmClient({ env = process.env, fetchImpl = globalThis.fetc
   const usage = { requests: 0, failures: 0, promptTokens: 0, completionTokens: 0 };
 
   async function chat({ messages, model = chatModel, fallback = model === chatModel ? fallbackModel : null,
-    maxTokens = 600, temperature = 0.3, json = false, signal: external } = {}) {
+    maxTokens = 600, temperature = 0.3, json = false, signal: external, timeoutMs: callTimeout = timeoutMs } = {}) {
     if (!key) throw new LlmError('configuration', 'Ключ OpenRouter не настроен.');
     if (!Array.isArray(messages) || !messages.length) throw new LlmError('input', 'Пустой запрос к модели.');
     const controller = new AbortController();
     const abort = () => controller.abort();
     external?.addEventListener('abort', abort, { once: true });
-    const timer = setTimeout(abort, timeoutMs);
+    const timer = setTimeout(abort, callTimeout);
     const models = [model, ...(fallback && fallback !== model ? [fallback] : [])];
     const body = JSON.stringify({
       ...(models.length > 1 ? { models } : { model }),
@@ -108,7 +108,9 @@ export function createLlmClient({ env = process.env, fetchImpl = globalThis.fetc
             response.status === 401 ? 'Ключ OpenRouter отклонён.' : response.status === 402 ? 'На балансе OpenRouter недостаточно средств.' : 'Модель недоступна.',
             { status: response.status });
         }
-        const raw = await response.text();
+        let raw;
+        try { raw = await response.text(); }
+        catch { throw new LlmError(controller.signal.aborted ? 'timeout' : 'unavailable', controller.signal.aborted ? 'Время ожидания модели истекло.' : 'Модель недоступна.'); }
         if (raw.length > maxResponseBytes) throw new LlmError('invalid_response', 'Слишком большой ответ модели.');
         let envelope;
         try { envelope = JSON.parse(raw); } catch { throw new LlmError('invalid_response', 'Некорректный ответ модели.'); }
