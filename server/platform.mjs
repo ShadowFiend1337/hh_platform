@@ -6,7 +6,7 @@ import { HIRING_NEED_LIMITS, MAX_HIRING_NEEDS } from '../shared/hiring-needs.ts'
 import { publicCandidate, publicDirectoryCandidate } from './directory-store.mjs';
 import { profilePublication } from './profile-publication.mjs';
 import { isDemoCatalogProfile } from './demo-catalog.mjs';
-import { RequestError, threshold } from './assessment.mjs';
+import { confidentThreshold, nextGrade, RequestError, threshold } from './assessment.mjs';
 import { syncMarketplaceCompany } from './marketplace.mjs';
 import { accountsShareRealm, isLocalFixtureAccount } from './local-fixtures.mjs';
 import { randomBytes } from 'node:crypto';
@@ -232,7 +232,7 @@ function candidateDecisions(input) {
 function publicResult(value) {
   const result = { id: value.id, date: value.date, specialization: value.specialization, grade: value.grade,
     score: value.score, passed: value.passed, surveyId: value.surveyId || null };
-  for (const key of ['bankVersion', 'competencies', 'vacancySkills']) if (value[key] !== undefined) result[key] = value[key];
+  for (const key of ['bankVersion', 'competencies', 'vacancySkills', 'questionCount', 'timeouts', 'nextGradeAvailable', 'annulled', 'integrity']) if (value[key] !== undefined) result[key] = value[key];
   return result;
 }
 function sameConfirmation(a, b) {
@@ -428,7 +428,11 @@ export class PlatformService {
         const next = fromProof(selectedProof);
         const changed = oldProof && (oldProof.result.grade !== next.grade || oldProof.result.specialization !== next.specialization);
         const changedAt = oldProof ? oldProfile.gradeChangedAt || oldProof.result.date : next.date;
-        if (changed && this.now() < Date.parse(changedAt) + 90 * 86400000) throw new RequestError(409, 'Смена подтверждённой категории доступна раз в 90 дней.');
+        // A confident result (>= 90) opens the next grade of the same specialization at once;
+        // every other change waits 90 days since the previous change.
+        const fastTrack = changed && oldProof.result.score >= confidentThreshold && oldProof.result.specialization === next.specialization
+          && nextGrade(oldProof.result.grade) === next.grade;
+        if (changed && !fastTrack && this.now() < Date.parse(changedAt) + 90 * 86400000) throw new RequestError(409, 'Смена подтверждённой категории доступна раз в 90 дней.');
         person.confirmed = next;
         // A delayed/replayed successful result is not a delayed category-change
         // timestamp: the next interval starts when this change is applied.

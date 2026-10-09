@@ -40,7 +40,7 @@ function completed(assessments, owner, { grade = 'Junior', passed = true, at = t
     specialization: 'Frontend', desiredGrade: grade, experience: '3 года 4 месяца', stack: ['React', 'TypeScript'], softSkills: [] };
   const attempt = createAttempt(survey, '', [], at);
   assessments.insert(attempt, owner, 'not-a-public-token');
-  let correctCount = passed ? score === 83 ? 5 : 6 : 0;
+  let correctCount = passed ? score === 83 ? 10 : 12 : 0;
   const answers = attempt.questions.map(question => ({ questionId: question.id,
     optionId: correctCount-- > 0 ? question.correctOptionId : question.options.find(option => option.id !== question.correctOptionId).id }));
   const evaluated = evaluate(attempt, answers, at + 1000);
@@ -208,9 +208,10 @@ test('a passed category outlives the limited recent history without exposing its
 
 test('a category switch cannot bypass the server 90 day boundary by forging gradeChangedAt', t => {
   const { platform, assessments, setTime } = fixture(t);
-  const first = completed(assessments, ownerA);
+  // 83 is a pass but not a confident result, so the 90-day rule applies.
+  const first = completed(assessments, ownerA, { score: 83 });
   const original = platform.save(ownerA, candidateState(first), 0);
-  const second = completed(assessments, ownerA, { grade: 'Middle', at: time + 5000 });
+  const second = completed(assessments, ownerA, { grade: 'Middle', at: time + 5000, score: 83 });
   const input = candidateState(second); input.profile.gradeChangedAt = '1900-01-01';
   input.surveys.push(...original.state.surveys);
   assert.throws(() => platform.save(ownerA, input, 1), errorStatus(409));
@@ -227,9 +228,23 @@ test('a category switch cannot bypass the server 90 day boundary by forging grad
     'Replaying a second old proof cannot cause another immediate category change');
 });
 
+test('a confident result opens only the next grade at once; skipping a grade still waits 90 days', t => {
+  const { platform, assessments } = fixture(t);
+  const junior = completed(assessments, ownerA);
+  const saved = platform.save(ownerA, candidateState(junior), 0);
+  assert.equal(saved.state.profile.confirmed.score, 100);
+  const senior = completed(assessments, ownerA, { grade: 'Senior', at: time + 4000 });
+  const skip = candidateState(senior); skip.surveys.push(...saved.state.surveys);
+  assert.throws(() => platform.save(ownerA, skip, saved.revision), errorStatus(409));
+  const middle = completed(assessments, ownerA, { grade: 'Middle', at: time + 5000 });
+  const next = candidateState(middle); next.surveys.push(...saved.state.surveys);
+  const promoted = platform.save(ownerA, next, saved.revision);
+  assert.equal(promoted.state.profile.confirmed.grade, 'Middle');
+});
+
 test('first assignment uses server time even for an old proof; repeating the same category does not restart the interval', t => {
   const { platform, assessments, setTime } = fixture(t);
-  const old = completed(assessments, ownerA, { at: time - 100 * 86400000 });
+  const old = completed(assessments, ownerA, { at: time - 100 * 86400000, score: 83 });
   const saved = platform.save(ownerA, candidateState(old), 0);
   assert.equal(saved.state.profile.confirmed.date, old.result.date);
   assert.equal(saved.state.profile.gradeChangedAt, date);

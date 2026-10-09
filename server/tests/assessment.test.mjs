@@ -27,12 +27,14 @@ function rejectsStatus(action, status) {
   assert.throws(action, error => error instanceof RequestError && error.status === status);
 }
 function assertBlueprint(attempt, program) {
-  assert.equal(attempt.questions.length, 6);
-  assert.equal(attempt.blueprint.difficultyBudget, 9);
-  assert.deepEqual(attempt.blueprint.difficultyCounts, { '1': 3, '2': 3 });
-  assert.deepEqual(attempt.blueprint.topicCounts, Object.fromEntries(program.topics.map(topic => [topic, 2])));
-  for (const topic of program.topics) assert.deepEqual(attempt.questions.filter(question => question.topic === topic).map(question => question.difficulty).sort(), [1, 2]);
-  assert.equal(new Set(attempt.questions.map(question => question.id)).size, 6);
+  assert.equal(attempt.questions.length, 12);
+  assert.equal(attempt.delivery, 'sequential');
+  assert.equal(attempt.blueprint.difficultyBudget, 18);
+  assert.deepEqual(attempt.blueprint.difficultyCounts, { '1': 6, '2': 6 });
+  assert.deepEqual(attempt.blueprint.topicCounts, Object.fromEntries(program.topics.map(topic => [topic, 4])));
+  for (const topic of program.topics) assert.deepEqual(attempt.questions.filter(question => question.topic === topic).map(question => question.difficulty).sort(), [1, 1, 2, 2]);
+  assert.equal(new Set(attempt.questions.map(question => question.id)).size, 12);
+  assert.equal(new Set(attempt.questions.map(question => question.variantId)).size, 12);
   for (const question of attempt.questions) {
     const family = program.families.find(item => item.id === question.familyId);
     const original = family.variants.find(item => item.id === question.variantId);
@@ -125,17 +127,18 @@ test('all public industries validate and arbitrary industry values are rejected'
 });
 
 for (const [specialization, grades] of Object.entries(programs)) for (const [grade, program] of Object.entries(grades)) {
-  test(`${specialization} ${grade}: 100 attempts keep their blueprint, exclude the previous two variants and produce diverse content sets`, () => {
+  test(`${specialization} ${grade}: 100 attempts keep their blueprint, exclude the previous attempt's items and produce diverse content sets`, () => {
     const recent = [];
     const contentSets = new Set();
     for (let index = 0; index < 100; index++) {
-      const attempt = createAttempt(survey(specialization, grade), '', recent.slice(-2), initialTime + index);
+      const attempt = createAttempt(survey(specialization, grade), '', recent.slice(-1), initialTime + index);
       assert.equal(attempt.bankVersion, bankVersion);
       assertBlueprint(attempt, program);
-      const seen = new Set(recent.slice(-2).flatMap(item => item.questions.map(question => question.variantId)));
+      const seen = new Set(recent.slice(-1).flatMap(item => item.questions.map(question => question.variantId)));
       for (const question of attempt.questions) assert(!seen.has(question.variantId));
-      contentSets.add(attempt.questions.map(question => question.variantId).sort().join(','));
       recent.push(attempt);
+      // Different candidates without history receive independent selections.
+      contentSets.add(createAttempt(survey(specialization, grade), '', [], initialTime + index).questions.map(question => question.variantId).sort().join(','));
     }
     assert(contentSets.size >= 20, `Only ${contentSets.size} substantive sets; do not count question or answer permutations as new content.`);
   });
@@ -156,14 +159,17 @@ test('public serialization contains only opaque question and option identifiers,
   assert(!Object.hasOwn(exposed, 'survey'));
 });
 
-test('server grading uses its answer keys: four of six fails and five of six passes', () => {
+test('server grading uses its answer keys: eight of twelve fails, ten passes, eleven is confident', () => {
   const attempt = createAttempt(survey(), '', [], initialTime);
-  const failed = evaluate(attempt, answersFor(attempt, 4), initialTime + 1000).result;
-  const passed = evaluate(attempt, answersFor(attempt, 5), initialTime + 1000).result;
+  const failed = evaluate(attempt, answersFor(attempt, 8), initialTime + 1000).result;
+  const passed = evaluate(attempt, answersFor(attempt, 10), initialTime + 1000).result;
+  const confident = evaluate(attempt, answersFor(attempt, 11), initialTime + 1000).result;
   assert.equal(failed.score, 67); assert.equal(failed.passed, false);
-  assert.equal(passed.score, 83); assert.equal(passed.passed, true);
+  assert.equal(passed.score, 83); assert.equal(passed.passed, true); assert.equal(passed.nextGradeAvailable, undefined);
+  assert.equal(confident.score, 92); assert.equal(confident.nextGradeAvailable, 'Middle');
   assert.equal(passed.competencies.length, 3);
-  assert.equal(passed.competencies.reduce((count, topic) => count + topic.total, 0), 6);
+  assert.equal(passed.competencies.reduce((count, topic) => count + topic.total, 0), 12);
+  assert.equal(passed.questionCount, 12);
 });
 
 test('empty self-reported soft skills allow every program without changing its blueprint or grade threshold', () => {
@@ -173,8 +179,8 @@ test('empty self-reported soft skills allow every program without changing its b
     assert.equal(attempt.specialization, specialization);
     assert.equal(attempt.grade, grade);
     assertBlueprint(attempt, program);
-    const failed = evaluate(attempt, answersFor(attempt, 4), initialTime + 1000).result;
-    const passed = evaluate(attempt, answersFor(attempt, 5), initialTime + 1000).result;
+    const failed = evaluate(attempt, answersFor(attempt, 8), initialTime + 1000).result;
+    const passed = evaluate(attempt, answersFor(attempt, 10), initialTime + 1000).result;
     assert.equal(failed.score, 67); assert.equal(failed.passed, false);
     assert.equal(passed.score, 83); assert.equal(passed.passed, true);
     assert.equal(passed.specialization, specialization);
@@ -254,16 +260,15 @@ test('different vacancy descriptions select different substantive tasks inside t
   for (let index = 0; index < 12; index++) {
     const accessible = createAttempt(survey('Frontend', 'Middle'), examples['frontend-react'].description, [], initialTime);
     const secure = createAttempt(survey('Frontend', 'Middle'), examples['frontend-product'].description, [], initialTime);
-    const accessibleQuestion = accessible.questions.find(item => item.familyId === 'fm-quality-basics');
-    const securityQuestion = secure.questions.find(item => item.familyId === 'fm-quality-basics');
-    assert(['fm-quality-basics-a', 'fm-quality-basics-c', 'fm-quality-basics-d'].includes(accessibleQuestion.variantId));
-    assert.equal(securityQuestion.variantId, 'fm-quality-basics-b');
-    assert.notEqual(accessibleQuestion.text, securityQuestion.text);
+    const variants = (attempt, familyId) => attempt.questions.filter(item => item.familyId === familyId).map(item => item.variantId);
+    // Both scored items of the family come from the vacancy-relevant tier while it has two items.
+    for (const id of variants(accessible, 'fm-quality-basics')) assert(['fm-quality-basics-a', 'fm-quality-basics-c', 'fm-quality-basics-d'].includes(id));
+    assert(variants(secure, 'fm-quality-basics').includes('fm-quality-basics-b'));
     assert.deepEqual(accessible.blueprint, secure.blueprint);
     const tracing = createAttempt(survey('Backend', 'Middle'), examples['backend-payments'].description, [], initialTime);
     const queue = createAttempt(survey('Backend', 'Middle'), examples['backend-orders'].description, [], initialTime);
-    assert.equal(tracing.questions.find(item => item.familyId === 'bm-reliability-recovery').variantId, 'bm-reliability-recovery-b');
-    assert.equal(queue.questions.find(item => item.familyId === 'bm-reliability-recovery').variantId, 'bm-reliability-recovery-c');
+    assert(variants(tracing, 'bm-reliability-recovery').includes('bm-reliability-recovery-b'));
+    assert(variants(queue, 'bm-reliability-recovery').includes('bm-reliability-recovery-c'));
     assert.deepEqual(tracing.blueprint, queue.blueprint);
   }
 });
@@ -272,8 +277,8 @@ test('vacancy emphasis never overrides non-repetition while fresh variants remai
   const example = vacancyExamples.find(item => item.id === 'frontend-product');
   const recent = [];
   for (let index = 0; index < 10; index++) {
-    const attempt = createAttempt(survey('Frontend', 'Middle'), example.description, recent.slice(-2), initialTime + index);
-    const seen = new Set(recent.slice(-2).flatMap(item => item.questions.map(question => question.variantId)));
+    const attempt = createAttempt(survey('Frontend', 'Middle'), example.description, recent.slice(-1), initialTime + index);
+    const seen = new Set(recent.slice(-1).flatMap(item => item.questions.map(question => question.variantId)));
     for (const question of attempt.questions) assert(!seen.has(question.variantId));
     assertBlueprint(attempt, programs.Frontend.Middle);
     recent.push(attempt);
@@ -305,7 +310,7 @@ test('HTTP submission is immutable and identical replay returns the same result,
   const request = client(service.base);
   const { json: attempt } = await begin(request);
   const privateAttempt = service.store.get(attempt.id).attempt;
-  const payload = { token: attempt.token, answers: answersFor(privateAttempt, 5) };
+  const payload = { token: attempt.token, answers: answersFor(privateAttempt, 10) };
   const path = `/api/assessment/attempts/${attempt.id}/submit`;
   assert.equal((await request(path, { method: 'POST', body: { ...payload, score: 100 } })).status, 400);
   const first = await request(path, { method: 'POST', body: payload });
@@ -313,7 +318,7 @@ test('HTTP submission is immutable and identical replay returns the same result,
   time += 31 * 60000;
   const replay = await request(path, { method: 'POST', body: { ...payload, answers: [...payload.answers].reverse() } });
   assert.equal(replay.status, 200); assert.deepEqual(replay.json, first.json);
-  const changed = await request(path, { method: 'POST', body: { ...payload, answers: answersFor(privateAttempt, 6) } });
+  const changed = await request(path, { method: 'POST', body: { ...payload, answers: answersFor(privateAttempt, 12) } });
   assert.equal(changed.status, 409);
   const restored = await request(`/api/assessment/attempts/${attempt.id}`, { headers: { 'X-Attempt-Token': attempt.token } });
   assert.equal(restored.json.status, 'completed'); assert.deepEqual(restored.json.result, first.json);
@@ -380,7 +385,7 @@ test('SQLite keeps private attempts, owner restrictions and immutable results ac
   const firstClient = client(firstBase), started = await begin(firstClient);
   const cookie = firstClient.cookieHeader(), attempt = started.json;
   const privateAttempt = first.store.get(attempt.id).attempt;
-  const payload = { token: attempt.token, answers: answersFor(privateAttempt, 5) };
+  const payload = { token: attempt.token, answers: answersFor(privateAttempt, 10) };
   const submit = await fetch(`http://127.0.0.1:${first.server.address().port}/api/assessment/attempts/${attempt.id}/submit`, {
     method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify(payload),
   });

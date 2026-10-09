@@ -4,7 +4,12 @@ import { readFile } from 'node:fs/promises';
 import { resolve, relative, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openStore } from './store.mjs';
-import { createAttempt, digest, evaluate, programInfo, publicAttempt, RequestError, validateSurvey } from './assessment.mjs';
+import { annulledResult, createAttempt, digest, emptyProgress, evaluate, integrityKinds, maxDepartures, programInfo, publicAttempt,
+  recordAnswer, RequestError, retakeLock, retryDays, validateSurvey } from './assessment.mjs';
+import { programs } from './bank.mjs';
+import { ItemBank } from './item-bank.mjs';
+import { ItemGenerationQueue } from './item-generator.mjs';
+import { createLlmClient } from './llm.mjs';
 import { DirectoryService } from './directory.mjs';
 import { PlatformService } from './platform.mjs';
 import { MarketplaceService } from './marketplace.mjs';
@@ -25,8 +30,14 @@ const mime = {
   '.json': 'application/json; charset=utf-8', '.txt': 'text/plain; charset=utf-8',
 };
 
-export function createAssessmentServer({ dbPath = resolve(root, 'server/data/assessment.sqlite'), now = Date.now, webOrigin = process.env.WEB_ORIGIN, secureCookie = process.env.COOKIE_SECURE === '1', distPath = resolve(root, 'frontend/dist'), authEnv = process.env, authMailer, authCodeTtlMinutes, authSessionDays, integrationOptions = {} } = {}) {
+export function createAssessmentServer({ dbPath = resolve(root, 'server/data/assessment.sqlite'), now = Date.now, webOrigin = process.env.WEB_ORIGIN, secureCookie = process.env.COOKIE_SECURE === '1', distPath = resolve(root, 'frontend/dist'), authEnv = process.env, authMailer, authCodeTtlMinutes, authSessionDays, integrationOptions = {}, llm: llmOverride } = {}) {
   const store = openStore(dbPath);
+  const bank = new ItemBank(store.db, { programs, now });
+  let llm;
+  try { llm = llmOverride || createLlmClient({ env: authEnv }); }
+  catch (error) { console.error('OpenRouter:', error.message); llm = createLlmClient({ env: {} }); }
+  // Background generation only for the real process environment, never for isolated test servers.
+  const generation = new ItemGenerationQueue({ llm, bank, enabled: authEnv === process.env && authEnv.ITEM_BANK_AUTOGEN !== '0' });
   const auth = new AuthService(dbPath, { now, env: authEnv, mailer: authMailer, codeTtlMinutes: authCodeTtlMinutes, sessionDays: authSessionDays, database: store.db });
   const accountForOwner = owner => typeof owner === 'string' ? auth.accountForPlatformOwner(owner) : null;
   const directory = new DirectoryService(dbPath, { accountForOwner, database: store.db });
@@ -38,6 +49,7 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
   const integrations = new IntegrationService(directory.store, { dbPath, env: authEnv, now, ...integrationOptions, projectProfile: (owner, profile) => platform.publication(owner, profile), candidateAccessible: (owner, row) => platform.candidateAccessible(owner, row), reservedProviders: ['fsp-demo'] });
   directory.fspEvidence = person => integrations.rankingFspEvidence(person);
   const limits = new Map();
+  const integritySummary = ({ departures, blockedCopies, blockedActions, fullscreenExits }) => ({ departures, blockedCopies, blockedActions, fullscreenExits });
   function send(response, status, value) {
     response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
     response.end(JSON.stringify(value));
@@ -178,7 +190,7 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
         }
         if (request.method === 'GET' && url.pathname === '/api/assessment/program') {
           allowRole(identity, 'candidate', 'Тестирование доступно соискателю.');
-          return send(response, 200, programInfo(url.searchParams.get('specialization'), url.searchParams.get('grade')));
+          return send(response, 200, programInfo(url.searchParams.get('specialization'), url.searchParams.get('grade'), bank));
         }
         if (url.pathname === '/api/platform/state') {
           const identityScope = identity.account ? 'auth:' + identity.account.id : 'anonymous:' + session;
@@ -277,11 +289,18 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
           limit('starts:' + request.socket.remoteAddress, 40, 3600000);
           if (store.countSince(session, new Date(now() - 3600000).toISOString()) >= 20) throw new RequestError(429, 'Слишком много попыток. Попробуйте позже.');
           const survey = validateSurvey(input.survey);
+          const lock = retakeLock(store.completed(session), survey.specialization, survey.desiredGrade, now(), retryDays(authEnv));
+          if (lock) {
+            const lower = lock.lowerGrades.length ? ' Тест на грейд ниже доступен сразу.' : '';
+            throw new RequestError(409, `Повторить тест на этот грейд можно с ${new Date(lock.until).toLocaleDateString('ru-RU')}.${lower}`, { retryAt: lock.until, lowerGrades: lock.lowerGrades });
+          }
           const previous = store.recent(session, survey.specialization, survey.desiredGrade);
-          const attempt = createAttempt(survey, input.vacancyDescription, previous, now());
+          const attempt = createAttempt(survey, input.vacancyDescription, previous, now(), { bank });
           const token = randomBytes(32).toString('hex');
           store.insert(attempt, session, digest(token));
-          return send(response, 201, { ...publicAttempt(attempt), token, serverNow: new Date(now()).toISOString(), integrity: store.integrity(attempt.id) });
+          bank.recordExposure(attempt.questions.map(question => question.variantId));
+          generation.ensure([...new Set(attempt.questions.filter(question => !question.pilot).map(question => question.familyId))]);
+          return send(response, 201, { ...publicAttempt(attempt, emptyProgress(attempt)), token, serverNow: new Date(now()).toISOString(), integrity: store.integrity(attempt.id) });
         }
         const integrity = /^\/api\/assessment\/attempts\/([a-f0-9-]{36})\/integrity$/.exec(url.pathname);
         if (integrity && request.method === 'POST') {
@@ -294,36 +313,94 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
           if (!event || typeof event !== 'object' || Array.isArray(event)
             || Object.keys(event).some(key => !['id', 'kind'].includes(key))
             || typeof event.id !== 'string' || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(event.id)
-            || !['focus_lost', 'visibility_hidden', 'copy_blocked'].includes(event.kind)) {
+            || !integrityKinds.includes(event.kind)) {
             throw new RequestError(400, 'Некорректное событие контроля теста.');
           }
           const saved = store.recordIntegrity(row.id, event, new Date(now()).toISOString());
           if (saved === 'conflict') throw new RequestError(409, 'Событие уже сохранено с другим типом.');
           if (saved === 'limit') throw new RequestError(429, 'Достигнут лимит событий контроля теста.');
-          return send(response, 200, store.integrity(row.id));
+          const summary = store.integrity(row.id);
+          if (summary.departures >= maxDepartures) {
+            // Repeated departures annul the attempt on the server; the client cannot undo it.
+            store.complete(row.id, 'annulled', annulledResult(row.attempt, now(), integritySummary(summary)));
+            return send(response, 200, { ...summary, remaining: 0, annulled: true, result: store.get(row.id).result });
+          }
+          return send(response, 200, { ...summary, remaining: maxDepartures - summary.departures, annulled: false });
+        }
+        const answerRoute = /^\/api\/assessment\/attempts\/([a-f0-9-]{36})\/answer$/.exec(url.pathname);
+        if (answerRoute && request.method === 'POST') {
+          allowRole(identity, 'candidate', 'Тестирование доступно соискателю.');
+          const input = await body(request, 4096);
+          let row = authorized(answerRoute[1], session, input.token);
+          if (row.result) throw new RequestError(409, row.result.annulled ? 'Попытка аннулирована из-за нарушений.' : 'Тест уже завершён.');
+          if (row.attempt.delivery !== 'sequential') throw new RequestError(409, 'Эта попытка принимает ответы целиком.');
+          let recorded = recordAnswer(row.attempt, row.progress, input, now());
+          if (recorded.changed && !store.saveProgress(row.id, recorded.progress, row.progress)) {
+            row = store.get(row.id);
+            recorded = recordAnswer(row.attempt, row.progress, input, now());
+            if (recorded.changed && !store.saveProgress(row.id, recorded.progress, row.progress)) throw new RequestError(409, 'Ответ уже обрабатывается. Повторите.');
+          }
+          const complete = Object.keys(recorded.progress.answers).length === row.attempt.questions.length;
+          return send(response, 200, { ...publicAttempt(row.attempt, recorded.progress), complete,
+            serverNow: new Date(now()).toISOString(), integrity: store.integrity(row.id), status: 'active' });
         }
         const match = /^\/api\/assessment\/attempts\/([a-f0-9-]{36})(\/submit)?$/.exec(url.pathname);
         if (match && !match[2] && request.method === 'GET') {
           allowRole(identity, 'candidate', 'Тестирование доступно соискателю.');
           const row = authorized(match[1], session, request.headers['x-attempt-token']);
-          return send(response, 200, { ...publicAttempt(row.attempt), serverNow: new Date(now()).toISOString(), integrity: store.integrity(row.id), status: row.result ? 'completed' : 'active', ...(row.result ? { result: row.result } : {}) });
+          return send(response, 200, { ...publicAttempt(row.attempt, row.progress), serverNow: new Date(now()).toISOString(), integrity: store.integrity(row.id), status: row.result ? 'completed' : 'active', ...(row.result ? { result: row.result } : {}) });
         }
         if (match?.[2] && request.method === 'POST') {
           allowRole(identity, 'candidate', 'Тестирование доступно соискателю.');
           const input = await body(request);
           if (Object.keys(input).some(key => !['token', 'answers'].includes(key))) throw new RequestError(400, 'Недопустимые поля ответа.');
           const row = authorized(match[1], session, input.token);
-          const evaluated = evaluate(row.attempt, input.answers, row.result ? Date.parse(row.result.date) : now());
+          if (row.result?.annulled) return send(response, 200, row.result);
+          const evaluated = evaluate(row.attempt, input.answers, row.result ? Date.parse(row.result.date) : now(),
+            { progress: row.progress, integrity: integritySummary(store.integrity(row.id)) });
           if (row.result) {
             if (row.answer_digest !== evaluated.answerDigest) throw new RequestError(409, 'Попытка уже проверена. Ответы менять нельзя.');
             return send(response, 200, row.result);
           }
           if (!store.complete(row.id, evaluated.answerDigest, evaluated.result)) {
             const saved = store.get(row.id);
+            if (saved.result?.annulled) return send(response, 200, saved.result);
             if (saved.answer_digest !== evaluated.answerDigest) throw new RequestError(409, 'Попытка уже проверена. Ответы менять нельзя.');
             return send(response, 200, saved.result);
           }
+          bank.recordResponses(evaluated.responses, evaluated.result.score);
           return send(response, 200, evaluated.result);
+        }
+        if (url.pathname.startsWith('/api/item-bank/')) {
+          if (!identity.account?.canModerate) throw new RequestError(403, 'Банк заданий доступен модератору.');
+          if (request.method === 'GET' && url.pathname === '/api/item-bank/items') {
+            const filters = { specialization: url.searchParams.get('specialization') || undefined, grade: url.searchParams.get('grade') || undefined,
+              status: url.searchParams.get('status') || undefined };
+            return send(response, 200, { items: bank.list(filters), summary: bank.summary(filters.specialization, filters.grade),
+              generator: { configured: llm.configured, models: llm.models, queued: generation.queue.length, running: Boolean(generation.running) } });
+          }
+          const reviewRoute = /^\/api\/item-bank\/items\/(gen-[a-f0-9-]{36})\/review$/.exec(url.pathname);
+          if (reviewRoute && request.method === 'POST') {
+            const input = await body(request, 4096);
+            if (!['approve', 'reject'].includes(input.decision)) throw new RequestError(400, 'Укажите решение: approve или reject.');
+            const item = bank.row(reviewRoute[1]);
+            if (!item) throw new RequestError(404, 'Задание не найдено.');
+            bank.setStatus(item.id, input.decision === 'approve' ? 'active' : 'rejected', { decidedBy: 'expert:' + identity.account.login,
+              reason: typeof input.note === 'string' && input.note.trim() ? input.note.slice(0, 500) : (input.decision === 'approve' ? 'Одобрено экспертом.' : 'Отклонено экспертом.') });
+            return send(response, 200, bank.row(item.id));
+          }
+          if (request.method === 'POST' && url.pathname === '/api/item-bank/generate') {
+            const input = await body(request, 2048);
+            const program = Object.hasOwn(programs, input.specialization) && Object.hasOwn(programs[input.specialization], input.grade) ? programs[input.specialization][input.grade] : null;
+            if (!program) throw new RequestError(400, 'Выберите специализацию и грейд.');
+            if (!llm.configured) throw new RequestError(503, 'Добавьте OPENROUTER_API_KEY в .env, чтобы генерировать задания.');
+            limit('item-generate:' + session, 10, 3600000);
+            const before = generation.queue.length;
+            for (const family of program.families) if (!generation.queue.includes(family.id)) generation.queue.push(family.id);
+            generation.enabled = true; generation.kick();
+            return send(response, 202, { queued: generation.queue.length - before, families: program.families.length });
+          }
+          throw new RequestError(404, 'Страница не найдена.');
         }
         throw new RequestError(404, 'Страница не найдена.');
       }
@@ -337,7 +414,7 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
       response.writeHead(200, { 'Content-Type': mime[extname(file)], 'Cache-Control': extname(file) === '.html' || path.startsWith('/resume-assets/') ? 'no-cache' : 'public, max-age=3600', 'X-Content-Type-Options': 'nosniff' });
       response.end(request.method === 'HEAD' ? undefined : content);
     } catch (error) {
-      if (!response.headersSent) send(response, error instanceof RequestError || error instanceof AuthError ? error.status : 500, { error: error instanceof RequestError || error instanceof AuthError ? error.message : 'Сервис временно недоступен. Попробуйте снова.' });
+      if (!response.headersSent) send(response, error instanceof RequestError || error instanceof AuthError ? error.status : 500, { error: error instanceof RequestError || error instanceof AuthError ? error.message : 'Сервис временно недоступен. Попробуйте снова.', ...(error instanceof RequestError && error.details ? error.details : {}) });
       else response.end();
       if (!(error instanceof RequestError) && !(error instanceof AuthError)) console.error('Assessment service error:', error.message);
     }
@@ -345,7 +422,7 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
   server.requestTimeout = 15000;
   server.headersTimeout = 10000;
   server.on('close', () => { integrations.close(); auth.close(); directory.close(); store.close(); });
-  return { server, store, directory, platform, marketplace, auth, fsp, integrations };
+  return { server, store, directory, platform, marketplace, auth, fsp, integrations, bank, llm, generation };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

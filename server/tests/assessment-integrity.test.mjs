@@ -55,7 +55,7 @@ async function fixture(t) {
 
 test('integrity telemetry is owned, token-protected, idempotent and timed only by the server', async t => {
   const f = await fixture(t), other = await f.register(), employer = await f.register('employer');
-  assert.deepEqual(f.attempt.integrity, { departures: 0, blockedCopies: 0, lastEventAt: null });
+  assert.deepEqual(f.attempt.integrity, { departures: 0, blockedCopies: 0, blockedActions: 0, fullscreenExits: 0, lastEventAt: null });
   const event = f.event(), route = f.path + '/integrity';
   assert.equal((await f.client()(route, 'POST', event)).status, 401);
   assert.equal((await other(route, 'POST', event)).status, 404);
@@ -73,8 +73,10 @@ test('integrity telemetry is owned, token-protected, idempotent and timed only b
   const copy = await f.candidate(route, 'POST', f.event('copy_blocked'));
   assert.equal(copy.data.blockedCopies, 1); assert.equal(copy.data.departures, 1);
   assert.notEqual(copy.data.lastEventAt, receivedAt);
+  assert.equal(copy.data.remaining, 2); assert.equal(copy.data.annulled, false);
   const restored = await f.candidate(f.path, 'GET', undefined, { 'X-Attempt-Token': f.attempt.token });
-  assert.deepEqual(restored.data.integrity, copy.data);
+  const { remaining, annulled, ...summary } = copy.data;
+  assert.deepEqual(restored.data.integrity, summary);
   assert.equal(restored.headers.get('cache-control'), 'no-store');
   assert.equal(restored.data.expiresAt, f.attempt.expiresAt);
   assert.equal(restored.data.serverNow, copy.data.lastEventAt);
@@ -89,11 +91,12 @@ test('invalid or excessive events do not change answers, deadline or grade', asy
   }
   assert.equal(f.store.integrity(f.attempt.id).departures, 0);
   const duplicateId = randomUUID();
+  // Blocked copy attempts are signals, not departures: a flood is bounded and never annuls.
   for (let index = 0; index < 128; index++) {
-    assert.equal(f.store.recordIntegrity(f.attempt.id, { id: index ? randomUUID() : duplicateId, kind: 'focus_lost' }, new Date().toISOString()), 'inserted');
+    assert.equal(f.store.recordIntegrity(f.attempt.id, { id: index ? randomUUID() : duplicateId, kind: 'copy_blocked' }, new Date().toISOString()), 'inserted');
   }
-  assert.equal((await f.candidate(route, 'POST', f.event())).status, 429);
-  assert.equal((await f.candidate(route, 'POST', f.event('focus_lost', duplicateId))).status, 200);
+  assert.equal((await f.candidate(route, 'POST', f.event('copy_blocked'))).status, 429);
+  assert.equal((await f.candidate(route, 'POST', f.event('copy_blocked', duplicateId))).status, 200);
   const row = f.store.get(f.attempt.id);
   assert.equal(row.attempt.expiresAt, f.attempt.expiresAt); assert.equal(row.result, null);
   const answers = row.attempt.questions.map(question => ({ questionId: question.id, optionId: question.correctOptionId }));
@@ -108,7 +111,54 @@ test('expired attempts reject new telemetry without producing a failed result', 
   f.advance(30 * 60000);
   assert.equal((await f.candidate(f.path + '/integrity', 'POST', f.event())).status, 410);
   assert.equal(f.store.get(f.attempt.id).result, null);
-  assert.deepEqual(f.store.integrity(f.attempt.id), { departures: 0, blockedCopies: 0, lastEventAt: null });
+  assert.deepEqual(f.store.integrity(f.attempt.id), { departures: 0, blockedCopies: 0, blockedActions: 0, fullscreenExits: 0, lastEventAt: null });
+});
+
+test('three departures annul the attempt on the server; answers and grading stop', async t => {
+  const f = await fixture(t), route = f.path + '/integrity';
+  const first = await f.candidate(route, 'POST', f.event('visibility_hidden'));
+  assert.equal(first.data.remaining, 2); assert.equal(first.data.annulled, false);
+  assert.equal((await f.candidate(route, 'POST', f.event('fullscreen_exit'))).data.remaining, 1);
+  const third = await f.candidate(route, 'POST', f.event('focus_lost'));
+  assert.equal(third.status, 200); assert.equal(third.data.annulled, true);
+  assert.equal(third.data.result.annulled, true); assert.equal(third.data.result.passed, false); assert.equal(third.data.result.score, 0);
+  const row = f.store.get(f.attempt.id);
+  const question = row.attempt.questions[0];
+  assert.equal((await f.candidate(f.path + '/answer', 'POST', { token: f.attempt.token, questionId: question.id, optionId: question.correctOptionId })).status, 409);
+  const answers = row.attempt.questions.map(item => ({ questionId: item.id, optionId: item.correctOptionId }));
+  const submitted = await f.candidate(f.path + '/submit', 'POST', { token: f.attempt.token, answers });
+  assert.equal(submitted.data.annulled, true); assert.equal(submitted.data.passed, false);
+  // The annulled grade is locked for the retry period; a lower grade stays open.
+  const retry = await f.candidate('/api/assessment/attempts', 'POST', { survey: survey() });
+  assert.equal(retry.status, 409); assert(retry.data.retryAt);
+  assert.equal((await f.candidate('/api/assessment/attempts', 'POST', { survey: { ...survey(), desiredGrade: 'Intern' } })).status, 201);
+});
+
+test('sequential delivery reveals one question at a time, locks answers and scores late answers as wrong', async t => {
+  const f = await fixture(t);
+  assert.equal(f.attempt.questions.length, 1); assert.equal(f.attempt.questionCount, 12); assert.equal(f.attempt.position, 0);
+  const row = f.store.get(f.attempt.id);
+  const [q1, q2, q3] = row.attempt.questions;
+  assert.equal((await f.candidate(f.path + '/answer', 'POST', { token: f.attempt.token, questionId: q2.id, optionId: q2.correctOptionId })).status, 409);
+  const answered = await f.candidate(f.path + '/answer', 'POST', { token: f.attempt.token, questionId: q1.id, optionId: q1.correctOptionId });
+  assert.equal(answered.status, 200); assert.equal(answered.data.position, 1); assert.equal(answered.data.questions.length, 2);
+  assert(!JSON.stringify(answered.data).includes('correctOptionId'));
+  // Same answer again is idempotent; a changed answer is rejected.
+  assert.equal((await f.candidate(f.path + '/answer', 'POST', { token: f.attempt.token, questionId: q1.id, optionId: q1.correctOptionId })).status, 200);
+  const other = q1.options.find(option => option.id !== q1.correctOptionId).id;
+  assert.equal((await f.candidate(f.path + '/answer', 'POST', { token: f.attempt.token, questionId: q1.id, optionId: other })).status, 409);
+  f.advance(130_000 + 9000);
+  const late = await f.candidate(f.path + '/answer', 'POST', { token: f.attempt.token, questionId: q2.id, optionId: q2.correctOptionId });
+  assert.equal(late.status, 200);
+  assert.equal(f.store.get(f.attempt.id).progress.answers[q2.id].late, true);
+  assert.equal((await f.candidate(f.path + '/answer', 'POST', { token: f.attempt.token, questionId: q3.id, optionId: null })).status, 200);
+  for (const question of row.attempt.questions.slice(3)) {
+    const response = await f.candidate(f.path + '/answer', 'POST', { token: f.attempt.token, questionId: question.id, optionId: question.correctOptionId });
+    assert.equal(response.status, 200);
+  }
+  const result = await f.candidate(f.path + '/submit', 'POST', { token: f.attempt.token });
+  assert.equal(result.status, 200);
+  assert.equal(result.data.score, 83); assert.equal(result.data.timeouts, 2); assert.equal(result.data.passed, true);
 });
 
 test('integrity survives reopening SQLite and cascades with its owner data', t => {
@@ -122,9 +172,9 @@ test('integrity survives reopening SQLite and cascades with its owner data', t =
   store.close();
   store = openStore(path);
   try {
-    assert.deepEqual(store.integrity(attempt.id), { departures: 1, blockedCopies: 0, lastEventAt: attempt.createdAt });
+    assert.deepEqual(store.integrity(attempt.id), { departures: 1, blockedCopies: 0, blockedActions: 0, fullscreenExits: 0, lastEventAt: attempt.createdAt });
     assert.equal(store.recordIntegrity(attempt.id, event, attempt.createdAt), 'duplicate');
     assert.equal(store.deleteOwner('test-owner'), 1);
-    assert.deepEqual(store.integrity(attempt.id), { departures: 0, blockedCopies: 0, lastEventAt: null });
+    assert.deepEqual(store.integrity(attempt.id), { departures: 0, blockedCopies: 0, blockedActions: 0, fullscreenExits: 0, lastEventAt: null });
   } finally { store.close(); }
 });

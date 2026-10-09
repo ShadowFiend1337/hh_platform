@@ -2,12 +2,27 @@ import { createHash, randomInt, randomUUID } from 'node:crypto';
 import { bankVersion, programs } from './bank.mjs';
 import { analyzeVacancy, vacancyExamples } from './vacancies.mjs';
 import { industryOptions } from '../shared/catalog.ts';
+import { gradeOptions } from '../shared/grading.ts';
 import { MAX_STACK_SKILLS } from '../shared/resume-limits.ts';
 
 export const threshold = 70;
+/** A confident result unlocks the next grade's test without the 90-day wait. */
+export const confidentThreshold = 90;
 export const expiresInMinutes = 30;
+/** Two scored items from every family: 3 topics x 2 difficulty slots x 2 = 12. */
+export const itemsPerFamily = 2;
+export const questionSeconds = 120;
+/** Network and rendering grace for the per-question limit. */
+export const answerGraceMs = 8000;
+/** Departures from the test (tab switch, window blur, leaving full screen) before annulment. */
+export const maxDepartures = 3;
+export const strikeKinds = Object.freeze(['focus_lost', 'visibility_hidden', 'fullscreen_exit', 'second_tab']);
+export const signalKinds = Object.freeze(['copy_blocked', 'paste_blocked', 'shortcut_blocked', 'screenshot_key']);
+export const integrityKinds = Object.freeze([...strikeKinds, ...signalKinds]);
+const gradeOrder = gradeOptions.map(item => item.value);
+
 export class RequestError extends Error {
-  constructor(status, message) { super(message); this.status = status; }
+  constructor(status, message, details) { super(message); this.status = status; if (details) this.details = details; }
 }
 export const digest = value => createHash('sha256').update(value).digest('hex');
 
@@ -26,9 +41,16 @@ export function getProgram(specialization, grade) {
   return program;
 }
 
-export function programInfo(specialization, grade) {
+export function nextGrade(grade) {
+  const index = gradeOrder.indexOf(grade);
+  return index >= 0 && index < gradeOrder.length - 1 ? gradeOrder[index + 1] : null;
+}
+
+export function programInfo(specialization, grade, bank) {
   const program = getProgram(specialization, grade);
-  return { bankVersion, topics: program.topics, questionCount: program.topics.length * 2, threshold, expiresInMinutes,
+  return { bankVersion, topics: program.topics, questionCount: program.families.length * itemsPerFamily, threshold, expiresInMinutes,
+    questionSeconds, maxDepartures, confidentThreshold, delivery: 'sequential',
+    bank: bank ? bank.summary(specialization, grade) : { authored: program.families.reduce((sum, family) => sum + family.variants.length, 0), generated: null },
     examples: vacancyExamples.filter(item => item.specialization === specialization && item.grade === grade).map(({ id, title, description }) => ({ id, title, description })) };
 }
 
@@ -44,72 +66,218 @@ export function validateSurvey(survey) {
     stack: [...survey.stack], softSkills: [...survey.softSkills] };
 }
 
-export function createAttempt(surveyInput, vacancyDescription = '', recent = [], now = Date.now()) {
+/** Seed-only selection used when no dynamic bank is attached (unit tests, offline tools). */
+function seedPick(family, count, seen, relevance) {
+  const fresh = family.variants.filter(variant => !seen.has(variant.id));
+  const ordered = pool => shuffled(pool).sort((a, b) => relevance(b) - relevance(a));
+  const chosen = ordered(fresh).slice(0, count);
+  if (chosen.length < count) chosen.push(...ordered(family.variants.filter(variant => !chosen.includes(variant))).slice(0, count - chosen.length));
+  return chosen.map(variant => ({ ...variant, origin: 'seed' }));
+}
+
+function materialize(item, { topic, familyId, difficulty, pilot = false }) {
+  const options = shuffled(item.options.map((text, index) => ({ id: randomUUID(), text, correct: index === item.correct })));
+  return { id: randomUUID(), topic, text: item.text, options: options.map(({ id, text }) => ({ id, text })),
+    correctOptionId: options.find(option => option.correct).id, familyId, variantId: item.id, difficulty,
+    skills: item.skills || [], origin: item.origin || 'seed', pilot, timeLimitSec: questionSeconds };
+}
+
+/**
+ * Builds a private attempt. `recent` are previous attempts of the same owner:
+ * their items are excluded while fresh equivalents remain. With a dynamic bank,
+ * active generated items join the scored pool and one pilot item is added unscored.
+ */
+export function createAttempt(surveyInput, vacancyDescription = '', recent = [], now = Date.now(), { bank = null } = {}) {
   const survey = validateSurvey(surveyInput);
   if (typeof vacancyDescription !== 'string' || vacancyDescription.length > 4000) throw new RequestError(400, 'Описание вакансии — до 4000 символов.');
   const program = getProgram(survey.specialization, survey.desiredGrade);
   const description = vacancyDescription.trim();
   const vacancy = description ? analyzeVacancy(description, survey.specialization, survey.desiredGrade) : null;
-  const selected = program.topics.flatMap(topic => [1, 2].map(difficulty => {
+  const seen = new Set(recent.flatMap(attempt => attempt.questions.map(item => item.variantId)));
+  const relevance = variant => (variant.skills || []).filter(skill => vacancy?.matchedSkills.includes(skill)).length;
+  const selected = program.topics.flatMap(topic => [1, 2].flatMap(difficulty => {
     const families = program.families.filter(family => family.topic === topic && family.difficulty === difficulty);
     const priority = families.filter(family => vacancy?.matchedSkills.some(skill => family.skills.includes(skill)));
     const family = shuffled(priority.length ? priority : families)[0];
     if (!family) throw new Error('Incomplete assessment blueprint');
-    const seen = new Set(recent.flatMap(attempt => attempt.questions.filter(item => item.familyId === family.id).map(item => item.variantId)));
-    const fresh = family.variants.filter(variant => !seen.has(variant.id));
-    const choices = fresh.length ? fresh : family.variants;
-    const relevance = variant => (variant.skills || []).filter(skill => vacancy?.matchedSkills.includes(skill)).length;
-    const best = Math.max(...choices.map(relevance));
-    const variant = shuffled(choices.filter(variant => relevance(variant) === best))[0];
-    const options = shuffled(variant.options.map((text, index) => ({ id: randomUUID(), text, correct: index === variant.correct })));
-    return { id: randomUUID(), topic, text: variant.text, options: options.map(({ id, text }) => ({ id, text })),
-      correctOptionId: options.find(option => option.correct).id, familyId: family.id, variantId: variant.id, difficulty, skills: variant.skills || [] };
+    const picked = bank ? bank.pick(family, itemsPerFamily, { seen, relevance }) : seedPick(family, itemsPerFamily, seen, relevance);
+    if (picked.length < itemsPerFamily) throw new Error('Not enough items for ' + family.id);
+    return picked.map(item => materialize(item, { topic, familyId: family.id, difficulty }));
   }));
   // Vacancy emphasis changes order and selection inside slots, never the grade's core or weights.
   const questions = shuffled(selected).sort((a, b) => Number(Boolean(vacancy?.focusTopics.includes(b.topic))) - Number(Boolean(vacancy?.focusTopics.includes(a.topic))));
+  const pilotItem = bank?.pilot(survey.specialization, survey.desiredGrade, seen);
+  if (pilotItem) {
+    // Never first: the opening question sets the pace and must count.
+    const position = 1 + randomInt(questions.length);
+    questions.splice(position, 0, materialize(pilotItem, { topic: pilotItem.topic, familyId: pilotItem.familyId, difficulty: pilotItem.difficulty, pilot: true }));
+  }
   if (vacancy) {
-    const covered = new Set(questions.flatMap(question => question.skills));
+    const covered = new Set(questions.filter(question => !question.pilot).flatMap(question => question.skills));
     const omitted = vacancy.matchedSkills.filter(skill => !covered.has(skill));
     vacancy.matchedSkills = vacancy.matchedSkills.filter(skill => covered.has(skill));
     vacancy.unmatchedSkills = [...new Set([...vacancy.unmatchedSkills, ...omitted])];
     vacancy.recognized = vacancy.matchedSkills.length > 0;
     vacancy.summary = 'Совпадения относятся к выбранным заданиям; общий состав теста сохранён.';
   }
+  const scoredCount = questions.filter(question => !question.pilot).length;
   return {
     id: randomUUID(), bankVersion, specialization: survey.specialization, grade: survey.desiredGrade, surveyId: survey.id, survey,
     createdAt: new Date(now).toISOString(), expiresAt: new Date(now + expiresInMinutes * 60000).toISOString(),
-    questions, vacancy, vacancyDescription: description,
-    blueprint: { topicCounts: Object.fromEntries(program.topics.map(topic => [topic, 2])), difficultyCounts: { '1': 3, '2': 3 }, difficultyBudget: 9 },
+    questions, vacancy, vacancyDescription: description, delivery: 'sequential', questionSeconds,
+    blueprint: { topicCounts: Object.fromEntries(program.topics.map(topic => [topic, 2 * itemsPerFamily])),
+      difficultyCounts: { '1': scoredCount / 2, '2': scoredCount / 2 }, difficultyBudget: 1.5 * scoredCount },
   };
 }
 
-export function publicAttempt(attempt) {
-  const { id, bankVersion, specialization, grade, surveyId, createdAt, expiresAt, blueprint, vacancy } = attempt;
-  return { id, bankVersion, specialization, grade, surveyId, createdAt, expiresAt, blueprint, vacancy,
-    questions: attempt.questions.map(({ id, topic, text, options }) => ({ id, topic, text, options })) };
+export function emptyProgress(attempt) {
+  return { answers: {}, revealedAt: { [attempt.questions[0].id]: attempt.createdAt } };
 }
 
-export function evaluate(attempt, answers, now = Date.now()) {
+function answeredCount(progress) {
+  return Object.keys(progress?.answers || {}).length;
+}
+
+/**
+ * Candidate-visible attempt. Sequential delivery reveals answered questions and
+ * the current one only: the full test cannot be captured at once.
+ */
+export function publicAttempt(attempt, progress = null) {
+  const { id, bankVersion, specialization, grade, surveyId, createdAt, expiresAt, blueprint, vacancy } = attempt;
+  const sequential = attempt.delivery === 'sequential';
+  const state = sequential ? progress || emptyProgress(attempt) : null;
+  const position = sequential ? Math.min(answeredCount(state), attempt.questions.length) : 0;
+  const visible = sequential ? attempt.questions.slice(0, Math.min(position + 1, attempt.questions.length)) : attempt.questions;
+  const current = sequential ? attempt.questions[position] : null;
+  return { id, bankVersion, specialization, grade, surveyId, createdAt, expiresAt, blueprint, vacancy,
+    delivery: sequential ? 'sequential' : 'all', questionCount: attempt.questions.length,
+    questions: visible.map(({ id, topic, text, options }) => ({ id, topic, text, options })),
+    ...(sequential ? {
+      position, questionSeconds: attempt.questionSeconds || questionSeconds,
+      answeredIds: Object.keys(state.answers),
+      currentDeadline: current && state.revealedAt[current.id]
+        ? new Date(Date.parse(state.revealedAt[current.id]) + (current.timeLimitSec || questionSeconds) * 1000).toISOString() : null,
+    } : {}) };
+}
+
+/**
+ * Locks one answer of a sequential attempt and reveals the next question.
+ * An answer after the per-question limit is stored as late and scores zero.
+ */
+export function recordAnswer(attempt, progressInput, input, now = Date.now()) {
   if (now >= Date.parse(attempt.expiresAt)) throw new RequestError(410, 'Время теста истекло. Начните новую попытку.');
-  if (!Array.isArray(answers) || answers.length !== attempt.questions.length) throw new RequestError(400, 'Ответьте на все вопросы.');
-  const selected = new Map();
-  for (const answer of answers) {
-    if (!answer || Object.keys(answer).some(key => !['questionId', 'optionId'].includes(key))) throw new RequestError(400, 'Некорректный ответ.');
-    const question = attempt.questions.find(item => item.id === answer.questionId);
-    if (!question || selected.has(answer.questionId) || !question.options.some(option => option.id === answer.optionId)) throw new RequestError(400, 'Ответ не относится к этой попытке.');
-    selected.set(answer.questionId, answer.optionId);
+  if (!input || typeof input !== 'object' || Object.keys(input).some(key => !['token', 'questionId', 'optionId'].includes(key))) {
+    throw new RequestError(400, 'Некорректный ответ.');
   }
-  const topics = [...new Set(attempt.questions.map(item => item.topic))];
+  const progress = structuredClone(progressInput || emptyProgress(attempt));
+  const position = answeredCount(progress);
+  const question = attempt.questions[position];
+  if (!question) throw new RequestError(409, 'Все ответы уже получены.');
+  if (input.questionId !== question.id) {
+    if (progress.answers[input.questionId]) {
+      if (progress.answers[input.questionId].optionId === (input.optionId ?? null)) return { progress, changed: false };
+      throw new RequestError(409, 'Ответ уже зафиксирован. Вернуться к вопросу нельзя.');
+    }
+    throw new RequestError(409, 'Сначала ответьте на текущий вопрос.');
+  }
+  if (input.optionId !== null && input.optionId !== undefined && !question.options.some(option => option.id === input.optionId)) {
+    throw new RequestError(400, 'Ответ не относится к этой попытке.');
+  }
+  const revealed = Date.parse(progress.revealedAt[question.id] || attempt.createdAt);
+  const ms = Math.max(0, now - revealed);
+  const late = ms > (question.timeLimitSec || questionSeconds) * 1000 + answerGraceMs;
+  progress.answers[question.id] = { optionId: input.optionId ?? null, answeredAt: new Date(now).toISOString(), ms, late };
+  const next = attempt.questions[position + 1];
+  if (next) progress.revealedAt[next.id] = new Date(now).toISOString();
+  return { progress, changed: true, complete: !next };
+}
+
+function scoreAttempt(attempt, selection, now, integrity) {
+  const scored = attempt.questions.filter(question => !question.pilot);
+  const isCorrect = question => {
+    const answer = selection.get(question.id);
+    return Boolean(answer && !answer.late && answer.optionId === question.correctOptionId);
+  };
+  const topics = [...new Set(scored.map(item => item.topic))];
   const competencies = topics.map(topic => {
-    const questions = attempt.questions.filter(item => item.topic === topic);
-    const correct = questions.filter(item => selected.get(item.id) === item.correctOptionId).length;
+    const questions = scored.filter(item => item.topic === topic);
+    const correct = questions.filter(isCorrect).length;
     return { topic, score: Math.round(correct / questions.length * 100), correct, total: questions.length };
   });
-  const score = Math.round(competencies.reduce((sum, item) => sum + item.correct, 0) / attempt.questions.length * 100);
-  const normalized = [...selected].sort(([a], [b]) => a.localeCompare(b));
-  return { answerDigest: digest(JSON.stringify(normalized)), result: {
+  const correct = scored.filter(isCorrect).length;
+  const score = Math.round(correct / scored.length * 100);
+  const timeouts = scored.filter(question => { const answer = selection.get(question.id); return !answer || answer.late || answer.optionId === null; }).length;
+  const passed = score >= threshold;
+  const higher = nextGrade(attempt.grade);
+  const normalized = [...selection].map(([questionId, answer]) => [questionId, answer.optionId]).sort(([a], [b]) => a.localeCompare(b));
+  const responses = attempt.questions.map(question => ({ itemId: question.variantId, pilot: Boolean(question.pilot),
+    correct: isCorrect(question), ms: selection.get(question.id)?.ms || 0 }));
+  return { answerDigest: digest(JSON.stringify(normalized)), responses, result: {
     id: attempt.id, date: new Date(now).toISOString(), specialization: attempt.specialization, grade: attempt.grade,
-    surveyId: attempt.surveyId, score, passed: score >= threshold, bankVersion: attempt.bankVersion, competencies,
-    vacancySkills: attempt.vacancy?.matchedSkills || [],
+    surveyId: attempt.surveyId, score, passed, bankVersion: attempt.bankVersion, competencies,
+    vacancySkills: attempt.vacancy?.matchedSkills || [], questionCount: scored.length, timeouts,
+    ...(passed && score >= confidentThreshold && higher ? { nextGradeAvailable: higher } : {}),
+    ...(integrity ? { integrity } : {}),
   } };
+}
+
+/**
+ * Grades an attempt. Sequential attempts use their locked answers; a full answer
+ * list is still accepted for an attempt whose answers were never locked.
+ */
+export function evaluate(attempt, answers, now = Date.now(), { progress = null, integrity = null } = {}) {
+  if (now >= Date.parse(attempt.expiresAt)) throw new RequestError(410, 'Время теста истекло. Начните новую попытку.');
+  const locked = progress && answeredCount(progress) > 0;
+  const selection = new Map();
+  if (locked) {
+    if (answeredCount(progress) !== attempt.questions.length) throw new RequestError(400, 'Ответьте на все вопросы.');
+    for (const question of attempt.questions) selection.set(question.id, progress.answers[question.id]);
+    if (answers !== undefined && answers !== null) {
+      if (!Array.isArray(answers)) throw new RequestError(400, 'Некорректный ответ.');
+      for (const answer of answers) {
+        if (!answer || Object.keys(answer).some(key => !['questionId', 'optionId'].includes(key))) throw new RequestError(400, 'Некорректный ответ.');
+        const lockedAnswer = progress.answers[answer.questionId];
+        if (!lockedAnswer) throw new RequestError(400, 'Ответ не относится к этой попытке.');
+        if ((answer.optionId ?? null) !== lockedAnswer.optionId) throw new RequestError(409, 'Ответ уже зафиксирован. Вернуться к вопросу нельзя.');
+      }
+    }
+  } else {
+    if (!Array.isArray(answers) || answers.length !== attempt.questions.length) throw new RequestError(400, 'Ответьте на все вопросы.');
+    for (const answer of answers) {
+      if (!answer || Object.keys(answer).some(key => !['questionId', 'optionId'].includes(key))) throw new RequestError(400, 'Некорректный ответ.');
+      const question = attempt.questions.find(item => item.id === answer.questionId);
+      if (!question || selection.has(answer.questionId) || !question.options.some(option => option.id === answer.optionId)) throw new RequestError(400, 'Ответ не относится к этой попытке.');
+      selection.set(answer.questionId, { optionId: answer.optionId, late: false, ms: 0 });
+    }
+  }
+  return scoreAttempt(attempt, selection, now, integrity);
+}
+
+/** Annulment after repeated departures: a recorded failure that never confirms a grade. */
+export function annulledResult(attempt, now, integrity) {
+  const scored = attempt.questions.filter(question => !question.pilot);
+  return { id: attempt.id, date: new Date(now).toISOString(), specialization: attempt.specialization, grade: attempt.grade,
+    surveyId: attempt.surveyId, score: 0, passed: false, annulled: true, bankVersion: attempt.bankVersion,
+    competencies: [], vacancySkills: [], questionCount: scored.length, timeouts: 0, integrity };
+}
+
+export const retryDays = (env = process.env) => {
+  const value = Number(env.ASSESSMENT_RETRY_DAYS ?? 7);
+  return Number.isFinite(value) && value >= 0 && value <= 90 ? value : 7;
+};
+
+/**
+ * Retake policy (docs/assessment_policy.md): a failure or annulment at grade G
+ * locks G and higher grades of the same specialization for `days`; lower grades
+ * stay open immediately, so failing never burns the way down.
+ */
+export function retakeLock(completed, specialization, grade, now, days) {
+  if (!days) return null;
+  const rank = gradeOrder.indexOf(grade);
+  const blocking = completed.filter(row => row.result && !row.result.passed && row.result.specialization === specialization
+    && gradeOrder.indexOf(row.result.grade) <= rank && now < Date.parse(row.result.date) + days * 86400000);
+  if (!blocking.length) return null;
+  const until = Math.max(...blocking.map(row => Date.parse(row.result.date) + days * 86400000));
+  const lowest = Math.min(...blocking.map(row => gradeOrder.indexOf(row.result.grade)));
+  return { until: new Date(until).toISOString(), lowerGrades: gradeOrder.slice(0, lowest) };
 }
