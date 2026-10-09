@@ -11,9 +11,11 @@ import { directoryCandidates } from '../../server/directory-seed.mjs';
 import { normalizeSearchFilters } from '../../shared/search.ts';
 import { createInitialState } from '../src/model.ts';
 import { startIsolatedService } from './helpers/isolated-service.mjs';
+import { answerExam, startExam } from './helpers/exam.mjs';
 
 const require = createRequire(import.meta.url);
-const isolated = await startIsolatedService();
+// Immediate retake of the same grade is part of this scenario, so the retry wait is disabled here.
+const isolated = await startIsolatedService({ authEnv: { ASSESSMENT_RETRY_DAYS: '0' } });
 const base = isolated.base;
 const output = resolve('test-results');
 const storageKey = 'predel:platform:v2';
@@ -127,18 +129,7 @@ async function audit(target) {
 const answerKey = grade => new Map(programs.Frontend[grade].families.flatMap(family => family.variants.map(variant => [variant.text, variant.options[variant.correct]])));
 const middleAnswers = answerKey('Middle');
 async function completeExam(answerSet, correct) {
-  for (let index = 0; index < 6; index++) {
-    await page.locator('.exam-progress[aria-valuenow="' + (index + 1) + '"]').waitFor();
-    const choices = page.locator('.answer-option');
-    const texts = await choices.locator('span').allTextContents();
-    const expected = answerSet.get(await page.locator('.question-text').textContent());
-    assert.ok(expected, 'Question must belong to the server fixture bank');
-    const chosen = texts.findIndex(text => (text.trim() === expected) === correct);
-    assert.ok(chosen >= 0, 'Expected an answer option for this program');
-    await choices.nth(chosen).click();
-    await page.getByRole('button', { name: index === 5 ? 'Завершить тест' : 'Далее', exact: true }).click();
-  }
-  await page.locator('.assessment-result').waitFor();
+  await answerExam(page, answerSet, { correct });
 }
 
 async function state(target = page) {
@@ -243,7 +234,7 @@ try {
   page = other.page;
   await fillSurvey(page, otherName, 'other.' + suffix + '@example.invalid');
   await persist(() => page.getByRole('button', { name: 'К тесту', exact: true }).click());
-  await page.getByRole('button', { name: 'Начать тест', exact: true }).click();
+  await startExam(page);
   await completeExam(middleAnswers, true);
   await saved();
   await page.getByRole('button', { name: 'К профилю', exact: true }).click();
@@ -394,8 +385,8 @@ try {
   current = await state();
   assert.deepEqual(current.profile.softSkills, []);
   assert.equal(current.profile.surveyCompletedAt, current.surveys[0].date, 'Empty soft skills preserve the completed questionnaire after reload');
-  await page.getByRole('button', { name: 'Начать тест', exact: true }).click();
-  assert.equal(await page.getByRole('button', { name: 'Далее', exact: true }).isDisabled(), true);
+  await startExam(page);
+  assert.equal(await page.getByRole('button', { name: 'Ответить', exact: true }).isDisabled(), true);
   await completeExam(middleAnswers, false);
   await saved();
   await page.getByRole('heading', { name: 'Грейд не подтверждён', exact: true }).waitFor();
@@ -406,7 +397,7 @@ try {
   await role('Работодатель');
   await directoryResults(page, baseline.total);
   await role('Кандидат');
-  await page.getByRole('button', { name: 'Начать тест', exact: true }).click();
+  await startExam(page);
   await completeExam(middleAnswers, true);
   await saved();
   await page.getByRole('heading', { name: 'Грейд подтверждён', exact: true }).waitFor();
@@ -530,8 +521,8 @@ try {
   await page.getByLabel('Показывать профиль работодателям').check();
   await persist(() => page.getByRole('button', { name: 'Сохранить изменения', exact: true }).click());
   await tab('Тестирование');
-  await page.getByRole('button', { name: 'Начать тест', exact: true }).click();
-  assert.equal(await page.getByRole('button', { name: 'Далее', exact: true }).isDisabled(), true);
+  await startExam(page);
+  assert.equal(await page.getByRole('button', { name: 'Ответить', exact: true }).isDisabled(), true);
   await completeExam(middleAnswers, false);
   await saved();
   await page.getByRole('heading', { name: 'Грейд не подтверждён', exact: true }).waitFor();

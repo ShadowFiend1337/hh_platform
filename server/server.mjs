@@ -190,7 +190,7 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
         }
         if (request.method === 'GET' && url.pathname === '/api/assessment/program') {
           allowRole(identity, 'candidate', 'Тестирование доступно соискателю.');
-          return send(response, 200, programInfo(url.searchParams.get('specialization'), url.searchParams.get('grade'), bank));
+          return send(response, 200, programInfo(url.searchParams.get('specialization'), url.searchParams.get('grade'), bank, { retryDays: retryDays(authEnv) }));
         }
         if (url.pathname === '/api/platform/state') {
           const identityScope = identity.account ? 'auth:' + identity.account.id : 'anonymous:' + session;

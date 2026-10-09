@@ -7,6 +7,12 @@ export interface AssessmentProgram {
   questionCount: number;
   threshold: number;
   expiresInMinutes: number;
+  questionSeconds: number;
+  maxDepartures: number;
+  confidentThreshold: number;
+  retryDays: number;
+  delivery: 'sequential';
+  bank: { authored: number; generated: { pilot: number; active: number; retired: number; rejected: number } | null };
   examples: { id: string; title: string; description: string }[];
 }
 
@@ -42,17 +48,36 @@ export interface AssessmentAttempt {
   status?: 'active' | 'completed';
   result?: TestResult;
   integrity?: AssessmentIntegrity;
+  /** Sequential delivery: only answered questions and the current one are present. */
+  delivery?: 'sequential' | 'all';
+  questionCount?: number;
+  position?: number;
+  questionSeconds?: number;
+  answeredIds?: string[];
+  currentDeadline?: string | null;
+  complete?: boolean;
 }
 
 export interface AssessmentIntegrity {
   departures: number;
   blockedCopies: number;
+  blockedActions?: number;
+  fullscreenExits?: number;
   lastEventAt: string | null;
 }
 
+export type StrikeKind = 'focus_lost' | 'visibility_hidden' | 'fullscreen_exit' | 'second_tab';
+export type SignalKind = 'copy_blocked' | 'paste_blocked' | 'shortcut_blocked' | 'screenshot_key';
+
 export interface AssessmentIntegrityEvent {
   id: string;
-  kind: 'focus_lost' | 'visibility_hidden' | 'copy_blocked';
+  kind: StrikeKind | SignalKind;
+}
+
+export interface IntegrityResponse extends AssessmentIntegrity {
+  remaining: number;
+  annulled: boolean;
+  result?: TestResult;
 }
 
 export interface SavedAssessment {
@@ -66,10 +91,12 @@ export interface SavedAssessment {
 
 export class AssessmentError extends Error {
   status: number;
-  constructor(message: string, status: number) {
+  details: { retryAt?: string; lowerGrades?: string[] };
+  constructor(message: string, status: number, details: { retryAt?: string; lowerGrades?: string[] } = {}) {
     super(message);
     this.name = 'AssessmentError';
     this.status = status;
+    this.details = details;
   }
 }
 
@@ -114,7 +141,11 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   if (!response.ok) {
     const message = value && typeof value === 'object' && 'error' in value && typeof value.error === 'string'
       ? value.error : 'Не удалось выполнить запрос. Попробуйте ещё раз.';
-    throw new AssessmentError(message, response.status);
+    const details = value && typeof value === 'object' ? {
+      retryAt: 'retryAt' in value && typeof value.retryAt === 'string' ? value.retryAt : undefined,
+      lowerGrades: 'lowerGrades' in value && Array.isArray(value.lowerGrades) ? value.lowerGrades.filter((item): item is string => typeof item === 'string') : undefined,
+    } : {};
+    throw new AssessmentError(message, response.status, details);
   }
   return value as T;
 }
@@ -138,15 +169,22 @@ export function resumeAssessment(attempt: SavedAssessment, signal?: AbortSignal)
   });
 }
 
-export function submitAssessment(attempt: AssessmentAttempt, answers: Record<string, string>, signal?: AbortSignal) {
+/** Locks the answer to the current question; `null` records a skipped or timed-out question. */
+export function answerAssessment(attempt: AssessmentAttempt, questionId: string, optionId: string | null, signal?: AbortSignal) {
+  return request<AssessmentAttempt>('/attempts/' + encodeURIComponent(attempt.id) + '/answer', {
+    method: 'POST', signal, body: JSON.stringify({ token: attempt.token, questionId, optionId }),
+  });
+}
+
+/** Sequential attempts are graded from the answers already locked on the server. */
+export function submitAssessment(attempt: AssessmentAttempt, signal?: AbortSignal) {
   return request<TestResult>('/attempts/' + encodeURIComponent(attempt.id) + '/submit', {
-    method: 'POST', signal,
-    body: JSON.stringify({ token: attempt.token, answers: attempt.questions.map(question => ({ questionId: question.id, optionId: answers[question.id] })) }),
+    method: 'POST', signal, body: JSON.stringify({ token: attempt.token }),
   });
 }
 
 export function recordAssessmentIntegrity(attempt: AssessmentAttempt, event: AssessmentIntegrityEvent, signal?: AbortSignal) {
-  return request<AssessmentIntegrity>('/attempts/' + encodeURIComponent(attempt.id) + '/integrity', {
+  return request<IntegrityResponse>('/attempts/' + encodeURIComponent(attempt.id) + '/integrity', {
     method: 'POST', signal, keepalive: true,
     body: JSON.stringify({ token: attempt.token, event: { id: event.id, kind: event.kind } }),
   });

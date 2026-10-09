@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { chromium } from 'playwright';
-import { programs } from '../../server/bank.mjs';
 import { createInitialState } from '../src/model.ts';
 import { startIsolatedService } from './helpers/isolated-service.mjs';
+import { answerExam, answerKey, startExam } from './helpers/exam.mjs';
 
 // Real application, cookies and private SQLite stores; only the mail transport
 // is replaced. No SMTP, development mailbox or persistent account is touched.
@@ -183,19 +183,8 @@ try {
   await worker.page.getByLabel('Показывать профиль работодателям', { exact: true }).check();
   await worker.page.getByRole('button', { name: 'К тесту', exact: true }).click();
   await worker.page.getByRole('button', { name: 'Начать тест', exact: true }).waitFor();
-  const attemptResponse = worker.page.waitForResponse(response => response.url().endsWith('/api/assessment/attempts') && response.request().method() === 'POST');
-  await worker.page.getByRole('button', { name: 'Начать тест', exact: true }).click();
-  const attempt = await (await attemptResponse).json();
-  const keys = new Map(programs.Frontend.Junior.families.flatMap(family => family.variants.map(variant => [variant.text, variant.options[variant.correct]])));
-  for (let index = 0; index < attempt.questions.length; index++) {
-    await worker.page.locator(`.exam-progress[aria-valuenow="${index + 1}"]`).waitFor();
-    const expected = keys.get(await worker.page.locator('.question-text').textContent());
-    const choices = worker.page.locator('.answer-option');
-    const answer = (await choices.locator('span').allTextContents()).findIndex(text => text.trim() === expected);
-    assert.ok(answer >= 0);
-    await choices.nth(answer).click();
-    await worker.page.getByRole('button', { name: index === attempt.questions.length - 1 ? 'Завершить тест' : 'Далее', exact: true }).click();
-  }
+  await startExam(worker.page);
+  await answerExam(worker.page, answerKey('Frontend', 'Junior'));
   await worker.page.getByRole('button', { name: 'К профилю', exact: true }).click();
   await worker.page.getByRole('heading', { name: 'Мой профиль', exact: true }).waitFor();
   await saved(worker.page);

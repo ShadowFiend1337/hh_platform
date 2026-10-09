@@ -5,7 +5,7 @@ import { createAssessmentServer } from '../../../server/server.mjs';
 /** A real API and real frontend, with a disposable database and an in-memory test mailbox. */
 export async function startIsolatedService(options = {}) {
   const codes = new Map();
-  const service = createAssessmentServer({ ...options, dbPath: ':memory:', authEnv: {},
+  const service = createAssessmentServer({ ...options, dbPath: ':memory:', authEnv: options.authEnv || {},
     authMailer: async ({ email, code }) => { codes.set(email, code); return { delivery: 'development' }; } });
   await new Promise(resolve => service.server.listen(0, '127.0.0.1', resolve));
   const api = `http://127.0.0.1:${service.server.address().port}`;

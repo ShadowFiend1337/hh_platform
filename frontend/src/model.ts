@@ -24,6 +24,12 @@ export interface TestResult {
   bankVersion?: string;
   competencies?: { topic: string; score: number; correct: number; total: number }[];
   vacancySkills?: string[];
+  questionCount?: number;
+  timeouts?: number;
+  /** Set for a confident pass: the next grade's test is open without the 90-day wait. */
+  nextGradeAvailable?: Grade;
+  annulled?: boolean;
+  integrity?: { departures: number; blockedCopies: number; blockedActions?: number; fullscreenExits?: number };
 }
 
 export interface CandidateSurvey {
@@ -233,12 +239,30 @@ export function currentSurvey(state: PlatformState): CandidateSurvey | undefined
     && survey.experience === profile.experience && same(survey.stack, profile.stack) && same(survey.softSkills, profile.softSkills));
 }
 
+const gradeOrder: Grade[] = ['Intern', 'Junior', 'Middle', 'Senior', 'Lead'];
+export const confidentScore = 90;
+export const retryDays = 7;
+
 export function categoryChangeUnlock(profile: Candidate, specialization: Specialization, grade: Grade): number {
   const category = profile.confirmed;
   if (!category || (category.specialization === specialization && category.grade === grade)) return 0;
+  // A confident result opens the next grade of the same specialization at once.
+  if (category.specialization === specialization && category.score >= confidentScore
+    && gradeOrder.indexOf(grade) === gradeOrder.indexOf(category.grade) + 1) return 0;
   const date = new Date(profile.gradeChangedAt || category.date);
   date.setDate(date.getDate() + 90);
   return date.getTime();
+}
+
+/** Mirrors the server retake policy: a failure locks that grade and higher ones of the specialization. */
+export function retakeUnlock(history: TestResult[], specialization: Specialization, grade: Grade, now = Date.now(), days = retryDays): { until: number; lowerGrades: Grade[] } | null {
+  if (!days) return null;
+  const rank = gradeOrder.indexOf(grade);
+  const blocking = history.filter(result => !result.passed && result.specialization === specialization
+    && gradeOrder.indexOf(result.grade) <= rank && now < Date.parse(result.date) + days * 86400000);
+  if (!blocking.length) return null;
+  const lowest = Math.min(...blocking.map(result => gradeOrder.indexOf(result.grade)));
+  return { until: Math.max(...blocking.map(result => Date.parse(result.date) + days * 86400000)), lowerGrades: gradeOrder.slice(0, lowest) };
 }
 
 export function saveState(state: PlatformState): boolean {

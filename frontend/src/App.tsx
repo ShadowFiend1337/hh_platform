@@ -353,7 +353,7 @@ function Workspace({ authAccount: initialAccount }: { authAccount: AuthAccount |
       {page === 'profile' && <Profile state={state} update={setState} notify={setToast} accountId={authAccount?.id} onTest={() => navigate('candidate', 'assessment')} onPreview={() => onProfile(state.profile)} onFspChange={persistence.refresh} syncStatus={persistence.status} />}
       {page === 'onboarding' && <Onboarding state={state} update={setState} onComplete={() => navigate('candidate', 'assessment')}
         accountPrefill={authAccount?.role === 'candidate' ? { name: authAccount.name, email: authAccount.email } : undefined} />}
-      {page === 'assessment' && <Assessment state={state} update={setState} notify={setToast} onActiveChange={onAssessmentActive} onProfile={() => navigate('candidate', 'profile')} onSurvey={() => navigate('candidate', 'onboarding')} />}
+      {page === 'assessment' && <Assessment state={state} update={setState} notify={setToast} onActiveChange={onAssessmentActive} onProfile={() => navigate('candidate', 'profile')} onSurvey={() => navigate('candidate', 'onboarding')} watermarkLabel={authAccount?.login} />}
       </>}
     </main>
     <footer className="site-footer"><div className="footer-inner"><span className="footer-brand">predel</span><div className="partner-logos">

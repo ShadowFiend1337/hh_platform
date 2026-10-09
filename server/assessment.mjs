@@ -46,10 +46,10 @@ export function nextGrade(grade) {
   return index >= 0 && index < gradeOrder.length - 1 ? gradeOrder[index + 1] : null;
 }
 
-export function programInfo(specialization, grade, bank) {
+export function programInfo(specialization, grade, bank, { retryDays: retry = 7 } = {}) {
   const program = getProgram(specialization, grade);
   return { bankVersion, topics: program.topics, questionCount: program.families.length * itemsPerFamily, threshold, expiresInMinutes,
-    questionSeconds, maxDepartures, confidentThreshold, delivery: 'sequential',
+    questionSeconds, maxDepartures, confidentThreshold, retryDays: retry, delivery: 'sequential',
     bank: bank ? bank.summary(specialization, grade) : { authored: program.families.reduce((sum, family) => sum + family.variants.length, 0), generated: null },
     examples: vacancyExamples.filter(item => item.specialization === specialization && item.grade === grade).map(({ id, title, description }) => ({ id, title, description })) };
 }
