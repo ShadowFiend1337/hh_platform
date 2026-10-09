@@ -1,9 +1,11 @@
 // Private authoring helper. Never decides a grade or changes the live examination.
 const endpoint = 'https://openrouter.ai/api/v1/chat/completions';
-export const defaultOpenAssessmentModel = 'anthropic/claude-haiku-5.5';
+// Open-weight models only (Apache-2.0 Qwen, MIT DeepSeek); the cheapest instruct
+// model is the default, the others are explicit alternatives.
+export const defaultOpenAssessmentModel = 'qwen/qwen3-30b-a3b-instruct-2507';
 export const qwenOpenAssessmentModel = 'qwen/qwen3.8-27b';
-export const openAssessmentProviderVersion = '2026.10.08-openrouter-preview-v2';
-const haikuModelPattern = /^anthropic\/claude-haiku-\d+(?:\.\d+)?(?:-\d{8})?$/u;
+export const openAssessmentModels = Object.freeze([defaultOpenAssessmentModel, 'qwen/qwen3-32b', qwenOpenAssessmentModel, 'deepseek/deepseek-v3.2']);
+export const openAssessmentProviderVersion = '2026.10.09-openrouter-open-models-v3';
 const maxResponseBytes = 200_000;
 const contextFields = new Set(['domain', 'entityNames', 'projectContext', 'stack', 'dataLabels', 'companyContext']);
 const retryStatuses = new Set([429, 502, 503, 504]);
@@ -207,7 +209,7 @@ export function createOpenAssessmentProvider({
 } = {}) {
   const key = typeof env.OPENROUTER_API_KEY === 'string' ? env.OPENROUTER_API_KEY.trim() : '';
   const model = env.OPENROUTER_ASSESSMENT_MODEL === undefined ? defaultOpenAssessmentModel : env.OPENROUTER_ASSESSMENT_MODEL;
-  if (typeof model !== 'string' || !(haikuModelPattern.test(model) || model === qwenOpenAssessmentModel)
+  if (typeof model !== 'string' || !openAssessmentModels.includes(model)
     || key.length > 512 || /[\r\n]/u.test(key)
     || typeof fetchImpl !== 'function' || !Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 60_000
     || !Number.isInteger(maxRetries) || maxRetries < 0 || maxRetries > 2
@@ -267,11 +269,8 @@ export function createOpenAssessmentProvider({
           fail('unavailable', { status, retryable });
         }
         const returnedModel = envelope?.model;
-        // Haiku may resolve its undated alias to a dated release. Qwen must match
-        // the exact reviewed ID; another size, family or suffix is not a fallback.
-        const sameModel = returnedModel === model || (haikuModelPattern.test(model) && !/-\d{8}$/u.test(model)
-          && typeof returnedModel === 'string' && returnedModel.startsWith(model + '-')
-          && /^\d{8}$/u.test(returnedModel.slice(model.length + 1)));
+        // The exact reviewed ID only; another size, family or suffix is not a fallback.
+        const sameModel = returnedModel === model;
         const choices = envelope?.choices;
         if (!sameModel || !Array.isArray(choices) || choices.length !== 1 || choices[0].finish_reason !== 'stop'
           || choices[0].message?.role !== 'assistant' || choices[0].message?.refusal

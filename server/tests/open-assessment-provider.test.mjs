@@ -38,7 +38,7 @@ test('Configuration and construction do not call OpenRouter or disclose credenti
   let calls = 0;
   const adapter = createOpenAssessmentProvider({ env: {}, fetchImpl: async () => { calls++; } });
   assert.equal(adapter.configuration().configured, false);
-  assert.equal(adapter.configuration().model, 'anthropic/claude-haiku-5.5');
+  assert.equal(adapter.configuration().model, 'qwen/qwen3-30b-a3b-instruct-2507');
   assert.equal(adapter.configuration().approvedForCertification, false);
   await assert.rejects(adapter.evaluateDraft({ question, answer }), expectCode('configuration'));
   assert.equal(calls, 0);
@@ -49,16 +49,16 @@ test('Configuration and construction do not call OpenRouter or disclose credenti
   assert.ok(Object.isFrozen(configured));
 });
 
-test('Only an explicitly selected Haiku ID or the reviewed Qwen ID is accepted; defaults stay unchanged', () => {
-  for (const model of ['', 'openrouter/auto', 'anthropic/claude-sonnet-5.5', 'anthropic/claude-haiku-5.5:free',
+test('Only reviewed open-weight Qwen or DeepSeek IDs are accepted; defaults stay unchanged', () => {
+  for (const model of ['', 'openrouter/auto', 'openai/gpt-oss-120b', 'qwen/qwen3-30b-a3b-instruct-2507:free',
     'qwen/qwen3.8-max', 'qwen/qwen3.8-27b:free', 'qwen/qwen3.8-27b-20261008', 'qwen/custom', 'qwen/qwen3.8-235b', 'bad-secret-model']) {
     assert.throws(() => createOpenAssessmentProvider({ env: { ...env, OPENROUTER_ASSESSMENT_MODEL: model } }), error =>
-      expectCode('configuration')(error) && !error.message.includes('Haiku'));
+      expectCode('configuration')(error) && !error.message.includes(model || 'model'));
   }
-  assert.equal(createOpenAssessmentProvider({ env: { ...env, OPENROUTER_ASSESSMENT_MODEL: 'anthropic/claude-haiku-4.5' } }).configuration().model,
-    'anthropic/claude-haiku-4.5');
-  assert.equal(createOpenAssessmentProvider({ env: { ...env, OPENROUTER_ASSESSMENT_MODEL: 'anthropic/claude-haiku-5.5-20261007' } })
-    .configuration().model, 'anthropic/claude-haiku-5.5-20261007');
+  assert.equal(createOpenAssessmentProvider({ env: { ...env, OPENROUTER_ASSESSMENT_MODEL: 'deepseek/deepseek-v3.2' } }).configuration().model,
+    'deepseek/deepseek-v3.2');
+  assert.equal(createOpenAssessmentProvider({ env: { ...env, OPENROUTER_ASSESSMENT_MODEL: 'qwen/qwen3-32b' } })
+    .configuration().model, 'qwen/qwen3-32b');
   let calls = 0;
   const qwen = qwenProvider(async () => { calls++; });
   assert.equal(qwen.configuration().model, 'qwen/qwen3.8-27b');
@@ -264,8 +264,8 @@ test('Malformed, refused, incomplete or different-model responses never become a
     () => completion('{bad json'),
     () => completion(scored(), { finish: 'length' }),
     () => completion(scored(), { finish: 'error' }),
-    () => completion(scored(), { model: 'anthropic/claude-sonnet-5.5' }),
-    () => completion(scored(), { model: 'anthropic/claude-haiku-4.5' }),
+    () => completion(scored(), { model: 'qwen/qwen3-max' }),
+    () => completion(scored(), { model: 'deepseek/deepseek-chat' }),
     () => completion(scored(), { role: 'user' }),
     () => new Response('{not json'),
     () => new Response(JSON.stringify({ model: defaultOpenAssessmentModel, choices: [] })),
@@ -277,8 +277,8 @@ test('Malformed, refused, incomplete or different-model responses never become a
     await assert.rejects(provider(async () => { calls++; return reply(); }).evaluateDraft({ question, answer }), expectCode('invalid_response'));
     assert.equal(calls, 1);
   }
-  const dated = await provider(async () => completion(scored(), { model: defaultOpenAssessmentModel + '-20261007' })).evaluateDraft({ question, answer });
-  assert.equal(dated.model, defaultOpenAssessmentModel);
+  await assert.rejects(provider(async () => completion(scored(), { model: defaultOpenAssessmentModel + '-20261007' }))
+    .evaluateDraft({ question, answer }), expectCode('invalid_response'));
 });
 
 test('Authentication, payment and request errors are not retried; raw provider details are discarded', async () => {
@@ -298,7 +298,7 @@ test('Authentication, payment and request errors are not retried; raw provider d
   }
 });
 
-test('429 has a bounded retry on the same Haiku model and respects short Retry-After', async () => {
+test('429 has a bounded retry on the same selected model and respects short Retry-After', async () => {
   const models = [];
   const adapter = provider(async (_url, options) => {
     models.push(JSON.parse(options.body).model);
