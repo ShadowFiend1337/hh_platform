@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { MatchBadge, MatchBreakdown } from '../components/MatchBadge';
 import { ArrowUpRight, BadgeCheck, Bookmark, Check, ChevronDown, Heart, Info, MapPin, Medal, Pencil, Plus, Search, SlidersHorizontal, X } from 'lucide-react';
 import { CandidateDeck } from '../components/CandidateDeck';
 import { defaultStackOptions, gradeLabels, gradeOptions, initials, isSpecialization, specializationLabels, specializationNames, specializationOptions, specializationStacks, type Candidate, type HiringNeed, type PlatformState } from '../model';
@@ -319,7 +320,7 @@ export function Employer({ state, update, onProfile, onInvite, notify, directory
           loading={loading} loadingMore={loadingMore} failed={Boolean(error || pageError || unavailable)}
           hasMore={Boolean(response && !exhausted && response.items.length < response.total)} onLoadMore={() => void loadMore()}
           onDecision={decide} onReset={resetPassed} onProfile={onProfile} onInvite={onInvite} pendingIds={pendingIds} />}
-        {mode === 'list' && response?.items.map(({ person, reason }, index) => {
+        {mode === 'list' && response?.items.map(({ person, reason, match }, index) => {
           const pending = state.invitations.some(invitation => invitation.companyId === state.company.id && invitation.candidateId === person.id && (invitation.status === 'sent' || invitation.status === 'viewed'));
           const category = person.confirmed;
           const salaryFrom = typeof person.salaryFrom === 'number' && Number.isFinite(person.salaryFrom) ? person.salaryFrom : null;
@@ -328,13 +329,13 @@ export function Employer({ state, update, onProfile, onInvite, notify, directory
             <button className={'avatar avatar-tone-' + (index % 4)} onClick={() => onProfile(person)} aria-label={'Открыть профиль ' + person.name}>{initials(person.name)}</button>
             <div className="candidate-main">
               <button className="person-link" onClick={() => onProfile(person)}>{person.name}{category && <BadgeCheck size={17} className="confirmed-icon" aria-label={person.synthetic ? 'Грейд' : 'Категория подтверждена'} />}</button>
-              <p className="candidate-specialization">{specializationLabels[category?.specialization || person.specialization]}<span className="dot-divider">·</span>{category ? gradeLabels[category.grade] : 'Грейд не подтверждён'}</p>
+              <p className="candidate-specialization">{specializationLabels[category?.specialization || person.specialization]}<span className="dot-divider">·</span>{category ? gradeLabels[category.grade] : 'Грейд не подтверждён'}<MatchBadge match={match} /></p>
               {!category && <p className="field-caption">Желаемый грейд: {gradeLabels[person.desiredGrade]}</p>}
               <span className="metadata"><MapPin size={13} />{person.city || 'Город не указан'}<span className="dot-divider">·</span>{person.experience}<span className="dot-divider">·</span>{person.format}</span>
               {(salaryFrom !== null || salaryTo !== null) && <p className="directory-salary">{salaryFrom !== null && salaryTo !== null ? amount(salaryFrom) + '–' + amount(salaryTo) : salaryFrom !== null ? 'от ' + amount(salaryFrom) : 'до ' + amount(salaryTo!)} ₽/мес.</p>}
               <div className="tags">{person.demoProfile && <span className="tag" title="Вымышленный профиль для проверки подбора">Демо</span>}{person.stack.slice(0, 4).map(skill => <span className="tag" key={skill}>{skill}</span>)}{person.achievements.length > 0 && <span className="tag fsp-tag" title={person.synthetic ? 'ФСП · демо: вымышленные результаты' : person.fspEvidence?.mode === 'demo' ? 'Вымышленные достижения; личность ФСП не подтверждена' : 'Сведения ФСП из профиля'}><Medal size={12} />{person.synthetic || person.fspEvidence?.mode === 'demo' ? 'ФСП · демо' : 'ФСП'}</span>}</div>
             </div>
-            <div className="candidate-action"><div className="score-with-context"><div className="test-score" title={category ? 'Баллы теста: ' + category.score + ' из 100' : 'Категория не подтверждена'}><strong>{category?.score ?? '—'}{category && <span>/100</span>}</strong></div><details className="match-details" name="matching"><summary aria-label={'Почему подходит ' + person.name} title="Почему подходит"><Info size={15} /></summary><p>{reason}</p></details></div>
+            <div className="candidate-action"><div className="score-with-context"><div className="test-score" title={category ? 'Баллы теста: ' + category.score + ' из 100' : 'Категория не подтверждена'}><strong>{category?.score ?? '—'}{category && <span>/100</span>}</strong></div><details className="match-details" name="matching"><summary aria-label={'Почему подходит ' + person.name} title="Почему подходит"><Info size={15} /></summary><div className="match-popover"><MatchBreakdown match={match} /><p>{reason}</p></div></details></div>
               {!person.demoProfile && <button className="button secondary compact" disabled={pending} onClick={() => onInvite(person)}>{pending ? 'Отправлено' : 'Пригласить'}</button>}
             </div>
           </article>;

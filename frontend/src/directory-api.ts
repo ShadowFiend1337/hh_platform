@@ -19,10 +19,16 @@ export interface DirectoryCandidate extends Candidate {
   employmentType?: string;
   synthetic?: boolean;
 }
+export interface DirectoryMatch {
+  policy: string;
+  percent: number;
+  parts: { key: 'tasks' | 'category' | 'stack' | 'test' | 'fsp'; label: string; value: number; weight: number }[];
+}
 export interface DirectoryItem {
   person: DirectoryCandidate;
   rank: number;
   reason: string;
+  match?: DirectoryMatch;
   semanticScore: number | null;
   rerankerScore?: number;
   approximate?: true;

@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState, type PointerEvent } from 'react';
+import { MatchBadge, MatchBreakdown } from './MatchBadge';
 import { ArrowUpRight, BadgeCheck, Heart, MapPin, Medal, RotateCcw, X } from 'lucide-react';
 import { gradeLabels, initials, specializationLabels, type Candidate, type CandidateDecision } from '../model';
 import type { DirectoryItem } from '../directory-api';
@@ -118,6 +119,7 @@ export function CandidateDeck({ items, decisions, favorites, loading, loadingMor
           <p className="candidate-specialization">{specializationLabels[current.person.confirmed?.specialization || current.person.specialization]}
             <span className="dot-divider">·</span>{current.person.confirmed ? gradeLabels[current.person.confirmed.grade] : 'Грейд не подтверждён'}</p>
           {!current.person.confirmed && <p className="field-caption">Желаемый грейд: {gradeLabels[current.person.desiredGrade]}</p>}
+          <MatchBadge match={current.match} />
         </div>
         <div className="swipe-metadata"><span>{current.person.city && <><MapPin size={14} />{current.person.city}</>}{current.person.format && <><span className="dot-divider">·</span>{current.person.format}</>}</span>
           {current.person.experience && <span>{current.person.experience}</span>}</div>
@@ -129,7 +131,7 @@ export function CandidateDeck({ items, decisions, favorites, loading, loadingMor
         <div className="swipe-card-footer"><div className="swipe-test"><BadgeCheck size={18} /><strong>{current.person.confirmed?.score ?? '—'}<span>/100</span></strong></div>
           {!current.person.demoProfile && <button className="button secondary compact" disabled={disabled || pendingIds.has(current.person.id)} onClick={() => onInvite(current.person)}>{pendingIds.has(current.person.id) ? 'Отправлено' : 'Пригласить'}</button>}
         </div>
-        <details className="swipe-reason"><summary>Почему подходит</summary><p>{current.reason}</p></details>
+        <details className="swipe-reason"><summary>Почему подходит</summary><MatchBreakdown match={current.match} /><p>{current.reason}</p></details>
       </article></div>
     </> : <div className="empty-state swipe-empty">
       {loading || loadingMore || hasMore && !failed ? <><div className="swipe-loader" aria-hidden="true" /><p role="status">Загружаем карточки…</p></>

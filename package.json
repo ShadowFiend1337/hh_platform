@@ -60,7 +60,8 @@
     "validate:open-bank": "node scripts/open-bank.mjs validate",
     "sample:open-bank": "node scripts/open-bank.mjs sample",
     "export:open-bank": "node scripts/open-bank.mjs export",
-    "test:registration-privacy": "node frontend/tests/registration-privacy.mjs"
+    "test:registration-privacy": "node frontend/tests/registration-privacy.mjs",
+    "tour:screens": "node frontend/tests/visual-tour.mjs"
   },
   "dependencies": {
     "parse5": "8.0.0"

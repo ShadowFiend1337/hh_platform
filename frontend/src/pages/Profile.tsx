@@ -9,6 +9,13 @@ import { SoftSkillsField } from '../components/SoftSkillsField';
 import { CandidateHistory } from '../components/CandidateHistory';
 import { FspLink } from '../components/FspLink';
 import { IntegrationPanel } from '../components/IntegrationPanel';
+import { ReadinessPanel } from '../components/ReadinessPanel';
+
+// Where each unfinished readiness item is edited in the profile form.
+const readinessFields: Record<string, string> = {
+  stack: '[name="stack"]', story: '[name="workHistory"]', contacts: '[name="phone"]',
+  published: '.profile-publication', fsp: '.profile-fsp', terms: '[name="salaryFrom"]',
+};
 
 function sameValues(left: string[], right: string[]) {
   const leftValues = new Set(left);
@@ -16,9 +23,9 @@ function sameValues(left: string[], right: string[]) {
   return leftValues.size === rightValues.size && [...leftValues].every(value => rightValues.has(value));
 }
 
-export function Profile({ state, update, notify, onTest, onPreview, onFspChange, syncStatus, accountId }: {
+export function Profile({ state, update, notify, onTest, onSurvey, onPreview, onFspChange, syncStatus, accountId }: {
   state: PlatformState; update: (fn: (state: PlatformState) => PlatformState) => void;
-  notify: (message: string) => void; onTest: () => void; onPreview: () => void;
+  notify: (message: string) => void; onTest: () => void; onSurvey?: () => void; onPreview: () => void;
   onFspChange: () => Promise<void>; syncStatus: string;
   accountId?: string;
 }) {
@@ -114,24 +121,31 @@ export function Profile({ state, update, notify, onTest, onPreview, onFspChange,
           <label className="field"><span>Занятость</span><select name="employmentType" defaultValue={profile.employmentType || ''}><option value="">Не указана</option>{employmentTypes.map(value => <option key={value}>{value}</option>)}</select></label>
         </fieldset>
         <div className="section-divider" />
-        <FormHeader title="ФСП" Icon={Medal} />
+        <div className="profile-fsp"><FormHeader title="ФСП" Icon={Medal} /></div>
         <FspLink disabled={!consent || consent !== profile.consent || syncStatus !== 'saved'} onChange={async result => {
           setFspId(result.fspId); await onFspChange();
         }} />
         <div className="section-divider" />
-        <label className="checkbox-field"><input type="checkbox" disabled={!consent} checked={visible && consent} onChange={event => setVisible(event.target.checked)} /><span>Показывать профиль работодателям</span></label>
+        <label className="checkbox-field profile-publication"><input type="checkbox" disabled={!consent} checked={visible && consent} onChange={event => setVisible(event.target.checked)} /><span>Показывать профиль работодателям</span></label>
         <label className="checkbox-field"><input type="checkbox" checked={consent} onChange={event => { setConsent(event.target.checked); if (!event.target.checked) setVisible(false); }} /><span>Согласен на обработку персональных данных</span></label>
         <a className="privacy-policy-link" href="/privacy" target="_blank" rel="noopener noreferrer">Политика конфиденциальности</a>
         {error && <p className="form-error" role="alert">{error}</p>}
         <div className="form-actions"><button type="submit" className="button primary">Сохранить изменения</button></div>
       </form>
       <aside className="profile-sidebar">
-        <IntegrationPanel accountId={accountId} consent={consent && profile.consent && syncStatus === 'saved'} onChange={onFspChange} />
+        <ReadinessPanel state={state} onAction={(action, key) => {
+          if (action === 'assessment') { onTest(); return; }
+          if (action === 'onboarding') { (onSurvey || onTest)(); return; }
+          const field = document.querySelector<HTMLElement>(readinessFields[key] || '.profile-form');
+          field?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          (field?.matches('input, textarea, select') ? field : field?.querySelector<HTMLElement>('input, textarea, select'))?.focus({ preventScroll: true });
+        }} />
         <section className="panel category-panel"><h2 className="sr-only">Подтверждённая категория</h2><p className="muted">{specializationLabels[profile.confirmed?.specialization || profile.specialization]}</p>
           <div className="category-status"><BadgeCheck size={20} /><div><span className="field-caption">Подтверждённый грейд</span><strong>{profile.confirmed ? gradeLabels[profile.confirmed.grade] : 'Не подтверждён'}</strong></div></div>
           {profile.confirmed && <div className="category-score" aria-label={'Результат теста: ' + profile.confirmed.score + ' из 100'}><strong>{profile.confirmed.score}<span>/100</span></strong></div>}
           <button className="button primary full-width" onClick={onTest}>{profile.confirmed ? 'Пройти тест' : 'Подтвердить грейд'}</button>
         </section>
+        <IntegrationPanel accountId={accountId} consent={consent && profile.consent && syncStatus === 'saved'} onChange={onFspChange} />
         <CandidateHistory state={state} />
       </aside>
     </div>

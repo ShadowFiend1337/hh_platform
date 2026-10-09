@@ -12,6 +12,7 @@ import { isDemoCatalogProfile } from './demo-catalog.mjs';
 import { CATEGORY_RANKING_POLICY, rankComparableCandidates, semanticOrder } from './search-ranking.mjs';
 import { CATEGORY_RECOMMENDATION_POLICY, recommendCategories } from './category-recommendations.mjs';
 import { SEARCH_EXPLANATION_POLICY, explainSearchResults } from './search-explanations.mjs';
+import { annotateMatches } from './search-match.mjs';
 import { PROFILE_PUBLICATION_POLICY, CONFIRMATION_ORDER_POLICY, confirmedFirst } from './profile-publication.mjs';
 
 function validateFilters(input) {
@@ -511,6 +512,7 @@ export class DirectoryService {
     // employer constraints, neural admission, or recommendations for other groups.
     items=confirmedFirst(items);
     items=explainSearchResults(items,{semantic:Boolean(embeddingQuery),scoreKind:stage?'logit':'cosine',filters});
+    items=annotateMatches(items,{semantic:Boolean(embeddingQuery),filters});
     const categories=recommendCategories(items,{semantic:Boolean(embeddingQuery)});
     const selected=category?items.filter(item=>item.person.confirmed?.specialization===category.specialization
       && item.person.confirmed?.grade===category.grade):items;
