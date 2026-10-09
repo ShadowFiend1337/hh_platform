@@ -19,6 +19,6 @@ export function MatchBreakdown({ match }: { match?: DirectoryMatch }) {
       <span className="match-bar" aria-hidden="true"><i style={{ width: part.value + '%' }} /></span>
       <span className="match-value">{part.value}%</span>
     </li>)}</ul>
-    <span className="match-note">Вес: {match.parts.map(part => `${part.label.charAt(0).toLocaleLowerCase('ru') + part.label.slice(1)} ${part.weight}%`).join(', ')}.</span>
+    <span className="match-note">Доля в итоге: {match.parts.map(part => `${part.label.charAt(0).toLocaleLowerCase('ru') + part.label.slice(1)} ${part.weight}%`).join(', ')}. Учтены только условия вашего запроса.</span>
   </div>;
 }

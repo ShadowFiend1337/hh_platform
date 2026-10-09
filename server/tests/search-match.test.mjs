@@ -20,9 +20,14 @@ test('filters-only search scores category, requested stack, test and FSP without
   assert.equal(confirmed.match.parts.some(part => part.key === 'tasks'), false);
   assert.equal(confirmed.match.parts.find(part => part.key === 'stack').value, 50);
   assert.ok(confirmed.match.percent > unconfirmed.match.percent, 'A confirmed category outranks a self-reported grade');
-  const [withFsp] = annotateMatches([{ ...item(90), explanation: { fsp: { status: 'verified' } } }], { filters: {} });
-  const [withoutFsp] = annotateMatches([item(90)], { filters: {} });
+  const [withFsp] = annotateMatches([{ ...item(90), explanation: { fsp: { status: 'verified' } } }], { filters: { specialization: 'Backend' } });
+  const [withoutFsp] = annotateMatches([item(90)], { filters: { specialization: 'Backend' } });
   assert.ok(withFsp.match.percent > withoutFsp.match.percent);
+});
+
+test('without any employer request there is no match percentage', () => {
+  const [plain] = annotateMatches([item(90)], { semantic: false, filters: { city: 'Москва' } });
+  assert.equal(plain.match, undefined);
 });
 
 test('another specialization or grade lowers the category fit', () => {

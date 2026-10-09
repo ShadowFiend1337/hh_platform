@@ -8,6 +8,8 @@
 //   test       — server test score of the confirmed category;
 //   fsp        — provider-backed FSP achievements.
 // Components the employer did not ask about are left out and weights renormalised.
+// Without a request (no text, specialization, grade or stack) there is nothing to
+// match against, so no percentage is shown. Rationale: docs/search_match.md.
 export const MATCH_POLICY = 'weighted-public-signals-v1';
 const weights = { tasks: 45, category: 20, stack: 15, test: 15, fsp: 5 };
 const fold = value => String(value || '').normalize('NFKC').toLocaleLowerCase('ru');
@@ -27,6 +29,7 @@ export function annotateMatches(items, { semantic = false, filters = {} } = {}) 
   const ranks = items.map(item => item.rank).filter(Number.isFinite);
   const top = Math.max(...ranks), bottom = Math.min(...ranks);
   const requestedStack = (Array.isArray(filters.stack) ? filters.stack : []).map(fold);
+  if (!semantic && !filters.specialization && !filters.grade && !requestedStack.length) return items;
   return items.map(item => {
     const person = item.person || {};
     const parts = [];
