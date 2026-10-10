@@ -83,8 +83,8 @@ async function snapshot(context) {
   return response.json();
 }
 async function openNeeds(page) {
-  const button = page.getByRole('button', { name: 'Потребности', exact: true });
-  if (await button.getAttribute('aria-expanded') !== 'true') await button.click();
+  // Needs are always visible above the search.
+  await page.locator('#hiring-needs').waitFor();
 }
 async function fillNeed(page, need) {
   await page.getByLabel('Название потребности', { exact: true }).fill(need.title);

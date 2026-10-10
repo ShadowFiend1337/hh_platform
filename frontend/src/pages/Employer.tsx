@@ -13,11 +13,14 @@ type Props = {
   onProfile: (person: Candidate) => void; onInvite: (person: Candidate) => void;
   notify: (message: string) => void; directoryRevision?: number;
 };
-function readSearch(): { draft: string; query: string; filters: SearchFilters; needId: string } {
+function readSearch(needs: HiringNeed[] = []): { draft: string; query: string; filters: SearchFilters; needId: string } {
   try {
     const stored = JSON.parse(sessionStorage.getItem('predel:search') || 'null');
     if (typeof stored?.query === 'string' && typeof stored.draft === 'string') return { draft: stored.draft, query: stored.query, filters: normalizeSearchFilters(stored.filters), needId: typeof stored.needId === 'string' ? stored.needId : '' };
   } catch { /* Search remains usable without browser storage. */ }
+  // A fresh visit with saved needs starts matching the first need at once.
+  const first = needs[0];
+  if (first) return { draft: first.tasks, query: first.tasks, filters: normalizeSearchFilters(first.filters), needId: first.id };
   return { draft: '', query: '', filters: normalizeSearchFilters(defaultSearchFilters), needId: '' };
 }
 type NeedEditor = HiringNeed & { stackText: string };
@@ -33,13 +36,12 @@ function countLabel(count: number) {
 }
 
 export function Employer({ state, update, onProfile, onInvite, notify, directoryRevision = 0 }: Props) {
-  const [initialSearch] = useState(readSearch);
+  const [initialSearch] = useState(() => readSearch(state.hiringNeeds || []));
   const [draft, setDraft] = useState(initialSearch.draft);
   const [query, setQuery] = useState(initialSearch.query);
   const [filters, setFilters] = useState<SearchFilters>(initialSearch.filters);
   const [showFilters, setShowFilters] = useState(false);
   const [showSaved, setShowSaved] = useState(false);
-  const [showNeeds, setShowNeeds] = useState(false);
   const [needId, setNeedId] = useState(initialSearch.needId);
   const [needEditor, setNeedEditor] = useState<NeedEditor | null>(null);
   const [needError, setNeedError] = useState('');
@@ -133,7 +135,7 @@ export function Employer({ state, update, onProfile, onInvite, notify, directory
   function editNeed(need?: HiringNeed) {
     const snapshot = normalizeSearchFilters(need?.filters || filters);
     setNeedEditor({ id: need?.id || '', title: need?.title || '', team: need?.team || '', tasks: need?.tasks ?? draft.trim(), filters: snapshot, stackText: snapshot.stack.join(', ') });
-    setNeedError(''); setShowNeeds(true);
+    setNeedError('');
   }
   function saveNeed(event: FormEvent) {
     event.preventDefault();
@@ -227,17 +229,23 @@ export function Employer({ state, update, onProfile, onInvite, notify, directory
   ].filter(Boolean);
   const unavailable = Boolean(query && response?.model.status === 'unavailable');
   return <div className="employer-directory">
-    <div className="page-heading employer-heading"><h1>Кандидаты</h1><div className="button-group">
-      <button className="button secondary compact" aria-expanded={showNeeds} aria-controls="hiring-needs" onClick={() => setShowNeeds(!showNeeds)}>Потребности<ChevronDown size={15} /></button>
-      </div></div>
-    {showNeeds && <section className="hiring-needs" id="hiring-needs" aria-label="Потребности работодателя">
-      <div className="hiring-needs-heading"><h2>Потребности</h2><button className="button secondary compact" disabled={needs.length >= MAX_HIRING_NEEDS} title={needs.length >= MAX_HIRING_NEEDS ? 'Сохранено максимум потребностей: ' + MAX_HIRING_NEEDS : undefined} onClick={() => editNeed()}><Plus size={15} />Новая потребность</button></div>
-      {needs.length > 0 && <div className="hiring-needs-list">{needs.map(need => <div className="hiring-need" key={need.id}>
-        <button className="hiring-need-select" aria-label={'Подобрать для ' + need.title} aria-pressed={needId === need.id} title={need.team || undefined} onClick={() => selectNeed(need)}>{need.title}<ArrowUpRight size={14} /></button>
-        <button className="icon-button" aria-label={'Изменить потребность ' + need.title} title="Изменить" onClick={() => editNeed(need)}><Pencil size={14} /></button>
-        <button className="icon-button" aria-label={'Удалить потребность ' + need.title} title="Удалить" onClick={() => deleteNeed(need)}><X size={14} /></button>
+    <div className="page-heading employer-heading"><h1>Кандидаты</h1></div>
+    <section className="hiring-needs" id="hiring-needs" aria-label="Потребности работодателя">
+      <div className="hiring-needs-heading"><div><h2>Потребности команды</h2><p className="muted">Выберите потребность — подберём кандидатов под задачи и покажем процент совпадения.</p></div>
+        <button className="button secondary compact" disabled={needs.length >= MAX_HIRING_NEEDS} title={needs.length >= MAX_HIRING_NEEDS ? 'Сохранено максимум потребностей: ' + MAX_HIRING_NEEDS : undefined} onClick={() => editNeed()}><Plus size={15} />Новая потребность</button></div>
+      {needs.length > 0 && <div className="hiring-needs-list">{needs.map(need => <div className={'hiring-need' + (needId === need.id ? ' active' : '')} key={need.id}>
+        <button className="hiring-need-select" aria-label={'Подобрать для ' + need.title} aria-pressed={needId === need.id} title={need.team || undefined} onClick={() => selectNeed(need)}>
+          <strong>{need.title}</strong>
+          <span className="hiring-need-meta">{[isSpecialization(need.filters.specialization) ? specializationLabels[need.filters.specialization] : 'Любая специализация',
+            need.filters.grade ? gradeLabels[need.filters.grade as keyof typeof gradeLabels] : '', ...need.filters.stack.slice(0, 3)].filter(Boolean).join(' · ')}</span>
+          {needId === need.id && <span className="hiring-need-active"><Check size={13} />Подбор по этой потребности</span>}
+        </button>
+        <div className="hiring-need-tools">
+          <button className="icon-button" aria-label={'Изменить потребность ' + need.title} title="Изменить" onClick={() => editNeed(need)}><Pencil size={14} /></button>
+          <button className="icon-button" aria-label={'Удалить потребность ' + need.title} title="Удалить" onClick={() => deleteNeed(need)}><X size={14} /></button>
+        </div>
       </div>)}</div>}
-      {!needs.length && !needEditor && <p className="muted hiring-needs-empty">Сохраните задачи и условия для команды.</p>}
+      {!needs.length && !needEditor && <button className="hiring-needs-empty" onClick={() => editNeed()}><Plus size={16} />Опишите задачи команды, стек и грейд — подбор начнётся сразу после сохранения</button>}
       {needEditor && <form className="hiring-need-form" aria-label="Потребность команды" onSubmit={saveNeed}>
         <div className="form-grid">
           <label className="field"><span>Название потребности</span><input aria-label="Название потребности" value={needEditor.title} maxLength={HIRING_NEED_LIMITS.title} required onChange={event => setNeedEditor({ ...needEditor, title: event.target.value })} placeholder="Например: разработчик платёжного сервиса" /></label>
@@ -252,7 +260,7 @@ export function Employer({ state, update, onProfile, onInvite, notify, directory
         {needError && <p className="hiring-need-error" role="alert">{needError}</p>}
         <div className="hiring-need-actions"><button type="button" className="text-button" onClick={() => setNeedEditor({ ...needEditor, filters: normalizeSearchFilters(filters), stackText: filters.stack.join(', ') })}>Взять текущие фильтры</button><div className="button-group"><button type="button" className="button secondary compact" onClick={() => { setNeedEditor(null); setNeedError(''); }}>Отмена</button><button type="submit" className="button primary compact">Сохранить потребность</button></div></div>
       </form>}
-    </section>}
+    </section>
     <p className="directory-intro">Поиск по смыслу. Опишите задачи, нужный опыт и условия предложения.</p>
     <form className="search-panel" onSubmit={submit}>
       <Search size={21} aria-hidden="true" /><input value={draft} onChange={event => setDraft(event.target.value)} maxLength={1200} aria-label="Потребность работодателя" placeholder="Например: разработчик сервисов на Python, удалённо, до 200 000 ₽" />

@@ -88,8 +88,12 @@ export async function prepareLocalAccounts(dbPath = resolve(root, 'server/data/a
       accounts.push(account);
     }
     const [candidate, employer] = accounts;
+    // A reset continues the revision sequence: an old browser cache with a reused
+    // revision number must get a conflict instead of overwriting the fresh fixture.
+    const previousRevisions = new Map();
     if (reset) {
       for (const account of accounts) {
+        previousRevisions.set(account.platform_owner, directory.db.prepare('SELECT revision FROM platform_accounts WHERE owner=?').get(account.platform_owner)?.revision || 0);
         directory.db.prepare('DELETE FROM fsp_demo_connections WHERE owner=?').run(account.platform_owner);
         platform.delete(account.platform_owner, { deleteAssessmentRecords: true });
       }
@@ -118,6 +122,9 @@ export async function prepareLocalAccounts(dbPath = resolve(root, 'server/data/a
       marketplace.publish(employer.platform_owner, { title: 'Backend-разработчик платёжного сервиса',
         description: 'API платежей, идемпотентность, PostgreSQL и очереди.', specialization: 'Backend', grade: 'Middle',
         stack: ['Python', 'PostgreSQL'], city: 'Москва', format: 'Гибрид', salaryFrom: 200000, salaryTo: 260000 });
+    }
+    for (const [owner, revision] of previousRevisions) {
+      directory.db.prepare('UPDATE platform_accounts SET revision=revision+? WHERE owner=?').run(revision + 1, owner);
     }
     return localAccountFixtures.map(({ role, login }) => ({ role, login, password: localAccountPassword }));
   } finally {
