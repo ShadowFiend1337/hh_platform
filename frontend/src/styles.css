@@ -854,3 +854,26 @@ fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
   .tasks-heading { flex-wrap: wrap; }
   .task-review-actions .button-group > .button { flex: 1; }
 }
+
+/* Item bank moderation */
+.moderation-tabs { display: inline-flex; gap: 4px; padding: 4px; margin-bottom: 22px; border: 1px solid var(--border); border-radius: 9px; background: #f8f9fb; }
+.moderation-tabs button { padding: 7px 14px; border-radius: 6px; font-size: 13px; color: #626875; }
+.moderation-tabs button[aria-selected="true"] { background: #fff; color: var(--ink); box-shadow: 0 1px 2px rgba(20, 24, 33, .08); }
+.bank-moderation { margin-top: 22px; }
+.bank-filters { display: flex; flex-wrap: wrap; align-items: end; gap: 14px; }
+.bank-filters .field { margin-bottom: 0; min-width: 170px; }
+.bank-summary { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 20px 0; font-size: 13px; color: #5e6572; }
+.bank-summary strong { color: var(--ink); }
+.bank-notice { padding: 10px 13px; border-radius: 7px; background: #edf6f0; color: #2f6b45; font-size: 13px; }
+.bank-empty { margin-top: 20px; }
+.bank-items { display: grid; gap: 16px; margin-top: 16px; }
+.bank-item { padding: 22px 24px; background: #fff; border: 1px solid var(--border); border-radius: 11px; overflow-wrap: anywhere; }
+.bank-item header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: 12px; color: #626875; margin-bottom: 12px; }
+.bank-question { font-size: 15px; line-height: 1.7; font-weight: 500; }
+.bank-options { margin: 12px 0 10px 20px; display: grid; gap: 6px; font-size: 14px; line-height: 1.6; }
+.bank-options li.correct { color: #2f6b45; font-weight: 600; }
+.bank-options li svg { vertical-align: -2px; margin-left: 6px; }
+.bank-facts { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 12px; color: #626875; margin-top: 8px; }
+.bank-actions { justify-content: end; margin-top: 14px; }
+.status.bank-status-pilot { color: #9a5b00; background: #fff6e8; }
+.status.bank-status-active { color: #2f6b45; background: #edf6f0; }

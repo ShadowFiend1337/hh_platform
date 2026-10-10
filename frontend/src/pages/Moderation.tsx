@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
 import { claimRequest, claimLabels, checkLabels, publicRecordUrl, type AchievementClaim, type PublicSource } from '../claims-api';
 import { Brand } from '../components/Brand';
+import { ItemBankModeration } from '../components/ItemBankModeration';
 export function Moderation({accountId,role}:{accountId:string;role:string}) {
   const [status,setStatus]=useState<AchievementClaim['status']>('pending'),[offset,setOffset]=useState(0),[total,setTotal]=useState(0);
   const [claims,setClaims]=useState<AchievementClaim[]>([]),[selected,setSelected]=useState<AchievementClaim|null>(null),[refresh,setRefresh]=useState(0);
   const [error,setError]=useState(''),[busy,setBusy]=useState(false),[loading,setLoading]=useState(true);
   const [decision,setDecision]=useState('approve'),[reason,setReason]=useState(''),[method,setMethod]=useState('document_review'),[reference,setReference]=useState(''),[confirmed,setConfirmed]=useState(false);
   const [teamConfirmed,setTeamConfirmed]=useState(false),[sources,setSources]=useState<PublicSource[]>([]),[sourceRevision,setSourceRevision]=useState(0);
-  const [sourceError,setSourceError]=useState('');
+  const [sourceError,setSourceError]=useState(''),[section,setSection]=useState<'claims'|'bank'>(()=>location.hash==='#bank'?'bank':'claims');
   useEffect(()=>{const controller=new AbortController();claimRequest<{sources:PublicSource[]}>('/api/moderation/sources','GET',undefined,accountId,controller.signal).then(data=>{if(!controller.signal.aborted){setSources(data.sources);setSourceError('');}}).catch(cause=>{if(!controller.signal.aborted){setSources([]);setSourceError(cause instanceof Error?cause.message:'Не удалось загрузить источники.');}});return()=>controller.abort();},[accountId,sourceRevision,refresh]);
   useEffect(()=>{if(!sources.some(source=>source.activeJob))return;const timer=setTimeout(()=>setSourceRevision(value=>value+1),1500);return()=>clearTimeout(timer);},[sources]);
   async function collect(sourceId:string){setBusy(true);setError('');try{await claimRequest('/api/moderation/sources/'+sourceId+'/collect','POST',{},accountId);setSourceRevision(value=>value+1);}catch(cause){setError(cause instanceof Error?cause.message:'Сбор не запущен.');}finally{setBusy(false);}}
@@ -29,7 +30,7 @@ export function Moderation({accountId,role}:{accountId:string;role:string}) {
   }catch(cause){setError(cause instanceof Error?cause.message:'Проверка источника не завершена.');}finally{setBusy(false);}}
   const actionable=selected&&['pending','needs_info','approved'].includes(selected.status);
   return <div className="app-shell"><header className="site-header"><div className="header-inner"><Brand onHome={()=>window.location.assign('/')} />
-    <a href={'/app?role='+role}>Вернуться в кабинет</a></div></header><main className="main-content"><h1>Модерация достижений</h1>
+    <a href={'/app?role='+role}>Вернуться в кабинет</a></div></header><main className="main-content"><div className="moderation-tabs" role="tablist" aria-label="Разделы модерации"><button role="tab" aria-selected={section==='claims'} onClick={()=>{setSection('claims');history.replaceState(null,'','#claims');}}>Достижения</button><button role="tab" aria-selected={section==='bank'} onClick={()=>{setSection('bank');history.replaceState(null,'','#bank');}}>Банк заданий</button></div>{section==='bank'?<><h1>Банк заданий</h1><p className="muted">Сгенерированные задания проходят локальные проверки и независимый решатель, затем показываются как незачётные пилотные. В зачёт они попадают после вашего одобрения или статистической калибровки. Ключ виден только модератору.</p><ItemBankModeration accountId={accountId} /></>:<><h1>Модерация достижений</h1>
     <p className="muted">Проверьте результат в официальном источнике и материалы, подтверждающие принадлежность кандидату. Автоматическая сверка помогает проверке.</p>
     <details className="panel public-source-management"><summary>Сбор из открытых источников</summary>{sourceError&&<p className="form-error" role="alert">{sourceError}</p>}{sources.map(source=><article className="integration-source" key={source.id}><strong>{source.publisher} · {source.title}</strong><p>{source.activeJob?'Обновляется…':source.status==='matched'?'Источник актуален':'Требуется обновление'} · записей: {source.recordCount}</p><p className="field-help">{source.lastSuccessAt?'Последний успешный разбор: '+new Date(source.lastSuccessAt).toLocaleString('ru-RU'):'Успешного разбора пока нет'}{source.lastError?' · '+(source.lastError==='invalid_source_response'?'Формат изменился; нужна проверка парсера':'Источник недоступен'):''}</p><button className="button secondary compact" disabled={busy||!!source.activeJob} onClick={()=>void collect(source.id)}>Обновить источник</button></article>)}</details>
     <div className="moderation-layout"><section className="panel"><h2>Очередь заявок</h2><label className="field"><span>Статус заявки</span><select value={status} onChange={event=>{setStatus(event.target.value as AchievementClaim['status']);setOffset(0);}}>{Object.entries(claimLabels).map(([value,label])=><option value={value} key={value}>{label}</option>)}</select></label>
@@ -65,5 +66,5 @@ export function Moderation({accountId,role}:{accountId:string;role:string}) {
         </div>}
         <details><summary>История действий</summary>{selected.audit?.map(event=><p key={event.id}>{new Date(event.createdAt).toLocaleString('ru-RU')} · {event.action} · версия {event.version}</p>)}</details>
       </>}
-    </section></div></main></div>;
+    </section></div></>}</main></div>;
 }
