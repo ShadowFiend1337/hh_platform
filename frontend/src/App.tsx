@@ -3,6 +3,7 @@ import { Check, ChevronDown, X } from 'lucide-react';
 import { Employer } from './pages/Employer';
 import { Company } from './pages/Company';
 import { Invitations } from './pages/Invitations';
+import { PageBoundary } from './components/PageBoundary';
 import { Moderation } from './pages/Moderation';
 import { Profile } from './pages/Profile';
 import { Assessment } from './pages/Assessment';
@@ -347,6 +348,7 @@ function Workspace({ authAccount: initialAccount }: { authAccount: AuthAccount |
       </>}</div>
     </div></header>
     <main id="main-content" className="main-content" data-sync-status={persistence.status} key={route.role + ':' + page}>
+      <PageBoundary>
       {!persistence.ready ? <div className="panel empty-state"><p role="status">Загружаем ваши данные…</p>{persistence.error && <><p role="alert">{persistence.error}</p><button className="button secondary" onClick={persistence.retry}>Повторить загрузку</button></>}</div> : <>
       {persistence.status === 'error' && <div className="data-error" role="alert"><span>{persistence.error}</span><button className="text-button" onClick={persistence.retry}>Повторить сохранение</button></div>}
       {page === 'candidates' && <Employer directoryRevision={persistence.directoryRevision} state={state} candidates={candidates} update={setState} onProfile={onProfile} onInvite={onInvite} notify={setToast} />}
@@ -357,6 +359,7 @@ function Workspace({ authAccount: initialAccount }: { authAccount: AuthAccount |
         accountPrefill={authAccount?.role === 'candidate' ? { name: authAccount.name, email: authAccount.email } : undefined} />}
       {page === 'assessment' && <Assessment state={state} update={setState} notify={setToast} onActiveChange={onAssessmentActive} onProfile={() => navigate('candidate', 'profile')} onSurvey={() => navigate('candidate', 'onboarding')} watermarkLabel={authAccount?.login} />}
       </>}
+      </PageBoundary>
     </main>
     <footer className="site-footer"><div className="footer-inner"><span className="footer-brand">predel</span><div className="partner-logos">
       <img className="fsp-logo" src="/brand/fsp.png" alt="Федерация спортивного программирования России" />

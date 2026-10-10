@@ -4,9 +4,14 @@ import { chromium } from 'playwright';
 import { createInitialState } from '../src/model.ts';
 import { defaultSearchFilters, normalizeSearchFilters } from '../../shared/search.ts';
 import { directoryCandidates } from '../../server/directory-seed.mjs';
+import { register } from './helpers/accounts.mjs';
+import { startIsolatedService } from './helpers/isolated-service.mjs';
 
 // Authored fictional data only. All browser sessions and API mocks are isolated.
-const base = process.env.PREDEL_URL || 'http://127.0.0.1:5173';
+// A disposable service with the real local search worker; the trained artifact must be activated.
+const isolated = process.env.PREDEL_URL ? null : await startIsolatedService({ authEnv: { API_RATE_LIMIT_PER_MINUTE: '3000' } });
+const base = process.env.PREDEL_URL || isolated.base;
+const mockAccount = { id: 'mock-employer', login: 'mock.employer', email: 'mock.employer@example.invalid', role: 'employer', canModerate: false };
 const require = createRequire(import.meta.url);
 const browser = await chromium.launch({ headless: true });
 const contexts = [];
@@ -54,6 +59,7 @@ try {
 
   if (process.env.PREDEL_SEARCH_MOCK_ONLY !== '1') {
   const live = await context();
+  if (isolated) await register(live, isolated, 'employer', 'search.employer');
   const params = new URLSearchParams({ q: example, filters: '{}', limit: '30', offset: '0' });
   const exampleResponse = await live.request.get(base + '/api/directory/search?' + params, { timeout: 90000 });
   assert.equal(exampleResponse.status(), 200, 'The real trained model must serve the original electronics example');
@@ -101,9 +107,11 @@ try {
   console.log('PASS Actual trained model, electronic schematics and analog sensors, fictional SQL corpus');
 
   // Prime canonical state before pagination: initial migration must not cancel a page request.
-  const initialPlatform = await (await live.request.get(base + '/api/platform/state')).json();
+  const initialResponse = await live.request.get(base + '/api/platform/state');
+  const initialPlatform = await initialResponse.json();
   if (!initialPlatform.state) {
-    const persisted = await live.request.put(base + '/api/platform/state', { data: { state: createInitialState(), baseRevision: initialPlatform.revision } });
+    const persisted = await live.request.put(base + '/api/platform/state', { headers: { 'X-Platform-Identity': initialResponse.headers()['x-platform-identity'] },
+      data: { state: createInitialState(), baseRevision: initialPlatform.revision } });
     assert.equal(persisted.status(), 200);
   }
 
@@ -128,7 +136,8 @@ try {
   assert.match(await page.locator('.directory-interpretation').textContent(), /Зарплата до 200\s000 ₽/u);
   assert.equal(await page.locator('.directory-demo').count(), 0);
   await page.locator('.match-details').first().locator('summary').click();
-  assert.doesNotMatch(await page.locator('.match-details').first().locator('p').textContent(), /вымышлен|демонстрац/iu);
+  // Demo catalogue explanations say explicitly that categories and achievements are learning examples.
+  assert.match(await page.locator('.match-details').first().locator('p').textContent(), /демопрофил|учебн/iu);
   await page.locator('.match-details').first().locator('summary').click();
   await page.getByRole('button', { name: 'Очистить поиск', exact: true }).click();
   await page.getByRole('combobox', { name: 'Специализация', exact: true }).selectOption('Embedded');
@@ -166,13 +175,21 @@ try {
   }
 
   const mocked = await context();
+  // Registered first, so specific routes below take precedence: unrelated panels get empty, well-formed answers.
+  await mocked.route('**/api/**', route => route.fulfill({ json: { items: [], total: 0, claims: [], sources: [], providers: [], connections: [], evidence: [], records: [] } }));
+  await mocked.route('**/api/assessment/program?*', route => route.fulfill({ json: { bankVersion: 'fixture', topics: ['Схемотехника', 'Прошивки', 'Отладка'],
+    questionCount: 12, threshold: 70, expiresInMinutes: 30, questionSeconds: 120, maxDepartures: 3, confidentThreshold: 90, retryDays: 7,
+    delivery: 'sequential', bank: { authored: 24, generated: null }, examples: [] } }));
   let platform = createInitialState(), revision = 0;
   const mockPeople = Array.from({ length: 65 }, (_, index) => ({ ...directoryCandidates[0], id: 'test-demo-' + index, name: 'Демо специалист ' + index }));
   platform.invitations.push({ id: 'test-invitation', candidateId: mockPeople[0].id, companyId: platform.company.id, company: platform.company.name, title: 'Синтетическое предложение', description: '', contact: 'demo@example.com', salaryFrom: 100000, salaryTo: 200000, status: 'sent', date: '2026-10-06' });
   await mocked.addInitScript(state => { localStorage.setItem('predel:platform:v2', JSON.stringify(state)); }, platform);
+  // The mocked cabinet belongs to a signed-in employer; no request reaches a real account.
+  await mocked.route('**/api/auth/me', route => route.fulfill({ json: { account: mockAccount } }));
+  await mocked.route('**/api/assistant/info', route => route.fulfill({ json: { version: 'fixture', llm: false, model: null, notice: '' } }));
   await mocked.route('**/api/platform/state', async route => {
     if (route.request().method() === 'PUT') { platform = route.request().postDataJSON().state; revision++; }
-    await route.fulfill({ json: { state: platform, revision, directoryPeople: mockPeople } });
+    await route.fulfill({ headers: { 'X-Platform-Identity': 'auth:' + mockAccount.id }, json: { state: platform, revision, directoryPeople: mockPeople } });
   });
   await mocked.route('**/api/directory/options', route => route.fulfill({ json: { cities: ['Москва', 'Казань'], industries: ['ИТ'], languages: [{ value: 'en', label: 'Английский' }], employmentTypes: ['Полная занятость'] } }));
   let fail = true;
@@ -236,6 +253,8 @@ try {
   console.log('PASS 320px filters, evidence and accessibility');
 
   await race.setViewportSize({ width: 1440, height: 1000 });
+  // The same mocked cabinet now belongs to a candidate account.
+  mockAccount.role = 'candidate';
   await race.goto(base + '/app?role=candidate&tab=onboarding');
   await race.locator('.onboarding-form').waitFor();
   await race.getByLabel('Имя и фамилия', { exact: true }).fill('Синтетический кандидат');
@@ -269,6 +288,8 @@ try {
   // A declared demo qualification is a mock fixture, never an actual assessment result.
   platform.profile.confirmed = { specialization: 'Embedded', grade: 'Middle', score: 85, date: platform.profile.surveyCompletedAt, synthetic: true };
   platform.profile.synthetic = true;
+  platform.history = [{ id: 'mock-result', date: platform.profile.surveyCompletedAt, specialization: 'Embedded', grade: 'Middle', surveyId: platform.surveys[0].id,
+    score: 85, passed: true, bankVersion: 'fixture', competencies: [], vacancySkills: [], questionCount: 12, timeouts: 0 }];
   await race.goto(base + '/app?role=candidate&tab=profile');
   await race.locator('.profile-form').waitFor();
   await race.getByLabel('Желаемая зарплата от, ₽/мес.', { exact: true }).fill('180000');
@@ -290,4 +311,5 @@ try {
   await Promise.all(contexts.map(context => context.request.delete(base + '/api/platform/state').catch(() => {})));
   await Promise.all(contexts.map(context => context.close()));
   await browser.close();
+  await isolated?.close();
 }
