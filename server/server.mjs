@@ -67,6 +67,8 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
   const integrations = new IntegrationService(directory.store, { dbPath, env: authEnv, now, ...integrationOptions, projectProfile: (owner, profile) => platform.publication(owner, profile), candidateAccessible: (owner, row) => platform.candidateAccessible(owner, row), reservedProviders: ['fsp-demo'] });
   directory.fspEvidence = person => integrations.rankingFspEvidence(person);
   const limits = new Map();
+  // Per-address budget for all API calls; offices behind one NAT may need a higher value.
+  const requestsPerMinute = Math.max(30, Number(authEnv.API_RATE_LIMIT_PER_MINUTE) || 180);
   const integritySummary = ({ departures, blockedCopies, blockedActions, fullscreenExits }) => ({ departures, blockedCopies, blockedActions, fullscreenExits });
   function send(response, status, value) {
     response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
@@ -160,7 +162,7 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
     try {
       const url = new URL(request.url, 'http://localhost');
       if (url.pathname.startsWith('/api/')) {
-        limit('requests:' + request.socket.remoteAddress, 180, 60000);
+        limit('requests:' + request.socket.remoteAddress, requestsPerMinute, 60000);
         const origin = request.headers.origin;
         const allowed = new Set([(secureCookie ? 'https://' : 'http://') + request.headers.host,
           ...(webOrigin ? [webOrigin] : ['http://127.0.0.1:5173', 'http://127.0.0.1:4173', 'http://localhost:5173', 'http://localhost:4173'])]);

@@ -50,6 +50,9 @@ await context.route('**/api/**', async route => {
       ? route.fulfill({ status: 403, json: { error: 'Согласие отозвано. Контакты недоступны.' } })
       : route.fulfill({ json: privateContact });
   }
+  // Neutral responses for panels unrelated to contact privacy.
+  if (url.pathname === '/api/directory/' + person.id + '/evidence') return route.fulfill({ json: { items: [] } });
+  if (url.pathname === '/api/assistant/info') return route.fulfill({ json: { version: 'fixture', llm: false, model: null, notice: '' } });
   throw new Error('Unexpected request in authenticated privacy fixture: ' + url.pathname);
 });
 

@@ -1,105 +1,119 @@
+import { PRIVACY_POLICY_VERSION } from '../../shared/privacy.ts';
 import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
 import { createRequire } from 'node:module';
 import { chromium } from 'playwright';
-import { programs } from '../../server/bank.mjs';
+import { answerKey, startExam } from './helpers/exam.mjs';
+import { startIsolatedService } from './helpers/isolated-service.mjs';
 
-const base = process.env.PREDEL_URL || 'http://127.0.0.1:5173';
-const key = 'predel:platform:v2';
+// Registered candidate on a disposable service: vacancy-based attempt, private bank
+// isolation, accessibility, restore after reload and a submit retry without a false failure.
+const isolated = await startIsolatedService();
+const { base, codes } = isolated;
 const require = createRequire(import.meta.url);
 const browser = await chromium.launch();
 const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
-const page = await context.newPage();
-page.setDefaultTimeout(15000);
 const errors = [];
 let injectedFailure = false;
-page.on('pageerror', error => errors.push(error.message));
-page.on('console', message => {
-  if (message.type() === 'error' && !(injectedFailure && message.text().includes('503'))
-    && !(new URL(message.location().url || base).pathname === '/api/auth/me' && message.text().includes('401'))) errors.push(message.text());
-});
-async function mobileAudit() {
+
+async function audit(page) {
   await page.setViewportSize({ width: 320, height: 750 });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, 'Assessment overflows on mobile');
   await page.addScriptTag({ path: require.resolve('axe-core/axe.min.js') });
-  const issues = await page.evaluate(async () => (await window.axe.run(document, { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21aa'] } })).violations.map(item => item.id));
+  const issues = await page.evaluate(async () => (await window.axe.run(document, { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21aa'] } }))
+    .violations.map(item => item.id));
   assert.deepEqual(issues, []);
+  await page.setViewportSize({ width: 1440, height: 1000 });
 }
-async function waitForSaved(target = page) {
-  await target.waitForFunction(() => ['saved', 'error'].includes(document.querySelector('.main-content')?.getAttribute('data-sync-status')));
-  assert.equal(await target.locator('.main-content').getAttribute('data-sync-status'), 'saved', 'Server persistence failed');
-}
+
 try {
-  await page.goto(base + '/app?role=employer');
-  await waitForSaved();
-  await page.evaluate(async storageKey => {
-    const state = JSON.parse(localStorage.getItem(storageKey));
-    const survey = { id: crypto.randomUUID(), date: new Date().toISOString(), industry: 'ИТ', professionalRole: 'Разработчик', specialization: 'Frontend', desiredGrade: 'Middle', stack: ['React'], experience: '3 года', softSkills: ['Коммуникация'] };
-    state.profile = { ...state.profile, ...survey, id: state.profile.id, name: 'Проверка теста', email: 'test@example.com', consent: true, surveyCompletedAt: survey.date };
-    state.surveys = [survey];
-    const stored = await (await fetch('/api/platform/state')).json();
-    const saved = await fetch('/api/platform/state', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ state, baseRevision: stored.revision }) });
-    if (!saved.ok) throw new Error('Unable to prepare consented test profile');
-    localStorage.setItem(storageKey, JSON.stringify(state));
-  }, key);
-  await page.goto(base + '/app?role=candidate&tab=assessment');
-  await page.getByRole('button', { name: 'Начать тест', exact: true }).waitFor({ state: 'visible' });
+  const account = { role: 'candidate', login: 'assessment.flow', name: 'Проверка теста', email: 'assessment.flow@example.invalid',
+    password: 'AssessmentFlow927!', consent: true, privacyVersion: PRIVACY_POLICY_VERSION };
+  assert.equal((await context.request.post(base + '/api/auth/register/request-code', { data: account })).status(), 202);
+  assert.equal((await context.request.post(base + '/api/auth/register/verify', { data: { email: account.email, code: codes.get(account.email) } })).status(), 201);
+  const page = await context.newPage();
+  page.setDefaultTimeout(15000);
+  page.on('pageerror', error => errors.push(error.message));
+  page.on('dialog', dialog => dialog.type() === 'beforeunload' ? dialog.accept() : dialog.dismiss());
+  page.on('console', message => {
+    if (message.type() === 'error' && !(injectedFailure && message.text().includes('503'))) errors.push(message.text());
+  });
+  await page.goto(base + '/app?role=candidate&tab=onboarding');
+  await page.locator('.onboarding-form [name="industry"]').selectOption('ИТ');
+  await page.locator('.onboarding-form [name="professionalRole"]').fill('Frontend-разработчик');
+  await page.locator('.onboarding-form [name="specialization"]').selectOption('Frontend');
+  await page.locator('.onboarding-form [name="desiredGrade"]').selectOption('Middle');
+  await page.locator('.onboarding-form [name="stack"]').fill('React, CSS');
+  await page.locator('.onboarding-form [name="experience"]').fill('3 года');
+  await page.getByLabel('Согласен на обработку персональных данных', { exact: true }).check();
+  await page.getByRole('button', { name: 'К тесту', exact: true }).click();
+  await page.getByRole('button', { name: 'Начать тест', exact: true }).waitFor();
+  await page.locator('.main-content[data-sync-status="saved"]').waitFor();
+
+  // A vacancy example steers the choice of items toward its skills.
   await page.locator('.vacancy-builder summary').click();
   await page.locator('.vacancy-examples button').last().click();
-  assert.match(await page.getByLabel('Описание вакансии').inputValue(), /React/);
+  assert.match(await page.getByLabel('Описание вакансии').inputValue(), /React/u);
   await page.screenshot({ path: resolve('test-results', 'assessment-vacancy.png'), fullPage: true });
-  await mobileAudit();
-  await page.screenshot({ path: resolve('test-results', 'assessment-vacancy-mobile.png'), fullPage: true });
-  await page.setViewportSize({ width: 1440, height: 1000 });
-  const responsePromise = page.waitForResponse(response => response.url().endsWith('/api/assessment/attempts') && response.request().method() === 'POST');
-  await page.getByRole('button', { name: 'Начать тест', exact: true }).click();
-  const attempt = await (await responsePromise).json();
-  assert.equal(attempt.questions.length, 6);
-  assert.deepEqual(attempt.blueprint.difficultyCounts, { '1': 3, '2': 3 });
+  await audit(page);
+
+  const attempt = await startExam(page);
+  assert.equal(attempt.questions.length, 1, 'Questions are delivered one at a time');
+  assert.equal(attempt.questionCount, 12);
   assert.ok(attempt.vacancy.matchedSkills.includes('React'));
-  assert.ok(attempt.vacancy.unmatchedSkills.includes('TypeScript'));
-  await page.locator('.question-text').waitFor();
-  await mobileAudit();
-  await page.setViewportSize({ width: 1440, height: 1000 });
   const payload = JSON.stringify(attempt);
   for (const forbidden of ['correctOptionId', 'familyId', 'variantId', '"correct"']) assert.ok(!payload.includes(forbidden), 'Private key leaked: ' + forbidden);
-  const bankRequest = await context.request.get(base + '/server/bank.mjs');
-  assert.ok(!(await bankRequest.text()).includes('export const bankVersion'), 'SPA fallback must never contain the private module');
+  assert.ok(!(await (await context.request.get(base + '/server/bank.mjs')).text()).includes('export const bankVersion'), 'SPA fallback never serves the bank');
   const bankPath = resolve('../server/bank.mjs').replaceAll('\\', '/');
-  assert.ok([403, 404].includes(await context.request.get(base + '/@fs/' + bankPath).then(response => response.status())), 'Private source must be denied in development and production');
-  const firstText = await page.locator('.question-text').textContent();
-  await page.locator('.answer-option').first().click();
-  await page.getByRole('button', { name: 'Далее', exact: true }).click();
-  const secondText = await page.locator('.question-text').textContent();
+  assert.ok([403, 404].includes((await context.request.get(base + '/@fs/' + bankPath)).status()), 'Private source is denied');
+
+  // An answer is locked; after a reload the attempt resumes on the next question.
+  const key = answerKey('Frontend', 'Middle');
+  const answerCurrent = async () => {
+    const text = (await page.locator('.question-text').textContent()).trim();
+    const options = (await page.locator('.answer-option span').allTextContents()).map(item => item.trim());
+    await page.locator('.answer-option').nth(Math.max(0, options.indexOf(key.get(text)))).click();
+    return text;
+  };
+  const first = await answerCurrent();
+  await page.getByRole('button', { name: 'Ответить', exact: true }).click();
+  await page.locator('.exam-progress[aria-valuenow="2"]').waitFor();
+  const second = (await page.locator('.question-text').textContent()).trim();
+  assert.notEqual(second, first);
   await page.reload();
-  await page.locator('.question-text').waitFor();
-  assert.equal(await page.locator('.question-text').textContent(), secondText);
-  await page.getByRole('button', { name: 'Назад', exact: true }).click();
-  assert.equal(await page.locator('.question-text').textContent(), firstText);
-  assert.equal(await page.locator('.answer-option input:checked').count(), 1);
-  const answers = new Map(programs.Frontend.Middle.families.flatMap(family => family.variants.map(variant => [variant.text, variant.options[variant.correct]])));
-  for (let index = 0; index < 6; index++) {
-    const text = await page.locator('.question-text').textContent();
-    const expected = answers.get(text);
-    assert.ok(expected);
-    const options = await page.locator('.answer-option span').allTextContents();
-    await page.locator('.answer-option').nth(options.indexOf(expected)).click();
-    if (index < 5) await page.getByRole('button', { name: 'Далее', exact: true }).click();
+  await page.locator('.exam-progress[aria-valuenow="2"]').waitFor();
+  // Leaving the page counts as a departure: the question stays hidden until the candidate returns.
+  await page.getByText('Нарушение 1 из 3.').waitFor();
+  await page.getByRole('button', { name: 'Вернуться к тесту' }).click();
+  assert.equal((await page.locator('.question-text').textContent()).trim(), second, 'Reload restores the current question');
+  assert.equal(await page.getByRole('button', { name: 'Назад' }).count(), 0, 'There is no way back to a locked answer');
+
+  // The last answer is stored; a failed submit leaves a retry panel instead of a failed result.
+  for (let index = 1; ; index++) {
+    await page.locator(`.exam-progress[aria-valuenow="${index + 1}"]`).waitFor();
+    const total = Number(await page.locator('.exam-progress').getAttribute('aria-valuemax'));
+    await answerCurrent();
+    if (index === total - 1) {
+      injectedFailure = true;
+      await page.route('**/api/assessment/attempts/*/submit', route => route.fulfill({ status: 503, contentType: 'application/json',
+        body: JSON.stringify({ error: 'Сервис временно недоступен. Попробуйте снова.' }) }));
+      await page.getByRole('button', { name: 'Завершить тест', exact: true }).click();
+      break;
+    }
+    await page.getByRole('button', { name: 'Ответить', exact: true }).click();
   }
-  injectedFailure = true;
-  await page.route('**/api/assessment/attempts/*/submit', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'Сервис временно недоступен. Попробуйте снова.' }) }));
-  await page.getByRole('button', { name: 'Завершить тест', exact: true }).click();
-  await page.getByRole('alert').waitFor();
-  assert.equal(await page.locator('.answer-option input:checked').count(), 1);
-  assert.equal(await page.evaluate(storageKey => JSON.parse(localStorage.getItem(storageKey)).history.length, key), 0, 'Transport failure cannot become a failed result');
+  await page.getByRole('heading', { name: 'Все ответы сохранены' }).waitFor();
+  const history = await context.request.get(base + '/api/platform/state').then(response => response.json());
+  assert.equal(history.state.history.length, 0, 'A transport failure never becomes a failed result');
   await page.unroute('**/api/assessment/attempts/*/submit');
   injectedFailure = false;
-  await page.getByRole('button', { name: 'Завершить тест', exact: true }).click();
+  await page.getByRole('button', { name: 'Получить результат', exact: true }).click();
   await page.getByRole('heading', { name: 'Грейд подтверждён', exact: true }).waitFor();
-  assert.equal(await page.locator('.competency-results div').count(), 3);
-  assert.equal(await page.evaluate(storageKey => JSON.parse(localStorage.getItem(storageKey)).history.length, key), 1);
+  assert.equal(await page.locator('.competency-results > div').count(), 3);
   await page.screenshot({ path: resolve('test-results', 'assessment-result.png'), fullPage: true });
-  await mobileAudit();
+  await audit(page);
   assert.deepEqual(errors, []);
-  console.log('PASS Vacancy source, private bank isolation, opaque IDs, resume, server grading and retry without false failure');
-} finally { await context.request.delete(base + '/api/platform/state'); await context.close(); await browser.close(); }
+  console.log('PASS Vacancy-based attempt, private bank isolation, locked answers with resume, submit retry and accessible screens');
+} finally {
+  await context.close(); await browser.close(); await isolated.close();
+}

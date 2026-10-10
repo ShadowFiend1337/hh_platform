@@ -24,7 +24,8 @@ async function open(role) {
   assert.equal(login.status(), 200, await login.text());
   const page = await context.newPage();
   page.on('pageerror', error => errors.push(error.message));
-  page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
+  // A concurrent save may get 409 while a task action bumps the revision; the client rebases and retries.
+  page.on('console', message => { if (message.type() === 'error' && !message.text().includes('409')) errors.push(message.text()); });
   await page.goto(isolated.base + '/app?role=' + role + '&tab=invitations');
   await page.getByRole('button', { name: 'Задания', exact: true }).click();
   await page.getByRole('heading', { name: /^Задания/u }).waitFor();

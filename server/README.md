@@ -35,6 +35,7 @@ npm run dev
 | `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | Учётные данные и отправитель |
 | `SMTP_TIMEOUT_MS` | Ограничение ожидания SMTP, по умолчанию 15 секунд |
 | `AUTH_CODE_TTL_MINUTES`, `AUTH_SESSION_DAYS` | Срок действия кода и сессии |
+| `API_RATE_LIMIT_PER_MINUTE` | Запросов к API в минуту с одного адреса, по умолчанию 180 (не меньше 30) |
 
 Для SMTP на порту 587 используйте `SMTP_TLS=starttls`, на 465 — `implicit`. Без настроенного SMTP в локальной среде код сохраняется в `server/data/mail.log`, а не отправляется на внешний адрес. API сообщает `delivery: 'development'`, но не возвращает код. Этот режим не доказывает доставку email. В production регистрация возвращает ошибку до настройки почты.
 

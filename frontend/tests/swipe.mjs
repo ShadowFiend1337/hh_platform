@@ -42,7 +42,9 @@ async function session(initialDecisions = [], options = {}) {
     searches: [], puts: [], contactReads: [] };
   await context.route('**/api/**', async route => {
     const request = route.request(), url = new URL(request.url());
-    if (url.pathname === '/api/auth/me') { await route.fulfill({ status: 401, json: { error: 'Гостевой кабинет.' } }); return; }
+    // Cabinets require a signed-in account; the mocked one never reaches a real server.
+    if (url.pathname === '/api/auth/me') { await route.fulfill({ json: { account: { id: 'mock-employer', login: 'mock.employer', email: 'mock.employer@example.invalid', role: 'employer', canModerate: false } } }); return; }
+    if (url.pathname === '/api/assistant/info') { await route.fulfill({ json: { version: 'fixture', llm: false, model: null, notice: '' } }); return; }
     let payload;
     if (url.pathname === '/api/platform/state') {
       if (request.method() === 'PUT') {
@@ -76,7 +78,7 @@ async function session(initialDecisions = [], options = {}) {
     } else {
       throw new Error('Unexpected mock API request: ' + url.pathname);
     }
-    await route.fulfill({ json: payload }).catch(() => {});
+    await route.fulfill({ json: payload, headers: { 'X-Platform-Identity': 'auth:mock-employer' } }).catch(() => {});
   });
   const page = await context.newPage();
   page.setDefaultTimeout(15000);

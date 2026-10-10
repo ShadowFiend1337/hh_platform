@@ -61,7 +61,9 @@ async function session({ applied = [], failNextApply = false, ...options } = {})
     applications: applied.map(index => application(vacancyFixtures[index])), posts: [], companyGets: [], vacancyGets: 0, failNextApply };
   await context.route('**/api/**', async route => {
     const request = route.request(), url = new URL(request.url());
-    if (url.pathname === '/api/auth/me') { await route.fulfill({ status: 401, json: { error: 'Гостевой кабинет.' } }); return; }
+    // Cabinets require a signed-in account; the mocked one never reaches a real server.
+    if (url.pathname === '/api/auth/me') { await route.fulfill({ json: { account: { id: 'mock-candidate', login: 'mock.candidate', email: 'mock.candidate@example.invalid', role: 'candidate', canModerate: false } } }); return; }
+    if (url.pathname === '/api/assistant/info') { await route.fulfill({ json: { version: 'fixture', llm: false, model: null, notice: '' } }); return; }
     let payload;
     if (url.pathname === '/api/platform/state') {
       if (request.method() === 'PUT') {
@@ -100,7 +102,7 @@ async function session({ applied = [], failNextApply = false, ...options } = {})
       errors.push(`Unexpected mock API request: ${request.method()} ${url.pathname}`);
       await route.fulfill({ status: 404, json: { error: 'Неизвестный тестовый запрос.' } }); return;
     }
-    await route.fulfill({ json: payload }).catch(() => {});
+    await route.fulfill({ json: payload, headers: { 'X-Platform-Identity': 'auth:mock-candidate' } }).catch(() => {});
   });
   const page = await context.newPage();
   page.setDefaultTimeout(15000);
