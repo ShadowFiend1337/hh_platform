@@ -12,6 +12,8 @@ type Props = {
   state: PlatformState; candidates: Candidate[];
   update: (fn: (state: PlatformState) => PlatformState) => void;
   onProfile: (person: Candidate) => void; onInvite: (person: Candidate) => void;
+  /** Opens the shortlist of liked candidates in «Приглашения». */
+  onFavorites?: () => void;
   notify: (message: string) => void; directoryRevision?: number;
 };
 function readSearch(needs: HiringNeed[] = []): { draft: string; query: string; filters: SearchFilters; needId: string } {
@@ -36,7 +38,7 @@ function countLabel(count: number) {
   return count + ' ' + (last === 1 && ending !== 11 ? 'специалист' : last >= 2 && last <= 4 && !(ending >= 12 && ending <= 14) ? 'специалиста' : 'специалистов');
 }
 
-export function Employer({ state, update, onProfile, onInvite, notify, directoryRevision = 0 }: Props) {
+export function Employer({ state, update, onProfile, onInvite, onFavorites, notify, directoryRevision = 0 }: Props) {
   const [initialSearch] = useState(() => readSearch(state.hiringNeeds || []));
   const [draft, setDraft] = useState(initialSearch.draft);
   const [query, setQuery] = useState(initialSearch.query);
@@ -60,7 +62,8 @@ export function Employer({ state, update, onProfile, onInvite, notify, directory
   const [mode, setMode] = useState(readMode);
   const [favorites, setFavorites] = useState(false);
   const decisions = state.candidateDecisions || [];
-  const likedCount = decisions.filter(item => item.decision === 'liked').length;
+  const liked = new Set(decisions.filter(item => item.decision === 'liked').map(item => item.candidateId));
+  const likedCount = liked.size;
   const pendingIds = new Set(state.invitations.filter(item => item.companyId === state.company.id
     && (item.status === 'sent' || item.status === 'viewed')).map(item => item.candidateId));
   const generation = useRef(0);
@@ -313,8 +316,10 @@ export function Employer({ state, update, onProfile, onInvite, notify, directory
       </aside>
       <section className="candidate-list" aria-label="Результаты подбора" aria-busy={loading || loadingMore}>
         <div className="list-heading"><span>{response ? countLabel(response.total) : 'Загружаем каталог…'}</span><div className="directory-view-controls">
-          {mode === 'deck' && <button className={'directory-favorites' + (favorites ? ' selected' : '')} aria-label="Избранные кандидаты" title="Избранные кандидаты"
-            aria-pressed={favorites} onClick={() => setFavorites(!favorites)}><Heart size={17} fill={favorites ? 'currentColor' : 'none'} />{likedCount > 0 && <span>{likedCount}</span>}</button>}
+          {mode === 'deck' ? <button className={'directory-favorites' + (favorites ? ' selected' : '')} aria-label="Избранные кандидаты" title="Избранные кандидаты"
+            aria-pressed={favorites} onClick={() => setFavorites(!favorites)}><Heart size={17} fill={favorites ? 'currentColor' : 'none'} />{likedCount > 0 && <span>{likedCount}</span>}</button>
+            : onFavorites && <button className="directory-favorites" aria-label="Открыть избранных кандидатов" title="Избранные — в разделе «Приглашения»"
+              onClick={onFavorites}><Heart size={17} />{likedCount > 0 && <span>{likedCount}</span>}</button>}
           <div className="directory-view-switch" role="group" aria-label="Режим подбора">
             <button aria-pressed={mode === 'list'} onClick={() => setMode('list')}>Обычный режим</button>
             <button aria-pressed={mode === 'deck'} onClick={() => setMode('deck')}>Предельный режим</button>
@@ -345,7 +350,15 @@ export function Employer({ state, update, onProfile, onInvite, notify, directory
               <div className="tags">{freshness && <span className="tag freshness-tag" title="Работодатель принял ответ кандидата на практическое задание"><ClipboardCheck size={12} />Задание {freshnessLabel(freshness)}</span>}{person.demoProfile && <span className="tag" title="Вымышленный профиль для проверки подбора">Демо</span>}{person.stack.slice(0, 4).map(skill => <span className="tag" key={skill}>{skill}</span>)}{person.achievements.length > 0 && <span className="tag fsp-tag" title={person.synthetic ? 'ФСП · демо: вымышленные результаты' : person.fspEvidence?.mode === 'demo' ? 'Вымышленные достижения; личность ФСП не подтверждена' : 'Сведения ФСП из профиля'}><Medal size={12} />{person.synthetic || person.fspEvidence?.mode === 'demo' ? 'ФСП · демо' : 'ФСП'}</span>}</div>
             </div>
             <div className="candidate-action"><div className="score-with-context"><div className="test-score" title={category ? 'Баллы теста: ' + category.score + ' из 100' : 'Категория не подтверждена'}><strong>{category?.score ?? '—'}{category && <span>/100</span>}</strong></div><details className="match-details" name="matching"><summary aria-label={'Почему подходит ' + person.name} title="Почему подходит"><Info size={15} /></summary><div className="match-popover"><MatchBreakdown match={match} /><p>{reason}</p></div></details></div>
-              {!person.demoProfile && <button className="button secondary compact" disabled={pending} onClick={() => onInvite(person)}>{pending ? 'Отправлено' : 'Пригласить'}</button>}
+              <div className="row-actions">
+                <button className={'row-like' + (liked.has(person.id) ? ' liked' : '')} aria-pressed={liked.has(person.id)}
+                  aria-label={(liked.has(person.id) ? 'Убрать из избранного: ' : 'В избранное: ') + person.name} title={liked.has(person.id) ? 'Убрать из избранного' : 'В избранное'}
+                  onClick={() => decide(person.id, liked.has(person.id) ? null : 'liked')}><Heart size={16} fill={liked.has(person.id) ? 'currentColor' : 'none'} /></button>
+                {person.demoProfile
+                  ? <details className="demo-only" name="demo-only"><summary title="Почему нельзя пригласить">Только просмотр</summary><div className="demo-only-popover">
+                    Это вымышленный демопрофиль для проверки подбора: у него нет аккаунта, поэтому приглашение и контакты недоступны. Добавьте его в избранное, чтобы сравнить, а для полного сценария пригласите зарегистрированного кандидата.</div></details>
+                  : <button className="button secondary compact" disabled={pending} onClick={() => onInvite(person)}>{pending ? 'Отправлено' : 'Пригласить'}</button>}
+              </div>
             </div>
           </article>;
         })}

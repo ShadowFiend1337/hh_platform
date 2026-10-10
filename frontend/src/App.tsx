@@ -226,7 +226,7 @@ function Workspace({ authAccount: initialAccount }: { authAccount: AuthAccount |
     setDialog(previous => previous?.person.id === id ? { ...previous, person: { ...previous.person, email: '', phone: '' } } : previous);
   }
 
-  function navigate(requestedRole: Role, requestedPage: Page) {
+  function navigate(requestedRole: Role, requestedPage: Page, hash = '') {
     if (assessmentActiveRef.current) {
       if (requestedPage !== 'assessment') setToast('Сначала завершите тест.');
       return;
@@ -235,7 +235,7 @@ function Workspace({ authAccount: initialAccount }: { authAccount: AuthAccount |
     const role = authAccount?.role || requestedRole;
     const page = role === requestedRole && (role === 'candidate' && requestedPage === 'onboarding' || navigation[role].some(item => item.page === requestedPage))
       ? requestedPage : navigation[role][0].page;
-    history.pushState(null, '', '/app?role=' + role + '&tab=' + page);
+    history.pushState(null, '', '/app?role=' + role + '&tab=' + page + hash);
     setRoute({ role, page, home: false, privacy: false, auth: null }); setRoleMenu(false); setDialog(null);
     window.scrollTo({ top: 0, behavior: 'instant' });
   }
@@ -351,8 +351,8 @@ function Workspace({ authAccount: initialAccount }: { authAccount: AuthAccount |
       <PageBoundary>
       {!persistence.ready ? <div className="panel empty-state"><p role="status">Загружаем ваши данные…</p>{persistence.error && <><p role="alert">{persistence.error}</p><button className="button secondary" onClick={persistence.retry}>Повторить загрузку</button></>}</div> : <>
       {persistence.status === 'error' && <div className="data-error" role="alert"><span>{persistence.error}</span><button className="text-button" onClick={persistence.retry}>Повторить сохранение</button></div>}
-      {page === 'candidates' && <Employer directoryRevision={persistence.directoryRevision} state={state} candidates={candidates} update={setState} onProfile={onProfile} onInvite={onInvite} notify={setToast} />}
-      {page === 'invitations' && <Invitations state={state} candidates={candidates} contactCandidateIds={persistence.contactCandidateIds} role={route.role} update={setState} notify={setToast} onProfile={onProfile} syncStatus={persistence.status} revision={persistence.revision} />}
+      {page === 'candidates' && <Employer directoryRevision={persistence.directoryRevision} state={state} candidates={candidates} update={setState} onProfile={onProfile} onInvite={onInvite} onFavorites={() => navigate('employer', 'invitations', '#favorites')} notify={setToast} />}
+      {page === 'invitations' && <Invitations state={state} candidates={candidates} contactCandidateIds={persistence.contactCandidateIds} role={route.role} update={setState} notify={setToast} onProfile={onProfile} onInvite={onInvite} syncStatus={persistence.status} revision={persistence.revision} />}
       {page === 'company' && <Company state={state} update={setState} notify={setToast} syncStatus={persistence.status} />}
       {page === 'profile' && <Profile state={state} update={setState} notify={setToast} accountId={authAccount?.id} onTest={() => navigate('candidate', 'assessment')} onSurvey={() => navigate('candidate', 'onboarding')} onPreview={() => onProfile(state.profile)} onFspChange={persistence.refresh} syncStatus={persistence.status} />}
       {page === 'onboarding' && <Onboarding state={state} update={setState} onComplete={() => navigate('candidate', 'assessment')}

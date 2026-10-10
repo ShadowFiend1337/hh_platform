@@ -934,3 +934,26 @@ fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
 @media (max-width: 900px) { .review-layout { grid-template-columns: 1fr; } .review-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .review-status { display: flex; flex-wrap: wrap; width: 100%; }
 .review-status button { flex: 1 1 45%; white-space: nowrap; padding: 7px 8px; font-size: 12px; }
+
+/* Likes in the ordinary list and the shortlist of liked candidates */
+.row-actions { display: flex; align-items: center; gap: 8px; }
+.row-like { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 9px; border: 1px solid #e2e4e9; color: #8a92a0; background: #fff; transition: color .15s, border-color .15s, background .15s; }
+.row-like:hover { color: #d63c68; border-color: #f2c4d2; }
+.row-like.liked { color: #d63c68; border-color: #f2c4d2; background: #fdf1f5; }
+.demo-only { position: relative; }
+.demo-only summary { list-style: none; cursor: pointer; font-size: 12px; color: #626875; padding: 8px 10px; border: 1px dashed #d5d8df; border-radius: 8px; white-space: nowrap; }
+.demo-only summary::-webkit-details-marker { display: none; }
+.demo-only-popover { position: absolute; right: 0; top: calc(100% + 6px); z-index: 5; width: 280px; padding: 12px 14px; border-radius: 10px; background: #fff;
+  border: 1px solid var(--border); box-shadow: 0 12px 30px #1d21291f; font-size: 12.5px; line-height: 1.6; color: #474c57; }
+.nav-count { margin-left: auto; font-size: 11px; padding: 1px 7px; border-radius: 999px; background: #f1f2f5; color: #626875; }
+.favorite-list { display: grid; gap: 12px; }
+.favorite-card { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 16px; align-items: center; padding: 18px 20px; background: #fff; border: 1px solid var(--border); border-radius: 11px; }
+.favorite-main { display: grid; gap: 4px; min-width: 0; }
+.favorite-date { font-size: 12px; }
+.favorite-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: end; gap: 8px; }
+.favorite-actions .text-button { gap: 5px; }
+@media (max-width: 640px) {
+  .favorite-card { grid-template-columns: auto minmax(0, 1fr); }
+  .favorite-actions { grid-column: 1 / -1; justify-content: start; }
+  .demo-only-popover { right: auto; left: -120px; width: 250px; }
+}

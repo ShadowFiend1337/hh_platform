@@ -55,6 +55,7 @@
     "test:demo-catalog": "node frontend/tests/demo-catalog.mjs",
     "test:hiring-needs": "node frontend/tests/hiring-needs.mjs",
     "test:tasks": "node frontend/tests/tasks.mjs",
+    "test:favorites": "node frontend/tests/favorites.mjs",
     "test:open-assessment": "node --test server/tests/open-assessment.test.mjs && node frontend/tests/open-assessment.mjs",
     "test:browser:all": "node scripts/browser-tests.mjs",
     "test:item-bank-ui": "node frontend/tests/item-bank-moderation.mjs",
