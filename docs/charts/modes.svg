@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="484" viewBox="0 0 720 484" font-family="Manrope, 'Segoe UI', Arial, sans-serif" role="img" aria-label="Фокус: обычный и «Предельный» режим">
+<rect x="0.5" y="0.5" width="719" height="483" rx="14" fill="#fff" stroke="#e6e8ee"/>
+<text x="28" y="40" font-size="19" font-weight="700" fill="#1d2129">Фокус: обычный и «Предельный» режим</text>
+<text x="28" y="64" font-size="13" fill="#626875">Экран 1440×900, демокаталог работодателя и компании для кандидата</text>
+<rect x="28" y="80" width="12" height="12" rx="3" fill="#b9bec9"/>
+<text x="46" y="90" font-size="12.5" fill="#1d2129">Обычный режим</text>
+<rect x="198" y="80" width="12" height="12" rx="3" fill="#006ce8"/>
+<text x="216" y="90" font-size="12.5" fill="#1d2129">Предельный режим</text>
+<text x="28" y="135" font-size="13.5" font-weight="600" fill="#1d2129">Кандидатов на экране</text>
+<text x="28" y="153" font-size="11.5" fill="#626875">меньше — меньше переключений</text>
+<rect x="260" y="118" width="400" height="16" rx="4" fill="#f4f5f8"/>
+<rect x="260" y="118" width="400" height="16" rx="4" fill="#b9bec9"/>
+<text x="668" y="130.5" font-size="12.5" font-weight="600" fill="#1d2129">5</text>
+<rect x="260" y="140" width="400" height="16" rx="4" fill="#f4f5f8"/>
+<rect x="260" y="140" width="80" height="16" rx="4" fill="#006ce8"/>
+<text x="348" y="152.5" font-size="12.5" font-weight="600" fill="#1d2129">1</text>
+<text x="28" y="199" font-size="13.5" font-weight="600" fill="#1d2129">Сведений о кандидате</text>
+<text x="28" y="217" font-size="11.5" fill="#626875">символов в карточке</text>
+<rect x="260" y="182" width="400" height="16" rx="4" fill="#f4f5f8"/>
+<rect x="260" y="182" width="197" height="16" rx="4" fill="#b9bec9"/>
+<text x="465" y="194.5" font-size="12.5" font-weight="600" fill="#1d2129">145</text>
+<rect x="260" y="204" width="400" height="16" rx="4" fill="#f4f5f8"/>
+<rect x="260" y="204" width="400" height="16" rx="4" fill="#006ce8"/>
+<text x="668" y="216.5" font-size="12.5" font-weight="600" fill="#1d2129">294</text>
+<text x="28" y="263" font-size="13.5" font-weight="600" fill="#1d2129">Действий на 20 решений</text>
+<text x="28" y="281" font-size="11.5" fill="#626875">клики, клавиши и прокрутки</text>
+<rect x="260" y="246" width="400" height="16" rx="4" fill="#f4f5f8"/>
+<rect x="260" y="246" width="400" height="16" rx="4" fill="#b9bec9"/>
+<text x="668" y="258.5" font-size="12.5" font-weight="600" fill="#1d2129">44</text>
+<rect x="260" y="268" width="400" height="16" rx="4" fill="#f4f5f8"/>
+<rect x="260" y="268" width="182" height="16" rx="4" fill="#006ce8"/>
+<text x="450" y="280.5" font-size="12.5" font-weight="600" fill="#1d2129">20</text>
+<text x="28" y="327" font-size="13.5" font-weight="600" fill="#1d2129">Вакансий на экране</text>
+<text x="28" y="345" font-size="11.5" fill="#626875">кабинет кандидата</text>
+<rect x="260" y="310" width="400" height="16" rx="4" fill="#f4f5f8"/>
+<rect x="260" y="310" width="400" height="16" rx="4" fill="#b9bec9"/>
+<text x="668" y="322.5" font-size="12.5" font-weight="600" fill="#1d2129">6</text>
+<rect x="260" y="332" width="400" height="16" rx="4" fill="#f4f5f8"/>
+<rect x="260" y="332" width="67" height="16" rx="4" fill="#006ce8"/>
+<text x="335" y="344.5" font-size="12.5" font-weight="600" fill="#1d2129">1</text>
+<text x="28" y="391" font-size="13.5" font-weight="600" fill="#1d2129">Сведений о вакансии</text>
+<text x="28" y="409" font-size="11.5" fill="#626875">символов в карточке</text>
+<rect x="260" y="374" width="400" height="16" rx="4" fill="#f4f5f8"/>
+<rect x="260" y="374" width="193" height="16" rx="4" fill="#b9bec9"/>
+<text x="461" y="386.5" font-size="12.5" font-weight="600" fill="#1d2129">119</text>
+<rect x="260" y="396" width="400" height="16" rx="4" fill="#f4f5f8"/>
+<rect x="260" y="396" width="400" height="16" rx="4" fill="#006ce8"/>
+<text x="668" y="408.5" font-size="12.5" font-weight="600" fill="#1d2129">247</text>
+<text x="28" y="464" font-size="11.5" fill="#626875">Замер интерфейса Playwright 2026-10-10 (npm run measure:modes), не эксперимент на людях.</text>
+</svg>

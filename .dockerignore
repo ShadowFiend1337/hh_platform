@@ -1,0 +1,14 @@
+.git
+**/node_modules
+frontend/dist
+frontend/public/resume-assets
+frontend/test-results
+test-results
+server/data
+backend/data
+.venv
+**/__pycache__
+.env
+.env.*
+!.env.example
+*.log

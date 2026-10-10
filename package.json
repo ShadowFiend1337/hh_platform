@@ -57,6 +57,8 @@
     "test:tasks": "node frontend/tests/tasks.mjs",
     "test:item-bank-ui": "node frontend/tests/item-bank-moderation.mjs",
     "docs:openapi": "node scripts/openapi.mjs",
+    "measure:modes": "node frontend/tests/mode-focus.mjs",
+    "charts": "node scripts/charts.mjs",
     "test:fsp": "node frontend/tests/fsp-link.mjs",
     "test:unconfirmed": "node frontend/tests/unconfirmed-directory.mjs",
     "test:assessment-guard": "node frontend/tests/assessment-guard.mjs",

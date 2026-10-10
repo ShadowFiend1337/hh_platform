@@ -14,7 +14,7 @@
 //
 //   node scripts/validate-assessment.mjs [--candidates 200] [--seed 7] [--out docs/assessment_validation_results.md]
 import { createHash } from 'node:crypto';
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { programs } from '../server/bank.mjs';
@@ -23,7 +23,7 @@ import { gradeOptions } from '../shared/grading.ts';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const argument = (name, fallback) => { const index = process.argv.indexOf('--' + name); return index >= 0 ? process.argv[index + 1] : fallback; };
-const perCell = Number(argument('candidates', 200));
+const perCell = Number(argument('candidates', 400));
 const output = resolve(root, argument('out', 'docs/assessment_validation_results.md'));
 let seed = Number(argument('seed', 7)) >>> 0;
 const random = () => { seed = (seed + 0x6D2B79F5) >>> 0; let t = seed; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
@@ -165,7 +165,7 @@ report.leakedPass = [4, 10, 20].map(pool => ({ poolPerFamily: pool, passRate: le
 const single = report.retest.single, clarified = report.retest.clarified;
 const lines = [];
 lines.push('# Результаты валидации механики тестирования', '');
-lines.push(`Сгенерировано \`npm run validate:assessment-model\` (${perCell} синтетических кандидатов на ячейку, фиксированный seed). Используются настоящие сборка попытки, выбор и исключение заданий, уточняющий блок, подсчёт балла и порог ${threshold}/100. Ответы задаёт модель IRT (3PL), параметры — в комментарии [скрипта](../scripts/validate-assessment.mjs). Это проверка механики при условии, что задания ведут себя как размечены авторами, а не калибровка на людях; организаторы прямо допускают симуляцию (PR.1). Процедура описана в [assessment_validation.md](assessment_validation.md).`, '');
+lines.push(`Сгенерировано \`npm run validate:assessment-model\` (${perCell} синтетических кандидатов на ячейку; ответы моделируются с фиксированным seed, а задания выбирает криптографический генератор платформы, поэтому повторные прогоны отличаются на 1–3 п. п.). Используются настоящие сборка попытки, выбор и исключение заданий, уточняющий блок, подсчёт балла и порог ${threshold}/100. Ответы задаёт модель IRT (3PL), параметры — в комментарии [скрипта](../scripts/validate-assessment.mjs). Это проверка механики при условии, что задания ведут себя как размечены авторами, а не калибровка на людях; организаторы прямо допускают симуляцию (PR.1). Процедура описана в [assessment_validation.md](assessment_validation.md).`, '');
 lines.push('## Разделяющая сила', '');
 lines.push('Доля подтвердивших грейд. Строка — реальный уровень кандидата, столбец — грейд теста.', '');
 lines.push('| Реальный \\ Тест | ' + grades.join(' | ') + ' |', '| --- | ' + grades.map(() => '---').join(' | ') + ' |');
@@ -202,8 +202,12 @@ for (const item of report.leakedPass) lines.push(`| ${item.poolPerFamily} | ${pc
 lines.push('', `Без утечки такой кандидат подтверждает Middle в ${pct(report.matrix.Junior.Middle)}% случаев. Конечный авторский банк расходится быстро, поэтому зачётный пул пополняется проверенными сгенерированными заданиями, сгенерированные выводятся после 150 показов, а последовательная выдача с лимитом 2 минуты на вопрос мешает собирать ответы во время теста.`, '');
 lines.push('## Выводы и ограничения', '');
 lines.push(`- Тест разделяет соседние грейды: свой грейд подтверждают ${pct(own)}%, грейд выше — ${pct(above)}%.`);
-lines.push(`- Уточняющий блок повышает совпадение решений при пересдаче с ${pct(single.agreement)}% до ${pct(clarified.agreement)}% и точность с ${pct(single.accuracy)}% до ${pct(clarified.accuracy)}%; его получают ${pct(clarified.clarifiedShare)}% попыток.`);
+lines.push(`- Уточняющий блок (его получают ${pct(clarified.clarifiedShare)}% попыток) повышает точность решения с ${pct(single.accuracy)}% до ${pct(clarified.accuracy)}% и снижает долю ошибочно не подтверждённых с ${pct(single.falseFail)}% до ${pct(clarified.falseFail)}%; цена — ошибочно подтверждённых ${pct(single.falsePass)}% → ${pct(clarified.falsePass)}%. Совпадение решений при пересдаче: ${pct(single.agreement)}% → ${pct(clarified.agreement)}%.`);
 lines.push('- Формы практически не пересекаются: задания прошлой попытки исключаются.');
 lines.push('- Параметры заданий заданы моделью. Настоящие сложность и дискриминацию даёт пилот: незачётные задания и статистика ответов в банке.');
 writeFileSync(output, lines.join('\n') + '\n');
+// Numbers for the README charts (scripts/charts.mjs).
+mkdirSync(resolve(root, 'docs/charts'), { recursive: true });
+writeFileSync(resolve(root, 'docs/charts/assessment-validation.json'), JSON.stringify({ source: 'npm run validate:assessment-model', kind: 'simulation',
+  perCell, grades, matrix: report.matrix, retest: report.retest, leak: report.leak, leakedPass: report.leakedPass }, null, 2) + '\n');
 console.log(JSON.stringify({ own: pct(own), above: pct(above), single, clarified, discrimination: report.itemDiscrimination, output }, null, 2));

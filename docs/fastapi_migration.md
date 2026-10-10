@@ -50,7 +50,7 @@ npm run start:fastapi
 2. Запустите только СУБД:
 
    ```bash
-   docker compose up -d postgres
+   docker compose --profile fastapi up -d postgres
    ```
 
 3. Замените `DATABASE_URL` в `.env` на адрес контейнера, используя те же `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_PORT` и `POSTGRES_DB`. Например, при значениях из примера:

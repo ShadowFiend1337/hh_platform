@@ -1,0 +1,151 @@
+{
+  "source": "npm run validate:assessment-model",
+  "kind": "simulation",
+  "perCell": 400,
+  "grades": [
+    "Intern",
+    "Junior",
+    "Middle",
+    "Senior",
+    "Lead"
+  ],
+  "matrix": {
+    "Intern": {
+      "Intern": 0.835,
+      "Junior": 0.1,
+      "Middle": 0.0025,
+      "Senior": 0,
+      "Lead": 0
+    },
+    "Junior": {
+      "Intern": 1,
+      "Junior": 0.775,
+      "Middle": 0.105,
+      "Senior": 0.005,
+      "Lead": 0.0025
+    },
+    "Middle": {
+      "Intern": 1,
+      "Junior": 0.995,
+      "Middle": 0.7875,
+      "Senior": 0.09,
+      "Lead": 0
+    },
+    "Senior": {
+      "Intern": 1,
+      "Junior": 1,
+      "Middle": 1,
+      "Senior": 0.825,
+      "Lead": 0.0975
+    },
+    "Lead": {
+      "Intern": 1,
+      "Junior": 1,
+      "Middle": 1,
+      "Senior": 0.9975,
+      "Lead": 0.7725
+    }
+  },
+  "retest": {
+    "single": {
+      "pairs": 2000,
+      "agreement": 0.7485,
+      "kappa": 0.47698418475039783,
+      "correlation": 0.6667576557568562,
+      "accuracy": 0.8275,
+      "falsePass": 0.15683453237410072,
+      "falseFail": 0.18084291187739462,
+      "clarifiedShare": 0,
+      "sharedItems": 0,
+      "meanQuestions": 12
+    },
+    "clarified": {
+      "pairs": 2000,
+      "agreement": 0.773,
+      "kappa": 0.501813333625954,
+      "correlation": 0.6901058395101637,
+      "accuracy": 0.85,
+      "falsePass": 0.2353870458135861,
+      "falseFail": 0.11046086320409657,
+      "clarifiedShare": 0.2195,
+      "sharedItems": 1.317,
+      "meanQuestions": 13.317
+    }
+  },
+  "leak": [
+    {
+      "poolPerFamily": 4,
+      "leakedAttempts": 1,
+      "knownShare": 0.5069444444444444
+    },
+    {
+      "poolPerFamily": 4,
+      "leakedAttempts": 5,
+      "knownShare": 0.9638888888888889
+    },
+    {
+      "poolPerFamily": 4,
+      "leakedAttempts": 20,
+      "knownShare": 1
+    },
+    {
+      "poolPerFamily": 4,
+      "leakedAttempts": 50,
+      "knownShare": 1
+    },
+    {
+      "poolPerFamily": 10,
+      "leakedAttempts": 1,
+      "knownShare": 0.19722222222222222
+    },
+    {
+      "poolPerFamily": 10,
+      "leakedAttempts": 5,
+      "knownShare": 0.6694444444444444
+    },
+    {
+      "poolPerFamily": 10,
+      "leakedAttempts": 20,
+      "knownShare": 0.9819444444444444
+    },
+    {
+      "poolPerFamily": 10,
+      "leakedAttempts": 50,
+      "knownShare": 1
+    },
+    {
+      "poolPerFamily": 20,
+      "leakedAttempts": 1,
+      "knownShare": 0.1125
+    },
+    {
+      "poolPerFamily": 20,
+      "leakedAttempts": 5,
+      "knownShare": 0.42777777777777776
+    },
+    {
+      "poolPerFamily": 20,
+      "leakedAttempts": 20,
+      "knownShare": 0.875
+    },
+    {
+      "poolPerFamily": 20,
+      "leakedAttempts": 50,
+      "knownShare": 0.9930555555555556
+    }
+  ],
+  "leakedPass": [
+    {
+      "poolPerFamily": 4,
+      "passRate": 1
+    },
+    {
+      "poolPerFamily": 10,
+      "passRate": 1
+    },
+    {
+      "poolPerFamily": 20,
+      "passRate": 0.995
+    }
+  ]
+}

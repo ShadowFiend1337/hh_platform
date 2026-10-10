@@ -1,11 +1,42 @@
 services:
+  # Main platform: API, interface and the semantic search worker on http://localhost:8787.
+  # SQLite lives in the predel_data volume; the trained search artifact (not in Git) is
+  # mounted read-only from ./server/data. Without it text search answers 503, filters work.
+  app:
+    build:
+      context: .
+      args:
+        WITH_SEARCH: ${WITH_SEARCH:-1}
+    image: predel-app
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8787
+      WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:8787}
+      SETUP_LOCAL_ACCOUNTS: ${SETUP_LOCAL_ACCOUNTS:-1}
+      # The proxy from .env points to the host machine, not the container.
+      HTTPS_PROXY: ${DOCKER_HTTPS_PROXY:-}
+      HTTP_PROXY: ${DOCKER_HTTP_PROXY:-}
+    ports:
+      - "${APP_PORT:-8787}:8787"
+    volumes:
+      - predel_data:/app/server/data
+      - ./server/data/semantic-model:/app/server/data/semantic-model:ro
+      - ./server/data/semantic-runs:/app/server/data/semantic-runs:ro
+
+  # Optional PostgreSQL for the alternative FastAPI backend (`docker compose up -d postgres`).
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
+    profiles: ["fastapi"]
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-hh_platform}
       POSTGRES_USER: ${POSTGRES_USER:-hh_platform}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env before starting PostgreSQL}
+      # Set POSTGRES_PASSWORD in .env; the postgres image refuses to start without it.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
@@ -17,4 +48,5 @@ services:
       retries: 12
 
 volumes:
+  predel_data:
   postgres_data:

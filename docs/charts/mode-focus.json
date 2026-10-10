@@ -1,0 +1,43 @@
+{
+  "measuredAt": "2026-10-10",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "reviews": 20,
+  "kind": "interface-measurement",
+  "employer": {
+    "list": {
+      "cards": 5,
+      "controls": 15,
+      "cardHeight": 193,
+      "textPerCard": 145,
+      "actionsPerReview": 2,
+      "scrolls": 4,
+      "actions": 44
+    },
+    "deck": {
+      "cards": 1,
+      "controls": 8,
+      "cardHeight": 538,
+      "textPerCard": 294,
+      "actionsPerReview": 1,
+      "scrolls": 0,
+      "actions": 20
+    }
+  },
+  "candidate": {
+    "list": {
+      "cards": 6,
+      "controls": 6,
+      "cardHeight": 325,
+      "textPerCard": 119
+    },
+    "deck": {
+      "cards": 1,
+      "controls": 5,
+      "cardHeight": 504,
+      "textPerCard": 247
+    }
+  }
+}
