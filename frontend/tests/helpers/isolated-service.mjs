@@ -27,3 +27,13 @@ export async function startIsolatedService(options = {}) {
     await new Promise(resolve => { service.server.close(resolve); service.server.closeAllConnections(); });
   } };
 }
+
+/**
+ * Interface for tests that mock every /api request: an explicit PREDEL_URL, or an
+ * isolated service started for this run, so a separate dev server is not required.
+ */
+export async function frontendBase() {
+  if (process.env.PREDEL_URL) return { base: process.env.PREDEL_URL, close: async () => {} };
+  const isolated = await startIsolatedService();
+  return { base: isolated.base, close: () => isolated.close() };
+}

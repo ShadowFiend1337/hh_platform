@@ -3,9 +3,11 @@ import { mkdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { createInitialState } from '../src/model.ts';
+import { frontendBase } from './helpers/isolated-service.mjs';
 
 // Fictional jobs and isolated API snapshots; applications never reach the real service.
-const base = process.env.PREDEL_URL || 'http://127.0.0.1:5173';
+const frontend = await frontendBase();
+const base = frontend.base;
 const browser = await chromium.launch({
   headless: true,
   ...(process.env.PLAYWRIGHT_CHROMIUM_CHANNEL ? { channel: process.env.PLAYWRIGHT_CHROMIUM_CHANNEL } : {}),
@@ -317,4 +319,5 @@ try {
 } finally {
   await Promise.all(contexts.map(context => context.close()));
   await browser.close();
+  await frontend.close();
 }

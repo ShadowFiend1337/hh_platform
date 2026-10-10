@@ -69,6 +69,13 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
   const limits = new Map();
   // Per-address budget for all API calls; offices behind one NAT may need a higher value.
   const requestsPerMinute = Math.max(30, Number(authEnv.API_RATE_LIMIT_PER_MINUTE) || 180);
+  // Behind a reverse proxy (TRUST_PROXY=1) the client is the address the proxy appended last;
+  // a client-supplied X-Forwarded-For prefix is ignored.
+  const trustProxy = authEnv.TRUST_PROXY === '1';
+  const clientAddress = request => {
+    const forwarded = trustProxy ? String(request.headers['x-forwarded-for'] || '').split(',').map(item => item.trim()).filter(Boolean).at(-1) : '';
+    return forwarded || request.socket.remoteAddress || 'unknown';
+  };
   const integritySummary = ({ departures, blockedCopies, blockedActions, fullscreenExits }) => ({ departures, blockedCopies, blockedActions, fullscreenExits });
   function send(response, status, value) {
     response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
@@ -162,7 +169,7 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
     try {
       const url = new URL(request.url, 'http://localhost');
       if (url.pathname.startsWith('/api/')) {
-        limit('requests:' + request.socket.remoteAddress, requestsPerMinute, 60000);
+        limit('requests:' + clientAddress(request), requestsPerMinute, 60000);
         const origin = request.headers.origin;
         const allowed = new Set([(secureCookie ? 'https://' : 'http://') + request.headers.host,
           ...(webOrigin ? [webOrigin] : ['http://127.0.0.1:5173', 'http://127.0.0.1:4173', 'http://localhost:5173', 'http://localhost:4173'])]);
@@ -180,7 +187,7 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
         }
         if (['/api/integrations/fsp/callback','/api/integrations/github/callback'].includes(url.pathname) && request.method === 'GET') return callbackPage(response);
         if (url.pathname === '/api/integrations/fsp/webhook' && request.method === 'POST') {
-          limit('integration-webhook:' + request.socket.remoteAddress, 60, 60000);
+          limit('integration-webhook:' + clientAddress(request), 60, 60000);
           return send(response, 202, integrations.webhook(await readWebhook(request), request.headers));
         }
         if (url.pathname === '/api/auth/demo-accounts' && request.method === 'GET') {
@@ -199,7 +206,7 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
           if (path === '/protocol/openid-connect/auth') {
             if (request.method === 'GET') return html(response, 200, fspId.authorizePage(url.searchParams));
             if (request.method === 'POST') {
-              limit('fsp-id-auth:' + request.socket.remoteAddress, 30, 600000);
+              limit('fsp-id-auth:' + clientAddress(request), 30, 600000);
               const form = new URLSearchParams(await rawBody(request));
               const result = fspId.authorizeSubmit(form);
               return result.location ? redirect(response, result.location) : html(response, 400, fspId.authorizePage(form));
@@ -218,7 +225,7 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
         }
         if (url.pathname === '/api/auth/fsp/start' && request.method === 'GET') {
           if (!fspId.enabled) return redirect(response, '/auth?mode=login&fsp=off');
-          limit('fsp-start:' + request.socket.remoteAddress, 30, 600000);
+          limit('fsp-start:' + clientAddress(request), 30, 600000);
           const started = fspId.start();
           setCookie(response, 'predel_fsp_state=' + started.state + '; Path=/api/auth/fsp; HttpOnly; SameSite=Lax; Max-Age=600' + (secureCookie ? '; Secure' : ''));
           return redirect(response, started.url);
@@ -242,7 +249,7 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
             suggestedLogin: auth.suggestLogin(user.email) });
         }
         if (url.pathname === '/api/auth/fsp/complete' && request.method === 'POST') {
-          limit('fsp-complete:' + request.socket.remoteAddress, 20, 600000);
+          limit('fsp-complete:' + clientAddress(request), 20, 600000);
           const input = await body(request, 4096);
           if (Object.keys(input).some(key => !['ticket', 'login', 'consent', 'privacyVersion'].includes(key))) throw new RequestError(400, 'Недопустимые поля запроса.');
           const user = fspId.ticket(String(input.ticket || ''));
@@ -269,7 +276,7 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
         if (await integrationRoutes({ request, response, url, identity, integrations, body, send, limit })) return;
         if (url.pathname === '/api/auth/register/request-code') {
           if (request.method !== 'POST') throw new RequestError(405, 'Метод не поддерживается.');
-          limit('auth-code-ip:' + request.socket.remoteAddress, 12, 600000);
+          limit('auth-code-ip:' + clientAddress(request), 12, 600000);
           const input = await body(request);
           const email = typeof input.email === 'string' ? input.email.normalize('NFKC').trim().toLocaleLowerCase('en-US') : '';
           if (email) limit('auth-code-email:' + email, 4, 600000);
@@ -278,7 +285,7 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
         }
         if (url.pathname === '/api/auth/register/verify') {
           if (request.method !== 'POST') throw new RequestError(405, 'Метод не поддерживается.');
-          limit('auth-verify-ip:' + request.socket.remoteAddress, 20, 600000);
+          limit('auth-verify-ip:' + clientAddress(request), 20, 600000);
           const account = auth.verifyRegistration(await body(request));
           const created = auth.createSession(account);
           setAuthCookie(response, created.token, created.maxAge);
@@ -286,7 +293,7 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
         }
         if (url.pathname === '/api/auth/login') {
           if (request.method !== 'POST') throw new RequestError(405, 'Метод не поддерживается.');
-          limit('auth-login-ip:' + request.socket.remoteAddress, 20, 600000);
+          limit('auth-login-ip:' + clientAddress(request), 20, 600000);
           const account = await auth.login(await body(request));
           const created = auth.createSession(account);
           setAuthCookie(response, created.token, created.maxAge);
@@ -457,7 +464,7 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
           if (identity.account?.role === 'employer') throw new RequestError(403, 'Тестирование доступно соискателю.');
           const input = await body(request);
           if (Object.keys(input).some(key => !['survey', 'vacancyDescription'].includes(key))) throw new RequestError(400, 'Недопустимые поля запроса.');
-          limit('starts:' + request.socket.remoteAddress, 40, 3600000);
+          limit('starts:' + clientAddress(request), 40, 3600000);
           if (store.countSince(session, new Date(now() - 3600000).toISOString()) >= 20) throw new RequestError(429, 'Слишком много попыток. Попробуйте позже.');
           const survey = validateSurvey(input.survey);
           const lock = retakeLock(store.completed(session), survey.specialization, survey.desiredGrade, now(), retryDays(authEnv));

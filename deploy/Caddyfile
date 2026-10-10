@@ -1,0 +1,16 @@
+# HTTPS stand: Caddy obtains and renews the certificate automatically.
+# DOMAIN defaults to predel-ai.ru; DNS A/AAAA records must point to this server.
+{$DOMAIN:predel-ai.ru} {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Content-Type-Options "nosniff"
+		-Server
+	}
+	reverse_proxy app:8787
+}
+
+www.{$DOMAIN:predel-ai.ru} {
+	redir https://{$DOMAIN:predel-ai.ru}{uri} permanent
+}

@@ -1,3 +1,5 @@
+name: predel
+
 services:
   # Main platform: API, interface and the semantic search worker on http://localhost:8787.
   # SQLite lives in the predel_data volume; the trained search artifact (not in Git) is
@@ -16,16 +18,36 @@ services:
       HOST: 0.0.0.0
       PORT: 8787
       WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:8787}
+      COOKIE_SECURE: ${COOKIE_SECURE:-0}
+      TRUST_PROXY: ${TRUST_PROXY:-0}
       SETUP_LOCAL_ACCOUNTS: ${SETUP_LOCAL_ACCOUNTS:-1}
       # The proxy from .env points to the host machine, not the container.
       HTTPS_PROXY: ${DOCKER_HTTPS_PROXY:-}
       HTTP_PROXY: ${DOCKER_HTTP_PROXY:-}
     ports:
-      - "${APP_PORT:-8787}:8787"
+      # Local only by default; the public stand is served by Caddy below.
+      - "${APP_BIND:-127.0.0.1}:${APP_PORT:-8787}:8787"
     volumes:
       - predel_data:/app/server/data
       - ./server/data/semantic-model:/app/server/data/semantic-model:ro
       - ./server/data/semantic-runs:/app/server/data/semantic-runs:ro
+
+  # HTTPS stand (docs/deploy.md): docker compose --profile deploy up -d --build
+  caddy:
+    image: caddy:2.8
+    restart: unless-stopped
+    profiles: ["deploy"]
+    depends_on: [app]
+    environment:
+      DOMAIN: ${DOMAIN:-predel-ai.ru}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
 
   # Optional PostgreSQL for the alternative FastAPI backend (`docker compose up -d postgres`).
   postgres:
@@ -49,4 +71,6 @@ services:
 
 volumes:
   predel_data:
+  caddy_data:
+  caddy_config:
   postgres_data:

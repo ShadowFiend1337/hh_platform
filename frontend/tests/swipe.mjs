@@ -3,9 +3,11 @@ import { createRequire } from 'node:module';
 import { chromium } from 'playwright';
 import { createInitialState } from '../src/model.ts';
 import { normalizeSearchFilters } from '../../shared/search.ts';
+import { frontendBase } from './helpers/isolated-service.mjs';
 
 // Author-created fictional profiles and isolated API state; no personal resume data.
-const base = process.env.PREDEL_URL || 'http://127.0.0.1:5173';
+const frontend = await frontendBase();
+const base = frontend.base;
 const require = createRequire(import.meta.url);
 const browser = await chromium.launch({ headless: true });
 const contexts = [];
@@ -262,4 +264,5 @@ try {
 } finally {
   await Promise.all(contexts.map(context => context.close()));
   await browser.close();
+  await frontend.close();
 }

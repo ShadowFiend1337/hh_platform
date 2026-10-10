@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { createInitialState, storageKey } from '../src/model.ts';
+import { frontendBase } from './helpers/isolated-service.mjs';
 
 // Fictional in-memory platform snapshots. No real API data or resume artifacts.
-const base = process.env.PREDEL_URL || 'http://127.0.0.1:5173';
+const frontend = await frontendBase();
+const base = frontend.base;
 const browser = await chromium.launch({ headless: true });
 const contexts = [];
 const errors = [];
@@ -299,4 +301,5 @@ try {
 } finally {
   for (const context of contexts) await context.close();
   await browser.close();
+  await frontend.close();
 }
