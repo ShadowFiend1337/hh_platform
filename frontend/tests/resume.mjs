@@ -3,9 +3,14 @@ import { mkdir, readFile, readdir } from 'node:fs/promises';
 import { basename, extname, resolve } from 'node:path';
 import { createRequire } from 'node:module';
 import { chromium } from 'playwright';
-import { programs } from '../../server/bank.mjs';
+import { answerExam, answerKey } from './helpers/exam.mjs';
+import { register } from './helpers/accounts.mjs';
+import { startIsolatedService } from './helpers/isolated-service.mjs';
 
-const base = process.env.PREDEL_URL || 'http://127.0.0.1:5173';
+// Each scenario starts from a fresh registered candidate on a disposable service.
+const isolated = await startIsolatedService({ authEnv: { API_RATE_LIMIT_PER_MINUTE: '3000' } });
+const base = isolated.base;
+let accounts = 0;
 const origin = new URL(base).origin;
 const storageKey = 'predel:platform:v2';
 const require = createRequire(import.meta.url);
@@ -161,7 +166,8 @@ function assertCompleteExperience(result, method) {
 }
 
 async function resetForm() {
-  await page.goto(base + '/app?role=candidate');
+  await register(context, isolated, 'candidate', 'resume.candidate' + ++accounts);
+  await page.goto(base + '/app?role=candidate&tab=onboarding');
   await page.evaluate(key => { localStorage.removeItem(key); sessionStorage.clear(); }, storageKey);
   await page.reload();
   await page.getByRole('heading', { name: 'Анкета', exact: true }).waitFor();
@@ -390,6 +396,7 @@ try {
   assert.equal(saved.profile.workHistory, longHistory, 'Reload must preserve long work history');
   const requestPromise = page.waitForRequest(request => request.url().endsWith('/api/assessment/attempts') && request.method() === 'POST');
   const responsePromise = page.waitForResponse(response => response.url().endsWith('/api/assessment/attempts') && response.request().method() === 'POST');
+  await page.getByLabel('Ознакомлен с правилами и готов начать').check();
   await page.getByRole('button', { name: 'Начать тест', exact: true }).click();
   const body = (await requestPromise).postDataJSON();
   assert.deepEqual(Object.keys(body.survey).sort(), ['date', 'desiredGrade', 'experience', 'id', 'industry', 'professionalRole', 'softSkills', 'specialization', 'stack'].sort(), 'Assessment request must omit contacts and additional resume sections');
@@ -400,17 +407,7 @@ try {
 
   // The profile opens after a successful assessment. Answer keys stay in this
   // Node-only test and never enter the application bundle.
-  const answers = new Map(programs.Frontend.Middle.families.flatMap(family => family.variants.map(variant => [variant.text, variant.options[variant.correct]])));
-  for (let index = 0; index < 6; index++) {
-    await page.locator(`.exam-progress[aria-valuenow="${index + 1}"]`).waitFor();
-    const expected = answers.get(await page.locator('.question-text').textContent());
-    assert.ok(expected, 'Question must belong to the existing server fixture bank');
-    const choices = page.locator('.answer-option');
-    const choice = (await choices.locator('span').allTextContents()).findIndex(text => text.trim() === expected);
-    assert.ok(choice >= 0);
-    await choices.nth(choice).click();
-    await page.getByRole('button', { name: index === 5 ? 'Завершить тест' : 'Далее', exact: true }).click();
-  }
+  await answerExam(page, answerKey('Frontend', 'Middle'));
   await page.getByRole('button', { name: 'К профилю', exact: true }).click();
   await page.getByRole('heading', { name: 'Мой профиль', exact: true }).waitFor();
   assert.equal(await page.locator('[name="workHistory"]').inputValue(), longHistory);
@@ -426,39 +423,24 @@ try {
   assert.equal(saved.profile.workHistory, editedHistory, 'Profile save must preserve long work history');
   assert.deepEqual([...saved.profile.softSkills].sort(), ['Коммуникация', 'Работа в команде'], 'Profile preserves self-reported skills');
 
-  // Deletion is confirmed, synchronized across tabs, and removes server records.
-  const beforeErase = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), storageKey);
+  // Account deletion is confirmed, clears local platform keys and removes server records.
   const erasePolicy = await context.newPage();
   await erasePolicy.goto(base + '/privacy');
   await erasePolicy.getByRole('heading', { name: 'Политика конфиденциальности', exact: true }).waitFor();
   await erasePolicy.evaluate(() => {
     localStorage.setItem('predel:test:unrelated', 'keep');
-    localStorage.setItem('predel:platform:v1', 'legacy');
-    sessionStorage.setItem('predel:assessment:v1', 'local-session');
     sessionStorage.setItem('predel:search', 'local-search');
   });
-  await erasePolicy.getByRole('button', { name: 'Удалить данные профиля', exact: true }).click();
-  assert.deepEqual(await page.evaluate(key => JSON.parse(localStorage.getItem(key)), storageKey), beforeErase, 'First deletion click must not delete data');
+  await erasePolicy.getByRole('button', { name: 'Удалить аккаунт и данные', exact: true }).click();
   await erasePolicy.getByRole('button', { name: 'Отмена', exact: true }).click();
-  assert.deepEqual(await page.evaluate(key => JSON.parse(localStorage.getItem(key)), storageKey), beforeErase, 'Cancelling must preserve saved questionnaire');
-  await erasePolicy.getByRole('button', { name: 'Удалить данные профиля', exact: true }).click();
+  assert.ok(isolated.service.store.get(serverAttempt.id), 'Cancelling keeps the account and its attempts');
+  await erasePolicy.getByRole('button', { name: 'Удалить аккаунт и данные', exact: true }).click();
   await erasePolicy.getByRole('button', { name: 'Удалить', exact: true }).click();
-  await erasePolicy.getByText('Данные кабинета удалены из браузера и с сервера.', { exact: true }).waitFor();
-  await page.getByRole('heading', { name: 'Анкета', exact: true }).waitFor();
-  assert.equal(await page.locator('[name="name"]').inputValue(), '', 'Other tab must reset the deleted profile');
-  const erased = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), storageKey);
-  assert.equal(erased.profile.name, '');
-  assert.equal(erased.profile.consent, false);
-  assert.equal(erased.profile.visible, false);
-  assert.equal(erased.profile.confirmed, null);
-  assert.deepEqual(erased.surveys, []);
-  assert.deepEqual(erased.history, []);
-  assert.equal(await erasePolicy.evaluate(() => localStorage.getItem('predel:platform:v1')), null);
+  await erasePolicy.getByText(/Аккаунт и связанные данные удалены/u).waitFor();
+  assert.equal(isolated.service.store.get(serverAttempt.id), null, 'Deletion removes owned server attempts');
   assert.equal(await erasePolicy.evaluate(() => localStorage.getItem('predel:test:unrelated')), 'keep');
-  assert.equal(await erasePolicy.evaluate(() => sessionStorage.getItem('predel:assessment:v1')), null);
   assert.equal(await erasePolicy.evaluate(() => sessionStorage.getItem('predel:search')), null);
-  const deletedAttempt = await context.request.get(base + '/api/assessment/attempts/' + serverAttempt.id, { headers: { 'X-Attempt-Token': serverAttempt.token } });
-  assert.equal(deletedAttempt.status(), 404, 'Confirmed deletion must also remove owned server attempts');
+  assert.equal((await context.request.get(base + '/api/platform/state')).status(), 401, 'The deleted session is revoked');
   await erasePolicy.close();
 
   if (process.env.PREDEL_RESUMES) {
@@ -493,5 +475,5 @@ try {
   assert.deepEqual(importsRequests, []);
   assert.deepEqual(externalRequests, [], 'All parser and OCR assets must be loaded from this site');
   assert.deepEqual(errors, []);
-  console.log('PASS PDF/DOCX text, actual Russian/English OCR, complete multi-job history across scan/mixed/partial/Form PDFs, automatic total from OCR dates and invalid-period warning, small-image native text, visible truncation, errors and cancellation, edit preservation, long-history persistence, optional self-reported skills, private API payload, consent and deletion across tabs, mobile accessibility');
-} finally { await context.request.delete(base + '/api/platform/state'); await context.close(); await browser.close(); }
+  console.log('PASS PDF/DOCX text, actual Russian/English OCR, complete multi-job history across scan/mixed/partial/Form PDFs, automatic total from OCR dates and invalid-period warning, small-image native text, visible truncation, errors and cancellation, edit preservation, long-history persistence, optional self-reported skills, private API payload, consent, account deletion with server cleanup, mobile accessibility');
+} finally { await context.close(); await browser.close(); await isolated.close(); }

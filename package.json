@@ -55,6 +55,7 @@
     "test:demo-catalog": "node frontend/tests/demo-catalog.mjs",
     "test:hiring-needs": "node frontend/tests/hiring-needs.mjs",
     "test:tasks": "node frontend/tests/tasks.mjs",
+    "test:browser:all": "node scripts/browser-tests.mjs",
     "test:item-bank-ui": "node frontend/tests/item-bank-moderation.mjs",
     "docs:openapi": "node scripts/openapi.mjs",
     "measure:modes": "node frontend/tests/mode-focus.mjs",

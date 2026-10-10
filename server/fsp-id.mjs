@@ -63,7 +63,7 @@ form{padding:22px 26px 24px}h1{font-size:17px;margin:0 0 4px}.hint{font-size:12p
 .person{display:flex;gap:12px;align-items:center;padding:12px 14px;border:1px solid #e6e0f0;border-radius:12px;margin-bottom:8px;cursor:pointer}
 .person:has(input:checked){border-color:#7b2fd0;background:#f8f4ff}.person strong{display:block;font-size:14px}.person small{display:block;font-size:12px;color:#6b6280;margin-top:2px}
 input[type=radio]{accent-color:#7b2fd0;width:16px;height:16px;flex-shrink:0}
-.actions{display:flex;gap:10px;margin-top:16px}button{flex:1;height:44px;border:0;border-radius:10px;font:inherit;font-weight:700;cursor:pointer}
+.actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px}button{flex:1 1 140px;min-height:44px;padding:10px 14px;line-height:1.25;border:0;border-radius:10px;font:inherit;font-weight:700;cursor:pointer}button.primary{flex:2 1 200px}
 .primary{background:#7b2fd0;color:#fff}.secondary{background:#f1edf8;color:#4a1a8c}.error{background:#fff1f3;color:#a3002a;border-radius:10px;padding:10px 12px;font-size:13px;margin-bottom:12px}
 footer{font-size:11px;color:#8a82a0;padding:0 26px 18px;line-height:1.5}
 </style></head><body><main><header><b>ФСП ID</b><p>Единый вход на ресурсы Федерации спортивного программирования · тестовый стенд</p></header>

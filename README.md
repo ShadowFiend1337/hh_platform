@@ -62,7 +62,7 @@ npm run dev
 ## API и проверки
 
 - Swagger UI: `/api/docs`, документ — [docs/api/platform.openapi.json](docs/api/platform.openapi.json). Тест сверяет его с маршрутами сервера.
-- `npm run test:server` — серверные тесты; браузерные сценарии — `npm run test:browser`, `test:tasks`, `test:assessment-guard`, `test:hiring-needs`, `test:item-bank-ui` и другие в `package.json`.
+- `npm run test:server` — серверные тесты; `npm run test:browser:all` — все браузерные сценарии подряд, каждый на своём временном сервисе (выборочно: `npm run test:browser:all -- tasks resume`).
 - `npm run validate:assessment-model` и `npm run measure:modes`, затем `npm run charts` — пересобрать графики.
 
 ## Документация
