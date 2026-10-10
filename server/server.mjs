@@ -12,6 +12,9 @@ import { ItemGenerationQueue } from './item-generator.mjs';
 import { createLlmClient } from './llm.mjs';
 import { createAssistant } from './assistant.mjs';
 import { applyProxyFromEnv } from './proxy.mjs';
+import { FspIdService, FSP_ID_PROVIDER } from './fsp-id.mjs';
+import { localFixtureLogins, localFixturePassword } from './local-fixtures.mjs';
+import { PRIVACY_POLICY_VERSION } from '../shared/privacy.ts';
 import { DirectoryService } from './directory.mjs';
 import { PlatformService } from './platform.mjs';
 import { MarketplaceService } from './marketplace.mjs';
@@ -40,6 +43,8 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
   catch (error) { console.error('OpenRouter:', error.message); llm = createLlmClient({ env: {} }); }
   // Background generation only for the real process environment, never for isolated test servers.
   const assistant = createAssistant({ llm });
+  const fspId = new FspIdService({ env: authEnv, now });
+  const production = [authEnv.APP_ENV, authEnv.NODE_ENV].includes('production');
   const generation = new ItemGenerationQueue({ llm, bank, enabled: authEnv === process.env && authEnv.ITEM_BANK_AUTOGEN !== '0' });
   const auth = new AuthService(dbPath, { now, env: authEnv, mailer: authMailer, codeTtlMinutes: authCodeTtlMinutes, sessionDays: authSessionDays, database: store.db });
   const accountForOwner = owner => typeof owner === 'string' ? auth.accountForPlatformOwner(owner) : null;
@@ -75,6 +80,31 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
       if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error();
       return value;
     } catch { throw new RequestError(400, 'Некорректный JSON.'); }
+  }
+  async function rawBody(request, maximum = 8192) {
+    let length = 0; const chunks = [];
+    for await (const chunk of request) { length += chunk.length; if (length > maximum) throw new RequestError(413, 'Запрос слишком большой.'); chunks.push(chunk); }
+    return Buffer.concat(chunks).toString('utf8');
+  }
+  function redirect(response, location) {
+    response.writeHead(302, { Location: location, 'Cache-Control': 'no-store' });
+    response.end();
+  }
+  function html(response, status, content) {
+    response.writeHead(status, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
+      'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'" });
+    response.end(content);
+  }
+  async function signInFederated(response, user) {
+    // Existing link: sign in. Same e-mail without a link: password sign-in is required first.
+    const linked = auth.federatedAccount(FSP_ID_PROVIDER, user.sub);
+    if (linked) {
+      const created = auth.createSession(linked);
+      setAuthCookie(response, created.token, created.maxAge);
+      return redirect(response, '/app?role=' + linked.role);
+    }
+    if (auth.store.accountByEmail(String(user.email || '').toLocaleLowerCase('en-US'))) return redirect(response, '/auth?mode=login&fsp=exists');
+    return redirect(response, '/auth?mode=fsp&ticket=' + encodeURIComponent(fspId.createTicket(user)));
   }
   function cookie(request, name) {
     return String(request.headers.cookie || '').split(';').map(part => part.trim()).find(part => part.startsWith(name + '='))?.slice(name.length + 1);
@@ -133,6 +163,86 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
         if (url.pathname === '/api/integrations/fsp/webhook' && request.method === 'POST') {
           limit('integration-webhook:' + request.socket.remoteAddress, 60, 60000);
           return send(response, 202, integrations.webhook(await readWebhook(request), request.headers));
+        }
+        if (url.pathname === '/api/auth/demo-accounts' && request.method === 'GET') {
+          // Team test accounts for reviewers; the list exists only outside production.
+          const accounts = production || authEnv.DEMO_ACCOUNTS === '0' ? [] : localFixtureLogins
+            .filter(item => auth.store.accountByIdentifier(item.login.toLocaleLowerCase('ru-RU')))
+            .map(item => ({ ...item, password: localFixturePassword }));
+          return send(response, 200, { accounts, fspId: fspId.info() });
+        }
+        if (url.pathname.startsWith('/api/fsp-id/realms/fsp/')) {
+          if (!fspId.mockEnabled) throw new RequestError(404, 'Страница не найдена.');
+          const path = url.pathname.slice('/api/fsp-id/realms/fsp'.length);
+          if (path === '/.well-known/openid-configuration' && request.method === 'GET') {
+            return send(response, 200, fspId.discovery((secureCookie ? 'https://' : 'http://') + request.headers.host));
+          }
+          if (path === '/protocol/openid-connect/auth') {
+            if (request.method === 'GET') return html(response, 200, fspId.authorizePage(url.searchParams));
+            if (request.method === 'POST') {
+              limit('fsp-id-auth:' + request.socket.remoteAddress, 30, 600000);
+              const form = new URLSearchParams(await rawBody(request));
+              const result = fspId.authorizeSubmit(form);
+              return result.location ? redirect(response, result.location) : html(response, 400, fspId.authorizePage(form));
+            }
+          }
+          if (path === '/protocol/openid-connect/token' && request.method === 'POST') {
+            const form = new URLSearchParams(await rawBody(request));
+            try { return send(response, 200, fspId.mockToken({ code: form.get('code'), verifier: form.get('code_verifier'), redirectUri: form.get('redirect_uri') })); }
+            catch { return send(response, 400, { error: 'invalid_grant' }); }
+          }
+          if (path === '/protocol/openid-connect/userinfo' && request.method === 'GET') {
+            const info = fspId.mockUserinfo(String(request.headers.authorization || '').replace(/^Bearer\s+/iu, ''));
+            return info ? send(response, 200, info) : send(response, 401, { error: 'invalid_token' });
+          }
+          throw new RequestError(404, 'Страница не найдена.');
+        }
+        if (url.pathname === '/api/auth/fsp/start' && request.method === 'GET') {
+          if (!fspId.enabled) return redirect(response, '/auth?mode=login&fsp=off');
+          limit('fsp-start:' + request.socket.remoteAddress, 30, 600000);
+          const started = fspId.start();
+          setCookie(response, 'predel_fsp_state=' + started.state + '; Path=/api/auth/fsp; HttpOnly; SameSite=Lax; Max-Age=600' + (secureCookie ? '; Secure' : ''));
+          return redirect(response, started.url);
+        }
+        if (url.pathname === '/api/auth/fsp/callback' && request.method === 'GET') {
+          setCookie(response, 'predel_fsp_state=; Path=/api/auth/fsp; HttpOnly; SameSite=Lax; Max-Age=0' + (secureCookie ? '; Secure' : ''));
+          let user;
+          try {
+            user = await fspId.complete({ code: url.searchParams.get('code'), state: url.searchParams.get('state'),
+              cookieState: cookie(request, 'predel_fsp_state'), error: url.searchParams.get('error') });
+          } catch (error) {
+            return redirect(response, '/auth?mode=login&fsp=' + (url.searchParams.get('error') ? 'cancelled' : 'failed'));
+          }
+          return signInFederated(response, user);
+        }
+        if (url.pathname === '/api/auth/fsp/ticket' && request.method === 'GET') {
+          const user = fspId.ticket(url.searchParams.get('ticket') || '');
+          if (!user) throw new RequestError(410, 'Сессия входа через ФСП ID истекла. Войдите заново.');
+          return send(response, 200, { name: user.name, email: user.email, fspId: user.fsp_id || null, city: user.city || '',
+            achievements: Array.isArray(user.fsp_achievements) ? user.fsp_achievements.map(({ title, result, year }) => ({ title, result, year })) : [],
+            suggestedLogin: auth.suggestLogin(user.email) });
+        }
+        if (url.pathname === '/api/auth/fsp/complete' && request.method === 'POST') {
+          limit('fsp-complete:' + request.socket.remoteAddress, 20, 600000);
+          const input = await body(request, 4096);
+          if (Object.keys(input).some(key => !['ticket', 'login', 'consent', 'privacyVersion'].includes(key))) throw new RequestError(400, 'Недопустимые поля запроса.');
+          const user = fspId.ticket(String(input.ticket || ''));
+          if (!user) throw new RequestError(410, 'Сессия входа через ФСП ID истекла. Войдите заново.');
+          const account = await auth.createFederatedAccount({ provider: FSP_ID_PROVIDER, subject: user.sub, email: user.email, name: user.name,
+            login: input.login, consent: input.consent, privacyVersion: input.privacyVersion });
+          fspId.ticket(String(input.ticket), { consume: true });
+          // The new cabinet starts with consented FSP data; the questionnaire and test are still required.
+          const state = { version: 2, profile: { id: 'candidate-anna', name: user.name, email: account.email, phone: '', bio: '', city: user.city || '',
+            format: 'Удалённо', careerAchievements: '', education: '', workHistory: '', portfolio: '', languages: '', industry: '', professionalRole: '',
+            softSkills: [], surveyCompletedAt: null, specialization: 'Frontend', desiredGrade: 'Junior', confirmed: null, stack: [], experience: '',
+            fspId: user.fsp_id || '', achievements: [], visible: false, consent: true },
+            company: { id: 'company-line', name: 'Линия', industry: 'Продуктовая разработка', website: 'https://example.com', contact: 'team@example.com', description: 'Разрабатываем цифровые продукты для бизнеса.' },
+            invitations: [], history: [], surveys: [], savedSearches: [], hiringNeeds: [], candidateDecisions: [] };
+          platform.save(account.platform_owner, state, 0, 'candidate');
+          if (user.fsp_id) fsp.connectIdentity(account.platform_owner, user);
+          const created = auth.createSession(account);
+          setAuthCookie(response, created.token, created.maxAge);
+          return send(response, 201, { account: created.account });
         }
         const identity = owner(request, response);
         const session = identity.owner;

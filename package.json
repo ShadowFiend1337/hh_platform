@@ -25,6 +25,7 @@
     "test:offers": "npm --prefix frontend run test:offers",
     "test:companies": "node scripts/browser-companies.mjs",
     "setup:local-accounts": "node scripts/local-accounts.mjs",
+    "reset:local-accounts": "node scripts/local-accounts.mjs --reset",
     "setup:search": "node scripts/ml.mjs setup",
     "train:search": "node scripts/ml.mjs train",
     "prepare:search-ranker": "node scripts/ml.mjs prepare",

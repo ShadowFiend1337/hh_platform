@@ -73,7 +73,74 @@ const demoCompanies = [
       ['Системный аналитик', 'BusinessAnalysis', 'Middle', ['SQL', 'UML', 'BPMN'], 140000, 200000, 'Согласовывать API и требования, описывать поведение интеграций и данные систем.'],
       ['Менеджер продукта', 'ProductManagement', 'Middle', ['Аналитика', 'Приоритизация'], 130000, 200000, 'Проверять продуктовые гипотезы, планировать развитие сервиса и согласовывать задачи команды.'],
     ] },
+  { id: 'demo-company-north', name: 'Северный код', industry: 'Финансы', description: 'Вымышленная команда платёжных сервисов банка.',
+    roles: [
+      ['Backend-разработчик платежей', 'Backend', 'Senior', ['Java', 'Spring', 'PostgreSQL', 'Kafka'], 260000, 340000, 'Проектировать сервисы переводов, идемпотентную обработку платежей и восстановление после сбоев.'],
+      ['Backend-разработчик', 'Backend', 'Junior', ['Python', 'Django', 'PostgreSQL'], 90000, 130000, 'Разрабатывать внутренние API отчётности, писать тесты и разбирать обращения поддержки.'],
+      ['Аналитик данных рисков', 'DataAnalysis', 'Senior', ['SQL', 'Python', 'Statistics'], 220000, 290000, 'Строить модели скоринга и отчёты о мошенничестве, проверять качество данных.'],
+    ] },
+  { id: 'demo-company-pulse', name: 'Пульс медицины', industry: 'Здравоохранение', description: 'Вымышленная команда сервиса записи к врачу.',
+    roles: [
+      ['Frontend-разработчик', 'Frontend', 'Middle', ['React', 'TypeScript', 'Next.js'], 170000, 230000, 'Разрабатывать личный кабинет пациента, доступные формы и быстрые страницы расписания.'],
+      ['Мобильный разработчик iOS', 'Mobile', 'Senior', ['Swift', 'iOS', 'REST'], 230000, 300000, 'Развивать мобильное приложение записи и уведомлений, отвечать за качество релизов.'],
+      ['Инженер тестирования', 'QA', 'Middle', ['Playwright', 'API', 'SQL'], 130000, 180000, 'Автоматизировать проверку записи к врачу и интеграций с клиниками.'],
+    ] },
+  { id: 'demo-company-sail', name: 'Парус логистики', industry: 'Транспорт и логистика', description: 'Вымышленная команда системы доставки.',
+    roles: [
+      ['Fullstack-разработчик', 'Fullstack', 'Senior', ['TypeScript', 'Node.js', 'React', 'PostgreSQL'], 240000, 310000, 'Разрабатывать диспетчерскую панель и API маршрутов, отвечать за архитектуру модулей.'],
+      ['Инженер данных', 'DataEngineering', 'Middle', ['Python', 'Airflow', 'ClickHouse'], 170000, 230000, 'Собирать потоки данных о доставках, контролировать задержки и качество загрузки.'],
+      ['DevOps-инженер', 'DevOps', 'Junior', ['Linux', 'Docker', 'CI/CD'], 100000, 140000, 'Поддерживать сборку и развёртывание сервисов, настраивать мониторинг.'],
+    ] },
+  { id: 'demo-company-lens', name: 'Линза ритейла', industry: 'Ритейл', description: 'Вымышленная команда рекомендаций интернет-магазина.',
+    roles: [
+      ['ML-инженер рекомендаций', 'ML', 'Senior', ['Python', 'PyTorch', 'Spark'], 280000, 360000, 'Разрабатывать модели рекомендаций, проводить A/B-эксперименты и выводить модели в продакшен.'],
+      ['Аналитик данных', 'DataAnalysis', 'Junior', ['SQL', 'Excel', 'Power BI'], 80000, 110000, 'Готовить отчёты о продажах и проверять гипотезы ассортимента.'],
+      ['Менеджер продукта', 'ProductManagement', 'Senior', ['Аналитика', 'A/B-тесты', 'Roadmap'], 250000, 320000, 'Отвечать за развитие каталога и поиска, приоритизировать гипотезы по метрикам.'],
+    ] },
+  { id: 'demo-company-shield', name: 'Щит безопасности', industry: 'Телекоммуникации', description: 'Вымышленная команда защиты сети оператора.',
+    roles: [
+      ['Аналитик SOC', 'Security', 'Junior', ['SIEM', 'Linux', 'Сети'], 90000, 130000, 'Разбирать события безопасности, эскалировать инциденты и вести журнал расследований.'],
+      ['Пентестер', 'Security', 'Senior', ['OWASP', 'Burp Suite', 'Python'], 250000, 330000, 'Проводить тестирование на проникновение веб-сервисов и готовить отчёты для разработки.'],
+      ['SRE-инженер', 'DevOps', 'Senior', ['Kubernetes', 'Prometheus', 'Terraform'], 270000, 340000, 'Отвечать за доступность сервисов оператора, SLO и автоматизацию инфраструктуры.'],
+    ] },
+  { id: 'demo-company-craft', name: 'Цифровая мастерская', industry: 'Образование', description: 'Вымышленная команда образовательной платформы.',
+    roles: [
+      ['Frontend-разработчик', 'Frontend', 'Senior', ['React', 'TypeScript', 'Доступность'], 240000, 300000, 'Отвечать за архитектуру клиентской части и доступность учебных курсов.'],
+      ['UX/UI-дизайнер', 'UXUI', 'Middle', ['Figma', 'Исследования', 'Дизайн-система'], 140000, 190000, 'Проектировать сценарии обучения, проводить интервью и развивать дизайн-систему.'],
+      ['Стажёр-разработчик', 'Backend', 'Intern', ['Python', 'SQL', 'Git'], 50000, 70000, 'Писать небольшие сервисы под руководством наставника и разбирать код-ревью.'],
+    ] },
+  { id: 'demo-company-forge', name: 'Кузница устройств', industry: 'Промышленность', description: 'Вымышленная команда промышленной автоматизации.',
+    roles: [
+      ['Embedded-разработчик', 'Embedded', 'Junior', ['C', 'STM32', 'RTOS'], 90000, 130000, 'Писать прошивки контроллеров датчиков и проверять их на стенде.'],
+      ['Ведущий инженер встраиваемых систем', 'Embedded', 'Lead', ['C++', 'Linux', 'CAN'], 300000, 380000, 'Руководить командой прошивок, выбирать архитектуру и отвечать за сертификацию.'],
+      ['Системный аналитик', 'BusinessAnalysis', 'Senior', ['UML', 'BPMN', 'SQL'], 200000, 260000, 'Описывать требования к системам управления производством и интеграциям.'],
+    ] },
+  { id: 'demo-company-wave', name: 'Волна медиа', industry: 'Медиа и развлечения', description: 'Вымышленная команда стримингового сервиса.',
+    roles: [
+      ['Android-разработчик', 'Mobile', 'Junior', ['Kotlin', 'Android', 'Jetpack Compose'], 100000, 140000, 'Разрабатывать экраны плеера и каталога, исправлять дефекты и писать тесты.'],
+      ['Backend-разработчик', 'Backend', 'Middle', ['Go', 'PostgreSQL', 'Redis'], 190000, 250000, 'Разрабатывать API каталога и рекомендаций, оптимизировать задержки ответа.'],
+      ['Тимлид frontend', 'Frontend', 'Lead', ['React', 'TypeScript', 'Архитектура'], 330000, 400000, 'Руководить командой веб-клиента, планировать архитектуру и развивать инженеров.'],
+    ] },
+  { id: 'demo-company-grid', name: 'Сетка энергии', industry: 'Энергетика', description: 'Вымышленная команда аналитики энергосетей.',
+    roles: [
+      ['Инженер машинного обучения', 'ML', 'Junior', ['Python', 'scikit-learn', 'SQL'], 110000, 150000, 'Готовить признаки и модели прогноза нагрузки под руководством старших коллег.'],
+      ['Руководитель направления данных', 'DataEngineering', 'Lead', ['Spark', 'Kafka', 'Архитектура данных'], 320000, 400000, 'Отвечать за платформу данных, планировать развитие и управлять командой.'],
+      ['QA-инженер', 'QA', 'Senior', ['Автоматизация', 'Java', 'Нагрузочное тестирование'], 200000, 260000, 'Строить стратегию тестирования и нагрузочные проверки телеметрии.'],
+    ] },
+  { id: 'demo-company-atlas', name: 'Атлас консалтинга', industry: 'Консалтинг', description: 'Вымышленная команда внедрения корпоративных систем.',
+    roles: [
+      ['Бизнес-аналитик', 'BusinessAnalysis', 'Junior', ['BPMN', 'Требования', 'SQL'], 80000, 120000, 'Собирать требования клиентов, описывать процессы и помогать с тестированием внедрений.'],
+      ['Продуктовый менеджер', 'ProductManagement', 'Junior', ['Исследования', 'Jira', 'Метрики'], 100000, 140000, 'Вести бэклог небольшого продукта, собирать обратную связь и готовить релизы.'],
+      ['Fullstack-разработчик', 'Fullstack', 'Junior', ['JavaScript', 'Node.js', 'React'], 90000, 130000, 'Дорабатывать внутренние порталы клиентов и интеграции.'],
+    ] },
+  { id: 'demo-company-sprint', name: 'Спринт спорт', industry: 'Спорт', description: 'Вымышленная команда платформы спортивных соревнований.',
+    roles: [
+      ['Backend-разработчик', 'Backend', 'Lead', ['Python', 'Архитектура', 'PostgreSQL'], 320000, 400000, 'Руководить бэкенд-командой платформы соревнований, отвечать за надёжность турниров.'],
+      ['UX/UI-дизайнер', 'UXUI', 'Senior', ['Figma', 'Прототипирование', 'Исследования'], 200000, 260000, 'Отвечать за пользовательский опыт регистрации на соревнования и личного кабинета.'],
+      ['Стажёр-аналитик данных', 'DataAnalysis', 'Intern', ['SQL', 'Python'], 45000, 65000, 'Готовить выгрузки результатов соревнований и простые отчёты.'],
+    ] },
 ];
+const demoCompanyIds = new Set(demoCompanies.map(company => company.id));
 
 export class MarketplaceService {
   constructor(store, { now = () => Date.now(), seeds = true, accountForOwner } = {}) {
@@ -91,6 +158,8 @@ export class MarketplaceService {
   }
   companyAccessible(owner, company) {
     if (!this.accountForOwner) return true;
+    // Built-in demo companies have no owner: every signed-in user may browse them and apply.
+    if (company.owner == null) return Boolean(company.synthetic) && demoCompanyIds.has(company.company_id ?? company.id) && Boolean(this.accountForOwner(owner));
     const account = this.accountForOwner(owner), target = this.accountForOwner(company.owner);
     return target?.role === 'employer' && accountsShareRealm(account, target)
       && (!company.synthetic || isLocalFixtureAccount(target));
@@ -274,7 +343,7 @@ export class MarketplaceService {
     const condition = role === 'candidate' ? 'a.candidate_owner=?' : 'c.owner=?';
     const rows = this.store.db.prepare(`SELECT a.*,c.owner AS company_owner,c.synthetic AS company_synthetic FROM marketplace_applications a JOIN marketplace_companies c ON c.id=a.company_id
       WHERE ${condition} ORDER BY a.created_at DESC,a.id LIMIT 1000`).all(owner);
-    return { items: rows.filter(row => this.companyAccessible(owner, { owner: row.company_owner, synthetic: row.company_synthetic })
+    return { items: rows.filter(row => this.companyAccessible(owner, { owner: row.company_owner, synthetic: row.company_synthetic, company_id: row.company_id })
       && (!this.accountForOwner || role === 'candidate' && row.candidate_owner === owner
         || this.accountForOwner(row.candidate_owner)?.role === 'candidate'
           && accountsShareRealm(this.accountForOwner(owner), this.accountForOwner(row.candidate_owner))))

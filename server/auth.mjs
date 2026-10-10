@@ -192,6 +192,11 @@ export class AuthStore {
         accepted INTEGER NOT NULL CHECK(accepted IN (0,1)), policy_version TEXT NOT NULL, occurred_at TEXT NOT NULL
       ) STRICT;
       CREATE INDEX IF NOT EXISTS privacy_consent_owner ON privacy_consent_events(owner, occurred_at);
+      CREATE TABLE IF NOT EXISTS auth_federated_identities (
+        provider TEXT NOT NULL, subject TEXT NOT NULL,
+        account_id TEXT NOT NULL REFERENCES auth_accounts(id) ON DELETE CASCADE,
+        created_at TEXT NOT NULL, PRIMARY KEY (provider, subject)
+      ) STRICT;
       CREATE TABLE IF NOT EXISTS account_deletions (
         id TEXT PRIMARY KEY, deleted_at TEXT NOT NULL
       ) STRICT;
@@ -282,6 +287,32 @@ export class AuthStore {
     if (!row) this.db.prepare('DELETE FROM auth_sessions WHERE token_hash=? AND expires_at<=?').run(tokenHash, nowText);
     return row || null;
   }
+
+  accountByFederated(provider, subject) {
+    return this.db.prepare(`SELECT a.* FROM auth_federated_identities f JOIN auth_accounts a ON a.id=f.account_id
+      WHERE f.provider=? AND f.subject=?`).get(provider, subject) || null;
+  }
+
+  /** An account whose e-mail is confirmed by the identity provider; it signs in through that provider. */
+  createFederatedAccount({ provider, subject, email, login, loginNormalized, role, name, passwordHash, platformOwner, nowText }) {
+    return this.transaction(() => {
+      if (this.db.prepare('SELECT 1 FROM auth_federated_identities WHERE provider=? AND subject=?').get(provider, subject)) return { state: 'linked' };
+      if (this.db.prepare('SELECT 1 FROM auth_accounts WHERE email=? OR login_normalized=?').get(email, loginNormalized)) return { state: 'account_exists' };
+      const id = randomBytes(16).toString('hex');
+      this.db.prepare(`INSERT INTO auth_accounts (id,email,login,login_normalized,role,name,company_name,password_hash,platform_owner,created_at,updated_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(id, email, login, loginNormalized, role, name, '', passwordHash, platformOwner, nowText, nowText);
+      this.db.prepare('INSERT INTO privacy_consent_events VALUES(?,?,?,?,?,?)')
+        .run(randomBytes(16).toString('hex'), platformOwner, 'registration', 1, PRIVACY_POLICY_VERSION, nowText);
+      this.db.prepare('INSERT INTO auth_federated_identities VALUES(?,?,?,?)').run(provider, subject, id, nowText);
+      return { state: 'created', account: this.db.prepare('SELECT * FROM auth_accounts WHERE id=?').get(id) };
+    });
+  }
+
+  loginTaken(loginNormalized) {
+    return Boolean(this.db.prepare('SELECT 1 FROM auth_accounts WHERE login_normalized=? UNION SELECT 1 FROM auth_pending_registrations WHERE login_normalized=?').get(loginNormalized, loginNormalized));
+  }
+
+  accountByEmail(email) { return this.db.prepare('SELECT * FROM auth_accounts WHERE email=?').get(email) || null; }
 
   accountByPlatformOwner(platformOwner) {
     return this.db.prepare('SELECT * FROM auth_accounts WHERE platform_owner=?').get(platformOwner) || null;
@@ -600,6 +631,33 @@ export class AuthService {
     if (typeof token !== 'string' || !/^[a-f0-9]{64}$/u.test(token)) return null;
     const account = this.store.accountBySession(hash(token), timestamp(this.now));
     return account ? { account: accountPayload(account, this.store.canModerate(account.id)), platformOwner: account.platform_owner } : null;
+  }
+
+  federatedAccount(provider, subject) {
+    return this.store.accountByFederated(provider, subject);
+  }
+
+  /** Suggests a free login from the provider's e-mail. */
+  suggestLogin(email) {
+    const base = String(email).split('@')[0].normalize('NFKC').toLocaleLowerCase('en-US').replace(/[^a-z0-9._-]/gu, '').replace(/^[._-]+/u, '').slice(0, 24) || 'fsp.user';
+    for (let index = 0; index < 50; index++) {
+      const login = index ? `${base}${index + 1}` : base;
+      if (login.length >= 3 && !this.store.loginTaken(login)) return login;
+    }
+    return `${base}.${randomBytes(3).toString('hex')}`;
+  }
+
+  async createFederatedAccount({ provider, subject, email, name, login, consent, privacyVersion }) {
+    if (consent !== true) throw new AuthError(400, 'Для регистрации необходимо согласие на обработку данных.');
+    if (privacyVersion !== PRIVACY_POLICY_VERSION) throw new AuthError(400, 'Примите актуальную политику конфиденциальности.');
+    const parsedLogin = normalizeLogin(login);
+    const result = this.store.createFederatedAccount({ provider, subject, email: normalizeEmail(email), login: parsedLogin.login,
+      loginNormalized: parsedLogin.normalized, role: 'candidate', name: asText(name, 'имя', 100),
+      // No password: this account signs in through the identity provider.
+      passwordHash: await hashPassword(randomBytes(32).toString('hex')), platformOwner: randomBytes(32).toString('hex'), nowText: timestamp(this.now) });
+    if (result.state === 'linked') throw new AuthError(409, 'Эта учётная запись ФСП ID уже привязана. Войдите через ФСП ID.');
+    if (result.state === 'account_exists') throw new AuthError(409, 'Этот e-mail или логин уже занят.');
+    return result.account;
   }
 
   accountForPlatformOwner(platformOwner) {

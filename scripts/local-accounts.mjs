@@ -6,18 +6,62 @@ import { AuthService } from '../server/auth.mjs';
 import { DirectoryStore } from '../server/directory-store.mjs';
 import { PlatformService } from '../server/platform.mjs';
 import { MarketplaceService } from '../server/marketplace.mjs';
+import { FspIntegrationService } from '../server/fsp-integration.mjs';
 import { openStore } from '../server/store.mjs';
 import { createAttempt, digest, evaluate } from '../server/assessment.mjs';
 import { createInitialState } from '../frontend/src/model.ts';
+import { defaultSearchFilters } from '../shared/search.ts';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
-export const localAccountPassword = 'LocalDemo2026!';
+import { localFixturePassword } from '../server/local-fixtures.mjs';
+export const localAccountPassword = localFixturePassword;
 export const localAccountFixtures = [
   { role: 'candidate', login: 'local_candidate', email: 'candidate@local.example.test', name: 'Тестовый кандидат' },
   { role: 'employer', login: 'local_employer', email: 'employer@local.example.test', companyName: 'Тестовая компания' },
 ];
 
-export async function prepareLocalAccounts(dbPath = resolve(root, 'server/data/assessment.sqlite')) {
+function candidateState(candidate) {
+  const state = createInitialState();
+  const survey = { id: randomUUID(), date: new Date().toISOString(), industry: 'ИТ',
+    professionalRole: 'Frontend-разработчик', specialization: 'Frontend', desiredGrade: 'Junior',
+    experience: '1 год 8 месяцев', stack: ['React', 'TypeScript', 'CSS', 'Redux', 'Jest'], softSkills: ['Коммуникация', 'Работа в команде'] };
+  Object.assign(state.profile, survey, { id: 'candidate-anna', name: candidate.name, email: candidate.email, phone: '+7 900 000-00-00',
+    city: 'Москва', format: 'Удалённо', consent: true, visible: true, surveyCompletedAt: survey.date,
+    bio: 'Frontend-разработчик: делаю доступные интерфейсы личных кабинетов на React и TypeScript, люблю дизайн-системы и тесты.',
+    workHistory: 'Учебная продуктовая команда, 1 год 8 месяцев: личный кабинет клиента на React и TypeScript, формы с валидацией и доступностью, '
+      + 'компоненты дизайн-системы, unit-тесты на Jest. Ускорил загрузку страницы профиля на 30% за счёт разделения кода.',
+    careerAchievements: 'Финалист командного хакатона по продуктовому программированию.', education: 'Бакалавриат, прикладная информатика',
+    languages: 'Русский, английский B2', portfolio: 'github.com/example-candidate',
+    salaryFrom: 110000, salaryTo: 150000, employmentType: 'Полная занятость' });
+  state.surveys = [survey];
+  return { state, survey };
+}
+
+function employerState(employer, candidateId) {
+  const state = createInitialState();
+  Object.assign(state.company, { name: employer.company_name, contact: employer.email, industry: 'Продуктовая разработка',
+    website: 'https://example.com', description: 'Продуктовая команда: личные кабинеты и платёжные сервисы. Тестовая компания для проверки платформы.' });
+  state.hiringNeeds = [
+    { id: 'need-frontend-cabinet', title: 'Frontend-разработчик личного кабинета', team: 'Команда личного кабинета: 6 человек, релизы каждую неделю.',
+      tasks: 'Разработка интерфейсов личного кабинета на React и TypeScript, доступные формы, компоненты дизайн-системы, unit-тесты.',
+      filters: { ...defaultSearchFilters, specialization: 'Frontend', stack: ['React', 'TypeScript'] } },
+    { id: 'need-backend-payments', title: 'Backend-разработчик платёжного сервиса', team: 'Платёжная команда: API платежей и интеграции с банками.',
+      tasks: 'API платежей, идемпотентная обработка повторных запросов, транзакции в PostgreSQL, очереди и надёжная доставка событий.',
+      filters: { ...defaultSearchFilters, specialization: 'Backend', stack: ['Python', 'PostgreSQL'] } },
+  ];
+  if (candidateId) {
+    state.invitations = [{ id: randomUUID(), candidateId, companyId: state.company.id, company: state.company.name,
+      title: 'Frontend-разработчик', description: 'Личный кабинет на React и TypeScript: формы, дизайн-система, тесты. Удалённо, команда из 6 человек.',
+      contact: employer.email, salaryFrom: 120000, salaryTo: 160000, status: 'sent', date: new Date().toISOString() }];
+  }
+  return state;
+}
+
+/**
+ * Creates the team test accounts in the local database. `reset` restores the
+ * fixture cabinets to their initial demo state (accounts and passwords are kept).
+ */
+export async function prepareLocalAccounts(dbPath = resolve(root, 'server/data/assessment.sqlite'), { reset = false } = {}) {
   if ([process.env.APP_ENV, process.env.NODE_ENV].some(value => value?.trim().toLowerCase() === 'production')) {
     throw new Error('Local fixture accounts are unavailable in production.');
   }
@@ -30,6 +74,8 @@ export async function prepareLocalAccounts(dbPath = resolve(root, 'server/data/a
     assessments = openStore(dbPath);
     const platform = new PlatformService(directory, assessments);
     const marketplace = new MarketplaceService(directory);
+    const accountForOwner = owner => auth.accountForPlatformOwner(owner);
+    const fsp = new FspIntegrationService(directory, { accountForOwner, env: process.env });
     const accounts = [];
     for (const fixture of localAccountFixtures) {
       let account = auth.store.accountByIdentifier(fixture.login);
@@ -42,45 +88,36 @@ export async function prepareLocalAccounts(dbPath = resolve(root, 'server/data/a
       accounts.push(account);
     }
     const [candidate, employer] = accounts;
+    if (reset) {
+      for (const account of accounts) {
+        directory.db.prepare('DELETE FROM fsp_demo_connections WHERE owner=?').run(account.platform_owner);
+        platform.delete(account.platform_owner, { deleteAssessmentRecords: true });
+      }
+    }
     if (!platform.read(candidate.platform_owner).state) {
-      const state = createInitialState();
-      const survey = { id: randomUUID(), date: new Date().toISOString(), industry: 'ИТ',
-        professionalRole: 'Frontend разработчик', specialization: 'Frontend', desiredGrade: 'Junior',
-        experience: '1 год', stack: ['React', 'TypeScript'], softSkills: [] };
-      Object.assign(state.profile, survey, { id: 'candidate-anna', name: candidate.name, email: candidate.email,
-        city: 'Москва', consent: true, visible: true, surveyCompletedAt: survey.date,
-        bio: 'Тестовый профиль для локальной проверки интерфейса.',
-        careerAchievements: 'Разработка учебного приложения.', education: 'Высшее образование',
-        workHistory: 'Учебные проекты: интерфейсы на React и TypeScript.' });
-      state.surveys = [survey];
+      const { state, survey } = candidateState(candidate);
       // Seed a server-owned fixture result; ordinary signup still requires a test.
       const attempt = createAttempt(survey);
       assessments.insert(attempt, candidate.platform_owner, digest(randomBytes(32).toString('hex')));
-      const evaluation = evaluate(attempt, attempt.questions.map(question => ({
-        questionId: question.id, optionId: question.correctOptionId,
-      })));
+      const evaluation = evaluate(attempt, attempt.questions.map(question => ({ questionId: question.id, optionId: question.correctOptionId })));
       assessments.complete(attempt.id, evaluation.answerDigest, evaluation.result);
       const result = evaluation.result;
       state.history = [result];
-      state.profile.confirmed = { specialization: result.specialization, grade: result.grade,
-        score: result.score, date: result.date, surveyId: survey.id };
-      platform.save(candidate.platform_owner, state, 0, 'candidate');
+      state.profile.confirmed = { specialization: result.specialization, grade: result.grade, score: result.score, date: result.date, surveyId: survey.id };
+      const saved = platform.save(candidate.platform_owner, state, 0, 'candidate');
+      // Demo FSP link: the candidate shows provider-marked achievements («ФСП · демо»).
+      if (fsp.enabled) fsp.connect(candidate.platform_owner, { baseRevision: saved.revision, scenario: 'achievements', consent: true });
     }
     if (!platform.read(employer.platform_owner).state) {
-      const state = createInitialState();
-      Object.assign(state.company, { name: employer.company_name, contact: employer.email,
-        description: 'Компания для локальной проверки интерфейса.' });
       const person = directory.forOwner(candidate.platform_owner);
-      if (person?.eligible && person.visible && person.consent) {
-        state.invitations = [{ id: randomUUID(), candidateId: person.id,
-          companyId: state.company.id, company: state.company.name, title: 'Frontend разработчик',
-          description: 'Разработка интерфейсов на React и TypeScript.', contact: employer.email,
-          salaryFrom: 100000, salaryTo: 150000, status: 'sent', date: new Date().toISOString() }];
-      }
-      platform.save(employer.platform_owner, state, 0, 'employer');
-      marketplace.publish(employer.platform_owner, { title: 'Frontend разработчик',
-        description: 'Учебное предложение для проверки отклика.', specialization: 'Frontend', grade: 'Junior',
-        stack: ['React', 'TypeScript'], city: 'Москва', format: 'Удалённо', salaryFrom: 100000, salaryTo: 150000 });
+      const invited = person?.eligible && person.visible && person.consent ? person.id : null;
+      platform.save(employer.platform_owner, employerState(employer, invited), 0, 'employer');
+      marketplace.publish(employer.platform_owner, { title: 'Frontend-разработчик',
+        description: 'Личный кабинет на React и TypeScript: формы, дизайн-система, тесты.', specialization: 'Frontend', grade: 'Junior',
+        stack: ['React', 'TypeScript'], city: 'Москва', format: 'Удалённо', salaryFrom: 110000, salaryTo: 150000 });
+      marketplace.publish(employer.platform_owner, { title: 'Backend-разработчик платёжного сервиса',
+        description: 'API платежей, идемпотентность, PostgreSQL и очереди.', specialization: 'Backend', grade: 'Middle',
+        stack: ['Python', 'PostgreSQL'], city: 'Москва', format: 'Гибрид', salaryFrom: 200000, salaryTo: 260000 });
     }
     return localAccountFixtures.map(({ role, login }) => ({ role, login, password: localAccountPassword }));
   } finally {
@@ -95,5 +132,5 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   if (process.env.ASSESSMENT_DB && resolve(process.env.ASSESSMENT_DB) !== dbPath) {
     throw new Error('This setup only uses the default local development database.');
   }
-  console.log(JSON.stringify({ accounts: await prepareLocalAccounts(dbPath) }));
+  console.log(JSON.stringify({ accounts: await prepareLocalAccounts(dbPath, { reset: process.argv.includes('--reset') }) }));
 }

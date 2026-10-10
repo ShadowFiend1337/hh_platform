@@ -181,7 +181,7 @@ function Workspace({ authAccount: initialAccount }: { authAccount: AuthAccount |
   }, []);
   useEffect(() => {
     document.title = route.privacy ? 'Политика конфиденциальности · predel'
-      : route.auth === 'register' ? 'Регистрация · predel'
+      : route.auth === 'register' ? (new URLSearchParams(location.search).get('ticket') ? 'Вход через ФСП ID · predel' : 'Регистрация · predel')
         : route.auth === 'login' ? 'Вход · predel'
           : route.home ? 'predel · Ваша следующая команда' : (page === 'onboarding' ? 'Анкета' : navigation[route.role].find(item => item.page === page)?.label || 'predel') + ' · predel';
   }, [route, page]);

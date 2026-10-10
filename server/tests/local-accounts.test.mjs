@@ -42,8 +42,10 @@ test('local account setup prepares both cabinets on a fresh database and preserv
   assert.equal(employerState.state.profile.consent, false);
   assert.equal(employerState.state.surveys.length, 0);
   const proposal = marketplace.vacancies(employer.platform_owner, { own: true }).items;
-  assert.equal(proposal.length, 1);
-  assert.equal(proposal[0].company, 'Тестовая компания');
+  assert.equal(proposal.length, 2, 'Frontend and Backend vacancies of the test company');
+  assert(proposal.every(item => item.company === 'Тестовая компания'));
+  assert.equal(employerState.state.hiringNeeds.length, 2, 'The test employer starts with two hiring needs');
+  assert.equal(candidateState.state.profile.stack.length >= 3, true);
 
   candidateState.state.profile.bio = 'Изменённый тестовый профиль';
   candidateState.state.invitations[0].status = 'accepted';

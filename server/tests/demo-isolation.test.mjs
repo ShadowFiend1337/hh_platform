@@ -148,8 +148,10 @@ test('registered marketplace and contacts work while guests and other registered
   const published = await employer('/api/vacancies', 'POST', vacancy());
   assert.equal(published.status, 201);
   const realVacancy = published.data, realCompanies = await candidate('/api/companies');
-  assert.equal(realCompanies.status, 200); assert.equal(realCompanies.data.total, 1);
-  assert.equal(realCompanies.data.items[0].id, realVacancy.companyId); assert(!realCompanies.data.items[0].synthetic);
+  assert.equal(realCompanies.status, 200);
+  assert.deepEqual(realCompanies.data.items.filter(item => !item.synthetic).map(item => item.id), [realVacancy.companyId]);
+  assert(realCompanies.data.items.filter(item => item.synthetic).every(item => item.id.startsWith('demo-company-')), 'Only built-in demo companies accompany real ones');
+  assert.equal(realCompanies.data.items[0].id, realVacancy.companyId, 'Real companies precede demo companies');
   assert.equal((await candidate(`/api/companies/${realVacancy.companyId}`)).status, 200);
   assert.equal((await guest(`/api/companies/${realVacancy.companyId}`)).status, 401);
   assert.equal((await guest(`/api/vacancies/${realVacancy.id}`)).status, 401);

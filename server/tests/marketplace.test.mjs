@@ -56,8 +56,8 @@ test('fresh owners can read empty private lists without creating a profile or ga
 
 test('seed companies keep internal provenance, cover every catalog role and show concise descriptions', t => {
   const { store, marketplace } = fixture(t, { seeds: true });
-  const companies = marketplace.companies().items;
-  assert(companies.length >= 5);
+  const companies = marketplace.companies({ limit: 100 }).items;
+  assert(companies.length >= 15, 'The demo world offers many companies');
   const vacancies = companies.flatMap(company => company.vacancies);
   assert(companies.every(company => company.synthetic && company.description && !/Вымышлен|демонстрац/iu.test(company.description)));
   assert(vacancies.every(vacancy => vacancy.synthetic && vacancy.currency === 'RUB' && vacancy.status === 'open'

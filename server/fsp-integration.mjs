@@ -1,5 +1,7 @@
 import { RequestError } from './assessment.mjs';
 import { DemoFspProvider, fspDemoScenarios } from './fsp-provider.mjs';
+import { participantByFspId, participantEvidence } from './fsp-id.mjs';
+import { createHash } from 'node:crypto';
 
 const invalid = message => { throw new RequestError(400, message); };
 const object = value => value && typeof value === 'object' && !Array.isArray(value);
@@ -101,6 +103,27 @@ export class FspIntegrationService {
     });
   }
 
+  /** Links the participant confirmed by FSP ID sign-in and imports their results. */
+  connectIdentity(owner, user) {
+    this.authorize(owner);
+    const participant = participantByFspId(user.fsp_id);
+    if (!participant) return null;
+    return this.store.transaction(() => {
+      const account = this.account(owner);
+      if (!account) throw new RequestError(409, 'Сначала сохраните профиль.');
+      const profile = JSON.parse(account.profile);
+      const timestamp = new Date(this.now()).toISOString();
+      const subject = createHash('sha256').update(`fsp-id\0${participant.sub}`).digest('hex');
+      this.db.prepare(`INSERT INTO fsp_demo_connections VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(owner) DO UPDATE SET
+        provider=excluded.provider,subject=excluded.subject,external_id=excluded.external_id,
+        scenario=excluded.scenario,consent_at=excluded.consent_at,last_synced_at=excluded.last_synced_at,evidence=excluded.evidence`)
+        .run(owner, 'fsp-demo', subject, participant.fspId, 'fsp-id', timestamp, timestamp, JSON.stringify(participantEvidence(participant)));
+      Object.assign(profile, this.fields(this.connection(owner)));
+      this.persist(owner, account, profile);
+      return this.read(owner);
+    });
+  }
+
   sync(owner, input) {
     this.authorize(owner);
     if (!this.enabled) throw new RequestError(403, 'Демонстрационная привязка отключена.');
@@ -108,7 +131,9 @@ export class FspIntegrationService {
       const { account, profile } = this.checked(owner, input, ['baseRevision']);
       const connection = this.connection(owner);
       if (!connection || !profile.consent || profile.fspId !== connection.external_id) throw new RequestError(409, 'Сначала привяжите ФСП.');
-      const data = this.provider.load(owner, connection.scenario);
+      const participant = connection.scenario === 'fsp-id' ? participantByFspId(connection.external_id) : null;
+      const data = participant ? { subject: connection.subject, externalId: participant.fspId, evidence: participantEvidence(participant) }
+        : this.provider.load(owner, connection.scenario);
       if (data.subject !== connection.subject || data.externalId !== connection.external_id) throw new RequestError(409, 'Внешняя привязка изменилась.');
       this.db.prepare('UPDATE fsp_demo_connections SET evidence=?,last_synced_at=? WHERE owner=?')
         .run(JSON.stringify(data.evidence), new Date(this.now()).toISOString(), owner);

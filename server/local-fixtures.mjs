@@ -6,6 +6,10 @@ const localFixtures = Object.freeze([
   Object.freeze({ role: 'employer', login: 'local_employer', email: 'employer@local.example.test' }),
 ]);
 
+/** Public demo password of the team test accounts (never available in production). */
+export const localFixturePassword = 'LocalDemo2026!';
+export const localFixtureLogins = localFixtures.map(fixture => ({ role: fixture.role, login: fixture.login }));
+
 export function isLocalFixtureAccount(account) {
   const login = typeof account?.login === 'string' ? account.login.normalize('NFKC').toLowerCase() : '';
   return Boolean(account && localFixtures.some(fixture => fixture.role === account.role

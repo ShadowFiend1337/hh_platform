@@ -308,7 +308,7 @@ export class PlatformService {
     const account = this.accountForOwner(owner);
     if (!account) return false;
     if (candidate.owner === owner) return true;
-    if (isDemoCatalogProfile(candidate)) return includeDemo && account.role === 'employer' && !isLocalFixtureAccount(account);
+    if (isDemoCatalogProfile(candidate)) return includeDemo && account.role === 'employer';
     const target = this.accountForOwner(candidate.owner);
     return account.role === 'employer' && target?.role === 'candidate' && accountsShareRealm(account, target)
       && (!candidate.synthetic || isLocalFixtureAccount(target));

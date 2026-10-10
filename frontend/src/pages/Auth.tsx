@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { ArrowLeft, ArrowRight, BriefcaseBusiness, Check, KeyRound, LockKeyhole, Mail, UserRound } from 'lucide-react';
+import { ArrowLeft, ArrowRight, BriefcaseBusiness, Check, FlaskConical, KeyRound, LockKeyhole, Mail, Medal, UserRound } from 'lucide-react';
 import { Brand } from '../components/Brand';
 import type { Role } from '../model';
 import { PRIVACY_POLICY_VERSION } from '../../../shared/privacy';
@@ -33,6 +33,26 @@ async function authRequest(path: string, body: Record<string, unknown>): Promise
   return payload;
 }
 
+type DemoAccount = { role: Role; login: string; password: string };
+type FspTicket = { name: string; email: string; fspId: string | null; city: string; achievements: { title: string; result: string; year: string }[]; suggestedLogin: string };
+
+const demoCopy: Record<Role, { title: string; about: string }> = {
+  employer: { title: 'Работодатель', about: 'Каталог кандидатов, потребности команды, процент совпадения, приглашения и вакансии' },
+  candidate: { title: 'Кандидат', about: 'Подтверждённый грейд, достижения ФСП, предложения работодателя и каталог компаний' },
+};
+const fspMessages: Record<string, string> = {
+  exists: 'Аккаунт с почтой из ФСП ID уже есть. Войдите логином и паролем.',
+  failed: 'Не удалось завершить вход через ФСП ID. Попробуйте ещё раз.',
+  cancelled: 'Вход через ФСП ID отменён.',
+  off: 'Вход через ФСП ID сейчас недоступен.',
+};
+
+function FspIdButton({ disabled }: { disabled?: boolean }) {
+  return <a className={'fsp-id-button' + (disabled ? ' disabled' : '')} href="/api/auth/fsp/start" aria-disabled={disabled || undefined}>
+    <span className="fsp-id-mark" aria-hidden="true"><Medal size={16} /></span>Войти через ФСП ID
+  </a>;
+}
+
 function authErrorMessage(cause: unknown) {
   if (cause instanceof AuthRequestError) return cause.message;
   return 'Не удалось подключиться к сервису. Проверьте соединение и повторите попытку.';
@@ -63,6 +83,46 @@ export function Auth({
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const codeInput = useRef<HTMLInputElement>(null);
+  const [demo, setDemo] = useState<{ accounts: DemoAccount[]; fspEnabled: boolean }>({ accounts: [], fspEnabled: false });
+  const [fspTicket] = useState(() => new URLSearchParams(location.search).get('ticket') || '');
+  const [fspUser, setFspUser] = useState<FspTicket | null>(null);
+  const [fspLogin, setFspLogin] = useState('');
+
+  useEffect(() => {
+    const message = fspMessages[new URLSearchParams(location.search).get('fsp') || ''];
+    if (message) setError(message);
+    void fetch('/api/auth/demo-accounts', { credentials: 'same-origin', cache: 'no-store' }).then(response => response.ok ? response.json() : null)
+      .then(value => { if (value) setDemo({ accounts: Array.isArray(value.accounts) ? value.accounts : [], fspEnabled: Boolean(value.fspId?.enabled) }); })
+      .catch(() => {});
+  }, []);
+  useEffect(() => {
+    if (!fspTicket) return;
+    void fetch('/api/auth/fsp/ticket?ticket=' + encodeURIComponent(fspTicket), { credentials: 'same-origin', cache: 'no-store' })
+      .then(async response => {
+        const value = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(value.error || 'Сессия входа через ФСП ID истекла.');
+        setFspUser(value); setFspLogin(value.suggestedLogin || '');
+      }).catch(cause => setError(cause instanceof Error ? cause.message : 'Сессия входа через ФСП ID истекла.'));
+  }, [fspTicket]);
+
+  async function demoLogin(account: DemoAccount) {
+    setError(''); setNotice(''); setBusy(true);
+    try {
+      const response = await authRequest('/api/auth/login', { loginOrEmail: account.login, password: account.password });
+      onAuthenticated(response.account?.role || account.role);
+    } catch (cause) { setError(authErrorMessage(cause)); } finally { setBusy(false); }
+  }
+
+  async function completeFsp(event: FormEvent) {
+    event.preventDefault();
+    setError('');
+    if (!accepted) { setError('Подтвердите согласие с политикой конфиденциальности.'); return; }
+    setBusy(true);
+    try {
+      await authRequest('/api/auth/fsp/complete', { ticket: fspTicket, login: fspLogin, consent: true, privacyVersion: PRIVACY_POLICY_VERSION });
+      onAuthenticated('candidate');
+    } catch (cause) { setError(authErrorMessage(cause)); } finally { setBusy(false); }
+  }
 
   useEffect(() => {
     setRole(initialRole);
@@ -150,9 +210,10 @@ export function Auth({
     setStep('details'); setCode(''); setError(''); setNotice('');
   }
 
-  const isRegister = mode === 'register';
+  const isRegister = mode === 'register' && !fspTicket;
   const codeStep = isRegister && step === 'code';
-  const title = codeStep ? 'Подтвердите почту' : isRegister ? 'Регистрация' : 'Вход';
+  const title = fspTicket ? 'Вход через ФСП ID' : codeStep ? 'Подтвердите почту' : isRegister ? 'Регистрация' : 'Вход';
+  const showFsp = demo.fspEnabled && !fspTicket && !codeStep && (!isRegister || role === 'candidate');
 
   return <div className="auth-page">
     <header className="auth-header"><Brand onHome={onBack} /><button className="auth-back" type="button" onClick={onBack}><ArrowLeft size={16} />На главную</button></header>
@@ -162,7 +223,20 @@ export function Auth({
           <div className="auth-heading"><h1 id="auth-title">{title}</h1>{codeStep && <p>{email}</p>}</div>
           {error && <div className="auth-message error" role="alert">{error}</div>}
           {notice && <div className="auth-message notice" role="status">{notice}</div>}
-          {codeStep ? <form className="auth-form" onSubmit={confirmCode}>
+          {fspTicket ? fspUser ? <form className="auth-form" onSubmit={completeFsp}>
+            <div className="fsp-id-profile">
+              <span className="fsp-id-mark" aria-hidden="true"><Medal size={18} /></span>
+              <div><strong>{fspUser.name}</strong><span>{fspUser.email}{fspUser.fspId ? ' · ' + fspUser.fspId : ''}</span></div>
+            </div>
+            {fspUser.achievements.length ? <ul className="fsp-id-achievements">{fspUser.achievements.map(item => <li key={item.title}><span>{item.title}</span><b>{item.result} · {item.year}</b></li>)}</ul>
+              : <p className="auth-hint">Результатов соревнований ФСП пока нет — это не мешает пройти тест и получить категорию.</p>}
+            <fieldset disabled={busy} className="auth-fields">
+              <label className="auth-field"><span>Логин на платформе</span><input autoComplete="username" autoCapitalize="none" spellCheck="false" value={fspLogin} onChange={event => setFspLogin(event.target.value.replace(/\s/g, ''))} /><small>Почта подтверждена ФСП ID — код не нужен. Входите кнопкой «Войти через ФСП ID».</small></label>
+              <label className="auth-consent"><input type="checkbox" checked={accepted} onChange={event => setAccepted(event.target.checked)} /><span>Согласен на обработку персональных данных и получение результатов из ФСП ID по <a href="/privacy" target="_blank" rel="noopener noreferrer">политике конфиденциальности</a>.</span></label>
+            </fieldset>
+            <button className="button primary auth-submit" type="submit" disabled={busy}>{busy ? 'Создаём кабинет…' : <>Создать кабинет кандидата<ArrowRight size={17} /></>}</button>
+          </form> : <p className="auth-hint" role="status">{error ? '' : 'Получаем данные из ФСП ID…'}</p>
+          : codeStep ? <form className="auth-form" onSubmit={confirmCode}>
             <label className="auth-code-field" htmlFor="verification-code"><span className="sr-only">Код подтверждения</span><KeyRound size={20} />
               <input ref={codeInput} id="verification-code" name="code" disabled={busy} required inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={code} onChange={event => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="000000" />
             </label>
@@ -189,8 +263,20 @@ export function Auth({
             </fieldset>
             <button className="button primary auth-submit" type="submit" disabled={busy}>{busy ? 'Входим…' : <>Войти<ArrowRight size={17} /></>}</button>
           </form>}
-          {!codeStep && <div className="auth-switch">{isRegister ? <>Уже есть аккаунт? <button disabled={busy} type="button" onClick={() => onSwitchMode('login')}>Войти</button></> : <>Нет аккаунта? <button disabled={busy} type="button" onClick={() => onSwitchMode('register')}>Регистрация</button></>}</div>}
+          {showFsp && <div className="fsp-id-block"><div className="auth-divider"><span>или</span></div><FspIdButton disabled={busy} />
+            <p className="auth-hint">Участник ФСП входит единой учётной записью — достижения подтянутся в профиль автоматически.</p></div>}
+          {!codeStep && !fspTicket && <div className="auth-switch">{isRegister ? <>Уже есть аккаунт? <button disabled={busy} type="button" onClick={() => onSwitchMode('login')}>Войти</button></> : <>Нет аккаунта? <button disabled={busy} type="button" onClick={() => onSwitchMode('register')}>Регистрация</button></>}</div>}
         </div>
+        {demo.accounts.length > 0 && !fspTicket && <section className="demo-accounts" aria-label="Тестовые аккаунты">
+          <h2><FlaskConical size={16} />Тестовые аккаунты для проверки</h2>
+          {demo.accounts.map(account => <div className="demo-account" key={account.login}>
+            <span className="demo-account-icon" aria-hidden="true">{account.role === 'employer' ? <BriefcaseBusiness size={18} /> : <UserRound size={18} />}</span>
+            <div className="demo-account-body"><strong>{demoCopy[account.role].title}</strong><span>{demoCopy[account.role].about}</span>
+              <code>{account.login} · {account.password}</code></div>
+            <button className="button secondary compact" type="button" disabled={busy} onClick={() => void demoLogin(account)}>Войти</button>
+          </div>)}
+          {demo.fspEnabled && <p className="auth-hint">Вход через ФСП ID работает на тестовом стенде: выберите вымышленного участника.</p>}
+        </section>}
       </section>
     </main>
   </div>;

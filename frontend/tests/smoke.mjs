@@ -247,10 +247,12 @@ try {
   const localProfile = { ...directoryCandidates[0], id: 'smoke-local-candidate', name: 'Изолированный локальный профиль',
     city: 'Учебный город локальных аккаунтов', synthetic: true, visible: true, consent: true };
   isolated.service.directory.store.upsert(localProfile, localCandidate.owner, true);
-  const localDirectory = await localEmployer.context.request.get(base + '/api/directory/search');
+  const localDirectory = await localEmployer.context.request.get(base + '/api/directory/search?' + new URLSearchParams({
+    filters: JSON.stringify({ city: localProfile.city }), limit: '50' }));
   assert.equal(localDirectory.status(), 200);
   const localResult = await localDirectory.json();
-  assert.deepEqual(localResult.items.map(item => item.person.id), [localProfile.id], 'Local teaching accounts have a separate interactive pool.');
+  // The test employer browses the read-only demo catalogue plus its own realm; real candidates never appear.
+  assert.deepEqual(localResult.items.filter(item => !item.person.demoProfile).map(item => item.person.id), [localProfile.id], 'Local teaching accounts have a separate interactive pool.');
   actors.set('Кандидат', candidateActor);
   actors.set('Работодатель', employerActor);
   page = employerActor.page;

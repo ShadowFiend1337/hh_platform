@@ -46,3 +46,29 @@
   .app-account-name { max-width: 100px; }
   .role-static { display: none; }
 }
+
+/* FSP ID and test accounts */
+.auth-divider { display: flex; align-items: center; gap: 12px; margin: 20px 0 14px; color: var(--muted); font-size: 12px; }
+.auth-divider::before, .auth-divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+.fsp-id-button { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 46px; border-radius: 10px; border: 1px solid #d9cdee; background: #faf7ff; color: #4a1a8c; font-size: 14px; font-weight: 700; }
+.fsp-id-button:hover { text-decoration: none; background: #f3ecff; border-color: #c4afe6; }
+.fsp-id-button.disabled { pointer-events: none; opacity: .5; }
+.fsp-id-mark { width: 26px; height: 26px; border-radius: 8px; background: linear-gradient(135deg, #4a1a8c, #7b2fd0); color: #fff; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.auth-hint { margin-top: 10px; font-size: 12px; color: var(--muted); line-height: 1.5; text-align: center; }
+.fsp-id-profile { display: flex; align-items: center; gap: 12px; padding: 14px; border: 1px solid #e3d9f3; border-radius: 12px; background: #faf7ff; }
+.fsp-id-profile .fsp-id-mark { width: 38px; height: 38px; border-radius: 10px; }
+.fsp-id-profile strong { display: block; font-size: 15px; }
+.fsp-id-profile span { display: block; font-size: 12px; color: var(--muted); }
+.fsp-id-achievements { list-style: none; margin: 12px 0 4px; padding: 0; display: grid; gap: 8px; }
+.fsp-id-achievements li { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; padding: 9px 12px; border-radius: 9px; background: #f8f9fb; }
+.fsp-id-achievements b { white-space: nowrap; font-weight: 600; color: #4a1a8c; }
+.demo-accounts { margin-top: 18px; padding: 18px; border: 1px dashed #cdd3df; border-radius: 14px; background: #fff; }
+.demo-accounts h2 { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 700; margin-bottom: 12px; }
+.demo-accounts h2 svg { color: var(--accent); }
+.demo-account { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-top: 1px solid var(--border); }
+.demo-account-icon { width: 36px; height: 36px; border-radius: 10px; background: #eef5ff; color: var(--accent); display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.demo-account-body { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.demo-account-body strong { font-size: 14px; }
+.demo-account-body span { font-size: 12px; color: var(--muted); line-height: 1.45; }
+.demo-account-body code { font-size: 12px; color: #3c3f48; background: #f3f4f7; border-radius: 6px; padding: 2px 6px; justify-self: start; }
+@media (max-width: 520px) { .demo-account { flex-wrap: wrap; } .demo-account .button { width: 100%; } }

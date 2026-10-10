@@ -256,7 +256,8 @@ export class DirectoryService {
     if (!this.accountForOwner) return true;
     const account=this.accountForOwner(owner);
     if (!account) return false;
-    if (isDemoCatalogProfile(row)) return account.role==='employer' && !isLocalFixtureAccount(account);
+    // The read-only demo catalogue is visible to every employer, including the team test account.
+    if (isDemoCatalogProfile(row)) return account.role==='employer';
     const target=this.accountForOwner(row.owner);
     return account.role==='employer' && target?.role==='candidate' && accountsShareRealm(account,target)
       && (!row.synthetic || isLocalFixtureAccount(target));

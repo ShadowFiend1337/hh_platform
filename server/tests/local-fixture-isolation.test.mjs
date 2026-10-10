@@ -108,20 +108,29 @@ test('registered local accounts stay in an explicitly marked realm despite old r
   const localPerson = f.service.directory.store.forOwner(localCandidate.owner());
   assert.equal(localPerson.synthetic, 1, 'Startup backfill marks the registered local fixture');
   f.service.directory.store.db.prepare('UPDATE directory_candidates SET synthetic=0 WHERE id=?').run(localPerson.id);
-  const localCompanies = await localCandidate('/api/companies');
-  assert.equal(localCompanies.data.total, 1); assert.equal(localCompanies.data.items[0].synthetic, true);
-  const localVacancy = localCompanies.data.items[0].vacancies[0]; assert.equal(localVacancy.synthetic, true);
-  const localFound = await localEmployer('/api/directory/search?limit=50');
-  assert.deepEqual(localFound.data.items.map(item => item.person.id), [localPerson.id]);
-  assert.equal(localFound.data.items[0].person.synthetic, true);
+  const isDemoCompany = item => item.id.startsWith('demo-company-');
+  const localCompanies = await localCandidate('/api/companies?limit=100');
+  const ownRealm = localCompanies.data.items.filter(item => !isDemoCompany(item));
+  assert.equal(ownRealm.length, 1); assert.equal(ownRealm[0].synthetic, true);
+  assert(localCompanies.data.items.filter(isDemoCompany).length >= 15, 'The test candidate also sees the demo companies');
+  const localVacancy = ownRealm[0].vacancies[0]; assert.equal(localVacancy.synthetic, true);
+  const localFound = { data: { items: [] } };
+  for (let offset = 0, total = 1; offset < total; offset += 50) {
+    const page = await localEmployer('/api/directory/search?limit=50&offset=' + offset);
+    total = page.data.total; localFound.data.items.push(...page.data.items);
+  }
+  const localPeople = localFound.data.items.filter(item => !item.person.demoProfile);
+  assert.deepEqual(localPeople.map(item => item.person.id), [localPerson.id], 'The test employer sees its own candidate and the read-only demo catalogue');
+  assert(localFound.data.items.some(item => item.person.demoProfile));
+  assert.equal(localPeople[0].person.synthetic, true);
   assert.equal((await localCandidate('/api/platform/state')).data.state.profile.synthetic, true);
   assert.equal(f.service.auth.accountForPlatformOwner(localCandidate.owner()).testAccount, true);
   const demoCatalogue = await realEmployer('/api/directory/search?limit=50');
   assert(demoCatalogue.data.items.length > 0);
   assert(demoCatalogue.data.items.every(item => item.person.demoProfile && item.person.synthetic && item.person.id !== localPerson.id));
   assert((await realEmployer('/api/directory/options')).data.cities.length > 0);
-  assert.deepEqual((await realCandidate('/api/companies')).data.items, []);
-  assert.deepEqual((await realCandidate('/api/vacancies')).data.items, []);
+  assert((await realCandidate('/api/companies?limit=100')).data.items.every(isDemoCompany), 'A real candidate never sees the fixture company');
+  assert((await realCandidate('/api/vacancies')).data.items.every(item => item.companyId.startsWith('demo-company-')));
   for (const path of ['/api/companies/' + localVacancy.companyId, '/api/vacancies/' + localVacancy.id]) {
     assert.equal((await realCandidate(path)).status, 404);
   }
@@ -134,7 +143,8 @@ test('registered local accounts stay in an explicitly marked realm despite old r
   assert.equal(realPublished.status, 201); assert.equal(realPublished.data.synthetic, false);
   const ordinarySearch = '/api/directory/search?filters=' + encodeURIComponent(JSON.stringify({ city: 'Обычный город' }));
   assert.deepEqual((await realEmployer(ordinarySearch)).data.items.map(item => item.person.id), [realPerson.id]);
-  assert.deepEqual((await localEmployer('/api/directory/search?limit=50')).data.items.map(item => item.person.id), [localPerson.id]);
+  assert.deepEqual((await localEmployer(ordinarySearch)).data.items.filter(item => !item.person.demoProfile).map(item => item.person.id), [],
+    'A real published candidate never appears for the test employer');
   assert.equal((await realCandidate('/api/vacancies/' + localVacancy.id + '/applications', 'POST', {})).status, 404);
   assert.equal((await localCandidate('/api/vacancies/' + realPublished.data.id + '/applications', 'POST', {})).status, 404);
 
@@ -182,5 +192,5 @@ test('registered local accounts stay in an explicitly marked realm despite old r
   assert.equal(incoming.data.items[0].candidate.synthetic, true);
   assert.equal((await localEmployer('/api/applications/' + applied.data.id, 'PATCH', { status: 'accepted' })).status, 200);
   assert.equal((await localEmployer('/api/companies/' + realPublished.data.companyId)).status, 404);
-  assert.equal((await localEmployer('/api/vacancies/demo-company-vector-vacancy-1')).status, 404);
+  assert.equal((await localEmployer('/api/vacancies/demo-company-vector-vacancy-1')).status, 200, 'Demo vacancies are public to signed-in users');
 });
