@@ -932,5 +932,5 @@ fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
 .status.review-status-completed { color: #2f6b45; background: #edf6f0; }
 .status.review-status-pending { color: #9a5b00; background: #fff6e8; }
 @media (max-width: 900px) { .review-layout { grid-template-columns: 1fr; } .review-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-.review-status { display: flex; width: 100%; }
-.review-status button { flex: 1; white-space: nowrap; padding: 7px 8px; font-size: 12px; }
+.review-status { display: flex; flex-wrap: wrap; width: 100%; }
+.review-status button { flex: 1 1 45%; white-space: nowrap; padding: 7px 8px; font-size: 12px; }

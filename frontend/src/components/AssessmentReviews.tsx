@@ -3,8 +3,9 @@ import { Check, ChevronDown, Hourglass, Sparkles, X } from 'lucide-react';
 import { claimRequest } from '../claims-api';
 import { dateLabel, gradeLabels, specializationNames, type Grade, type Specialization } from '../model';
 
-type ReviewStatus = 'pending' | 'completed' | 'invalidated';
-interface QueueItem { id: string; candidate: string; specialization: Specialization; grade: Grade; status: ReviewStatus; version: number;
+type ReviewStatus = 'pending' | 'completed' | 'invalidated' | 'all';
+type ItemStatus = Exclude<ReviewStatus, 'all'> | 'auto';
+interface QueueItem { id: string; candidate: string; specialization: Specialization; grade: Grade; status: ItemStatus; version: number; annulled?: boolean;
   submittedAt: string; decidedAt: string | null; closedScore: number | null; score: number | null; passed: boolean; openCount: number; departures: number }
 interface Criterion { id: string; expected: string; scale: Record<string, string> }
 interface OpenTask { id: string; topic: string; title: string; text: string; answerFormat: string; minutes: number; rubric: Criterion[]; reference: string;
@@ -14,14 +15,16 @@ interface OpenTask { id: string; topic: string; title: string; text: string; ans
 interface ClosedItem { id: string; topic: string; text: string; options: { id: string; text: string }[]; correctOptionId: string; correct: boolean; pilot: boolean;
   answer: { optionId: string | null; late: boolean; seconds: number } | null;
   origin: { kind: 'authored' | 'generated'; generator?: string; verifier?: string | null; confidence?: number | null } }
-interface Detail { id: string; candidate: string; specialization: Specialization; grade: Grade; status: ReviewStatus; version: number; submittedAt: string;
+interface Detail { id: string; candidate: string; specialization: Specialization; grade: Grade; status: ItemStatus; version: number; submittedAt: string; answersRecorded: boolean;
   integrity: { departures: number; blockedCopies: number; blockedActions: number; fullscreenExits: number };
-  result: { closedScore?: number; score: number; openScore?: number; passed: boolean; review?: { note: string } };
+  result: { closedScore?: number; score: number; openScore?: number; passed: boolean; annulled?: boolean; review?: { note: string };
+    competencies?: { topic: string; correct: number; total: number }[] };
   decision: { decision: string; note: string; marks?: { questionId: string; criteria: { id: string; score: number }[]; comment: string }[] } | null;
   closed: ClosedItem[]; open: OpenTask[]; policy: { threshold: number; closedWeight: number; openWeight: number } }
 interface Suggestion { model: string; tasks: { questionId: string; comment: string; criteria: { id: string; score: number; reason: string }[] }[] }
 
-const statusLabels: Record<ReviewStatus, string> = { pending: 'На проверке', completed: 'Проверено', invalidated: 'Аннулировано' };
+const statusLabels: Record<ReviewStatus, string> = { pending: 'На проверке', completed: 'Проверено', invalidated: 'Аннулировано', all: 'Все попытки' };
+const itemLabels: Record<ItemStatus, string> = { pending: 'На проверке', completed: 'Проверено', invalidated: 'Аннулировано', auto: 'Автоматически' };
 const errorText = (cause: unknown) => cause instanceof Error ? cause.message : 'Не удалось выполнить действие.';
 const formatLabels: Record<string, string> = { code: 'код', sql: 'SQL', calculation: 'расчёт', case: 'разбор кейса' };
 
@@ -60,7 +63,8 @@ export function AssessmentReviews({ accountId }: { accountId: string }) {
       {items.map(item => <button key={item.id} className={'review-item' + (selected?.id === item.id ? ' active' : '')} onClick={() => void open(item.id)} disabled={busy === 'open'}>
         <strong>{item.candidate}</strong>
         <span>{specializationNames[item.specialization]} · {gradeLabels[item.grade]}</span>
-        <span className="review-item-meta">{item.status === 'pending' ? `Закрытая часть ${item.closedScore}/100 · открытых ${item.openCount}` : `Итог ${item.score}/100 · ${item.passed ? 'пройден' : 'не пройден'}`}
+        <span className="review-item-meta">{item.status === 'pending' ? `Закрытая часть ${item.closedScore}/100 · открытых ${item.openCount}` : item.annulled ? 'Аннулирована: уходы со страницы' : `Итог ${item.score}/100 · ${item.passed ? 'пройден' : 'не пройден'}`}
+          {status === 'all' && <span>{itemLabels[item.status]}</span>}
           {item.departures > 0 && <span className="review-departures">уходов: {item.departures}</span>}</span>
         <time dateTime={item.submittedAt}>{dateLabel(item.submittedAt)}</time>
       </button>)}
@@ -113,15 +117,17 @@ function ReviewCard({ detail, accountId, onDecided }: { detail: Detail; accountI
     } catch (cause) { setError(errorText(cause)); } finally { setBusy(null); }
   }
 
-  const closedCorrect = detail.closed.filter(item => item.correct && !item.pilot).length, closedTotal = detail.closed.filter(item => !item.pilot).length;
+  const closedTotal = detail.closed.filter(item => !item.pilot).length;
+  const closedCorrect = detail.answersRecorded ? detail.closed.filter(item => item.correct && !item.pilot).length
+    : (detail.result.competencies || []).reduce((sum, item) => sum + item.correct, 0);
   return <section className="panel review-card" aria-label="Проверка попытки">
     <header className="review-head">
       <div><h2>{detail.candidate}</h2><p className="muted">{specializationNames[detail.specialization]} · {gradeLabels[detail.grade]} · отправлено {dateLabel(detail.submittedAt)}</p></div>
-      <span className={'status review-status-' + detail.status}>{statusLabels[detail.status]}</span>
+      <span className={'status review-status-' + detail.status}>{itemLabels[detail.status]}</span>
     </header>
     <div className="review-summary">
       <div><span>Закрытая часть</span><strong>{detail.result.closedScore ?? detail.result.score}/100</strong><small>{closedCorrect} из {closedTotal} верно</small></div>
-      <div><span>Открытая часть</span><strong>{pending ? (preview ? preview.open + '/100' : '—') : (detail.result.openScore ?? '—') + '/100'}</strong><small>{detail.open.length} задачи по рубрике</small></div>
+      {detail.open.length > 0 && <div><span>Открытая часть</span><strong>{pending ? (preview ? preview.open + '/100' : '—') : (detail.result.openScore ?? '—') + '/100'}</strong><small>{detail.open.length} задачи по рубрике</small></div>}
       <div><span>Итог</span><strong>{pending ? (preview ? preview.final + '/100' : '—') : detail.result.score + '/100'}</strong>
         <small>{pending ? (preview ? (preview.final >= detail.policy.threshold ? 'пройдёт' : 'не пройдёт') + ` · порог ${detail.policy.threshold}` : 'оцените все критерии') : detail.result.passed ? 'грейд подтверждён' : 'не подтверждён'}</small></div>
       <div><span>Контроль</span><strong>{detail.integrity.departures}</strong><small>уходов · копирований {detail.integrity.blockedCopies}</small></div>
@@ -129,7 +135,8 @@ function ReviewCard({ detail, accountId, onDecided }: { detail: Detail; accountI
     {pending && <div className="review-ai"><button className="button secondary" disabled={!!busy} onClick={() => void suggest()}><Sparkles size={16} />{busy === 'ai' ? 'Модель оценивает…' : 'ИИ-подсказка оценок'}</button>
       <span className="field-help">{suggestion ? `Подставлены оценки ${suggestion.model}; проверьте каждую. Имя и контакты в модель не передаются.` : 'Модель предложит баллы по рубрике; решение за вами.'}</span></div>}
 
-    <h3 className="review-section">Открытые задачи</h3>
+    {detail.open.length > 0 && <h3 className="review-section">Открытые задачи</h3>}
+    {!detail.open.length && <p className="muted">Открытых задач нет: {detail.result.annulled ? 'попытка аннулирована за уходы со страницы' : detail.result.passed ? 'тест прошёл без практического этапа' : 'закрытая часть не пройдена, практический этап не выдавался'}.</p>}
     {detail.open.map((task, index) => {
       const advice = suggestion?.tasks.find(item => item.questionId === task.id);
       return <article className="review-task" key={task.id}>
@@ -163,6 +170,7 @@ function ReviewCard({ detail, accountId, onDecided }: { detail: Detail; accountI
       </article>;
     })}
 
+    {!detail.answersRecorded && <p className="field-help">Попытка проверена целиком: по вопросам видны условия и ключи, ответы кандидата по каждому вопросу не сохранялись.</p>}
     <details className="review-details review-closed"><summary>Закрытая часть: {closedCorrect} из {closedTotal} <ChevronDown size={14} /></summary>
       <ol>{detail.closed.map(item => <li key={item.id} className={item.correct ? 'correct' : 'wrong'}>
         <p><strong>{item.topic}.</strong> {item.text} {item.pilot && <span className="tag">пилот, не в зачёте</span>}</p>
@@ -172,12 +180,13 @@ function ReviewCard({ detail, accountId, onDecided }: { detail: Detail; accountI
       </li>)}</ol>
     </details>
 
-    <label className="field"><span>Комментарий кандидату</span><textarea rows={3} maxLength={2000} disabled={!pending} value={note} onChange={event => setNote(event.target.value)}
-      placeholder="Итог проверки; для аннулирования — причина" /></label>
+    {(pending || detail.decision) && <label className="field"><span>Комментарий кандидату</span><textarea rows={3} maxLength={2000} disabled={!pending} value={note} onChange={event => setNote(event.target.value)}
+      placeholder="Итог проверки; для аннулирования — причина" /></label>}
     {error && <p className="form-error" role="alert">{error}</p>}
     {pending ? <div className="button-group review-actions">
       <button className="button secondary" disabled={!!busy || note.trim().length < 10} title="Дефект задания: попытка не засчитывается и не блокирует пересдачу" onClick={() => void decide('invalidate')}>Аннулировать</button>
       <button className="button primary" disabled={!!busy || !preview} onClick={() => void decide('grade')}>{busy === 'grade' ? 'Сохраняем…' : 'Утвердить оценку'}</button>
-    </div> : <p className="field-help">Решение принято{detail.decision?.note ? ': ' + detail.decision.note : ''}.</p>}
+    </div> : detail.status === 'auto' ? <p className="field-help">Результат посчитан автоматически: проверка модератора не требовалась.</p>
+      : <p className="field-help">Решение принято{detail.decision?.note ? ': ' + detail.decision.note : ''}.</p>}
   </section>;
 }

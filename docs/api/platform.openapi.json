@@ -2303,13 +2303,14 @@
             "name": "status",
             "in": "query",
             "required": false,
-            "description": "",
+            "description": "`all` — все завершённые попытки, включая автоматические",
             "schema": {
               "type": "string",
               "enum": [
                 "pending",
                 "completed",
-                "invalidated"
+                "invalidated",
+                "all"
               ]
             }
           },
@@ -11260,10 +11261,12 @@
                 },
                 "status": {
                   "type": "string",
+                  "description": "`auto` — результат без проверки модератора",
                   "enum": [
                     "pending",
                     "completed",
-                    "invalidated"
+                    "invalidated",
+                    "auto"
                   ]
                 },
                 "version": {
@@ -11281,6 +11284,9 @@
                       "type": "null"
                     }
                   ]
+                },
+                "annulled": {
+                  "type": "boolean"
                 },
                 "closedScore": {
                   "anyOf": [

@@ -9,7 +9,7 @@ import { openAnchor, OPEN_TASK_POLICY } from './open-tasks.mjs';
  * final score is 50% closed + 50% open with the usual threshold. A team test moderator
  * sees only test accounts, a real moderator only real accounts.
  */
-const statuses = ['pending', 'completed', 'invalidated'];
+const statuses = ['pending', 'completed', 'invalidated', 'all'];
 const fail = message => { throw new RequestError(400, message); };
 
 export class AssessmentReviewService {
@@ -41,22 +41,27 @@ export class AssessmentReviewService {
     const review = this.db.prepare('SELECT * FROM assessment_reviews WHERE attempt_id=?').get(id);
     return review ? { ...review, decision: review.decision ? JSON.parse(review.decision) : null } : null;
   }
+  /** Any finished attempt of the moderator's realm; automatic results have no review row. */
   load(moderator, id) {
-    const review = typeof id === 'string' && id.length <= 100 ? this.review(id) : null;
-    const row = review ? this.store.get(id) : null;
-    if (!row || !this.visible(moderator, row)) throw new RequestError(404, 'Попытка не найдена.');
+    const row = typeof id === 'string' && id.length <= 100 ? this.store.get(id) : null;
+    if (!row?.result || !this.visible(moderator, row)) throw new RequestError(404, 'Попытка не найдена.');
+    const review = this.review(id) || { status: 'auto', version: 0, submitted_at: row.result.date, decided_at: row.result.date, decision: null };
     return { review, row };
   }
 
   list(moderator, { status = 'pending', offset = 0, limit = 20 } = {}) {
     if (!statuses.includes(status) || !Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) fail('Проверьте фильтр очереди.');
-    const rows = this.db.prepare('SELECT attempt_id FROM assessment_reviews WHERE status=? ORDER BY submitted_at ASC, attempt_id').all(status)
-      .map(review => ({ review: this.review(review.attempt_id), row: this.store.get(review.attempt_id) }))
-      .filter(item => this.visible(moderator, item.row));
+    // `all`: every finished attempt, newest first — automatic results, annulments and reviews.
+    const ids = status === 'all'
+      ? this.db.prepare('SELECT id FROM attempts WHERE result IS NOT NULL ORDER BY created_at DESC, id LIMIT 2000').all().map(item => item.id)
+      : this.db.prepare('SELECT attempt_id FROM assessment_reviews WHERE status=? ORDER BY submitted_at ASC, attempt_id').all(status).map(item => item.attempt_id);
+    const rows = ids.map(id => this.store.get(id)).filter(row => row?.result && this.visible(moderator, row))
+      .map(row => ({ row, review: this.review(row.id) || { status: 'auto', version: 0, submitted_at: row.result.date, decided_at: row.result.date } }));
     return { total: rows.length, offset, limit, items: rows.slice(offset, offset + limit).map(({ review, row }) => ({
       id: row.id, candidate: this.candidateName(row.owner), specialization: row.attempt.specialization, grade: row.attempt.grade,
       status: review.status, version: review.version, submittedAt: review.submitted_at, decidedAt: review.decided_at,
       closedScore: row.result?.closedScore ?? row.result?.score ?? null, score: row.result?.score ?? null, passed: row.result?.passed ?? false,
+      annulled: Boolean(row.result?.annulled),
       openCount: row.attempt.questions.filter(isOpenQuestion).length, departures: this.store.integrity(row.id).departures })) };
   }
 
@@ -86,6 +91,8 @@ export class AssessmentReviewService {
     return { id: row.id, candidate: this.candidateName(row.owner), specialization: row.attempt.specialization, grade: row.attempt.grade,
       createdAt: row.attempt.createdAt, vacancy: row.attempt.vacancy || null, integrity: this.store.integrity(row.id),
       status: review.status, version: review.version, submittedAt: review.submitted_at, decision: review.decision,
+      // Attempts graded as a whole (not answered one by one) keep only the result, not per-question answers.
+      answersRecorded: Object.keys(answers).length > 0,
       result: row.result, closed, open, policy: { threshold, closedWeight: OPEN_TASK_POLICY.closedWeight, openWeight: OPEN_TASK_POLICY.openWeight } };
   }
 

@@ -94,6 +94,11 @@ try {
   await fixture.locator('.review-item').filter({ hasText: 'Тестовый кандидат' }).waitFor();
   assert.equal(await fixture.locator('.review-item').filter({ hasText: 'Вымышленный кандидат' }).count(), 0, 'Real candidates are not shown');
   assert.equal(await fixture.getByRole('tab', { name: 'Достижения' }).count(), 0, 'Achievement claims stay hidden');
+  await fixture.getByRole('tab', { name: 'Все попытки' }).click();
+  const automatic = fixture.locator('.review-item').filter({ hasText: 'Автоматически' }).first();
+  await automatic.click();
+  await fixture.getByText('Результат посчитан автоматически').waitFor();
+  await fixture.screenshot({ path: resolve('test-results', 'open-assessment-all.png'), fullPage: true });
   assert.equal(localAccountPassword.length > 0, true);
   assert.deepEqual(errors, []);
   console.log('PASS Closed part, two open tasks, pending result, moderator review with AI hints, server-side confirmation and test-moderator isolation');

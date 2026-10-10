@@ -180,7 +180,7 @@ const schemas = {
     policy: object({}, [], { additionalProperties: true }) }, ['verdict', 'source']),
 
   ReviewQueue: object({ total: integer(), offset: integer(), limit: integer(), items: array(object({ id: string(), candidate: string(), specialization: string(), grade: string(),
-    status: string('', { enum: ['pending', 'completed', 'invalidated'] }), version: integer(), submittedAt: string(), decidedAt: nullable(string()),
+    status: string('`auto` — результат без проверки модератора', { enum: ['pending', 'completed', 'invalidated', 'auto'] }), version: integer(), submittedAt: string(), decidedAt: nullable(string()), annulled: boolean(),
     closedScore: nullable(integer()), score: nullable(integer()), passed: boolean(), openCount: integer(), departures: integer() })) }, ['items', 'total']),
   ReviewDetail: object({ id: string(), candidate: string(), specialization: string(), grade: string(), status: string(), version: integer(),
     integrity: ref('IntegritySummary'), result: ref('AssessmentResult'),
@@ -316,7 +316,7 @@ const paths = {
     description: 'Подсказка работодателю: открытая модель получает только условие и ответ, без имени и контактов. Без ключа — проверка полноты по ключевым словам. 20 разборов за 10 минут.' }) },
 
   '/api/moderation/assessments': { get: op({ tag: 'Проверка тестов', summary: 'Очередь попыток с открытыми задачами', role: 'moderator', response: ref('ReviewQueue'), codes: [400],
-    params: [query('status', '', string('', { enum: ['pending', 'completed', 'invalidated'] })), query('offset', '', integer()), query('limit', '', integer('', { maximum: 100 }))],
+    params: [query('status', '`all` — все завершённые попытки, включая автоматические', string('', { enum: ['pending', 'completed', 'invalidated', 'all'] })), query('offset', '', integer()), query('limit', '', integer('', { maximum: 100 }))],
     description: 'Тестовый модератор видит только тестовые аккаунты, реальный — только реальные; собственные попытки скрыты.' }) },
   '/api/moderation/assessments/{id}': { get: op({ tag: 'Проверка тестов', summary: 'Итоги попытки: ответы, ключи, рубрики и происхождение заданий', role: 'moderator',
     params: [path('id', 'Попытка', string('', { format: 'uuid' }))], response: ref('ReviewDetail'), codes: [404],

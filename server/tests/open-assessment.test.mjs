@@ -150,6 +150,13 @@ test('open tasks follow a passed closed part, wait for a moderator and confirm t
     marks: realDetail.open.map(task => ({ questionId: task.id, criteria: task.rubric.map(item => ({ id: item.id, score: 0 })) })) });
   assert.equal(failing.data.result.score, 50); assert.equal(failing.data.result.passed, false);
   assert.equal((await person('/api/platform/state')).data.state?.profile?.confirmed ?? null, null, 'A failed review never confirms the grade');
+  // All finished attempts of the realm, including automatic ones, are visible read-only.
+  const all = await moderator('/api/moderation/assessments?status=all');
+  assert.ok(all.data.items.some(item => item.status === 'auto' && item.candidate === 'Тестовый кандидат'), 'The fixture closed-only result is listed');
+  const auto = all.data.items.find(item => item.status === 'auto');
+  const autoDetail = await moderator('/api/moderation/assessments/' + auto.id);
+  assert.equal(autoDetail.status, 200); assert.equal(autoDetail.data.open.length, 0);
+  assert.equal((await moderator(`/api/moderation/assessments/${auto.id}/decision`, 'POST', { version: 0, decision: 'grade', marks: [] })).status, 409);
 });
 
 test('a failed closed part ends the attempt without open tasks; selection covers grades and avoids repeats', async t => {
