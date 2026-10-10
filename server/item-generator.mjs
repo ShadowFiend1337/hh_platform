@@ -25,7 +25,7 @@ const personalData = [/[\w.+-]+@[\w-]+\.[\w.]+/u, /\+?\d[\d\s()-]{9,}\d/u];
 const systemPrompt = `Ты — ведущий методист технических собеседований в ИТ. Ты пишешь тестовые вопросы с одним правильным ответом для квалификационного теста платформы найма.
 Вопрос проверяет практическое понимание, а не память определений: короткая рабочая ситуация (2–4 предложения) и вопрос «что сделать», «почему» или «какой вариант корректен».
 Правила:
-1. Тема, слот сложности и проверяемые навыки — строго как в задании. Примеры показывают уровень и формат. Каждый новый вопрос — другая проблема и другое решение, чем в examples и doNotRepeat: пересказ известной ситуации другими словами запрещён. Делай упор на focusSkills.
+1. Тема, слот сложности и проверяемые навыки — строго как в задании. Примеры показывают уровень и формат. Каждый новый вопрос — другая проблема и другое решение, чем в examples и doNotRepeat; замена чисел, имён или единиц измерения в известном вопросе — не новый вопрос: пересказ известной ситуации другими словами запрещён. Делай упор на focusSkills.
 2. Ровно 4 варианта ответа и ровно один бесспорно правильный. Неправильные варианты — правдоподобные типичные ошибки специалистов этого уровня, без абсурда и шуток.
 3. Варианты примерно одинаковой длины и стиля. Правильный вариант не должен выделяться длиной, точностью, словами «всегда», «никогда», «обязательно».
 4. Запрещено: «все перечисленное», «ни один из вариантов», ссылки на примеры, персональные данные, реальные компании.
@@ -69,6 +69,9 @@ export function checkGeneratedItem(raw, family, existingTexts = []) {
   if (text.toLocaleLowerCase('ru').includes(options[correct].toLocaleLowerCase('ru')) && options[correct].length > 12) {
     return { error: 'Условие содержит правильный ответ.' };
   }
+  // A copy with other numbers, names or units is not a new item: compare the text with numbers masked.
+  const skeleton = value => value.toLocaleLowerCase('ru').replace(/\p{N}+(?:[.,]\p{N}+)*/gu, '#').replace(/\s+/gu, ' ').trim();
+  if (existingTexts.some(existing => skeleton(existing) === skeleton(text))) return { error: 'Отличается от существующего задания только числами.' };
   const similar = existingTexts.reduce((maximum, existing) => Math.max(maximum, textSimilarity(text, existing)), 0);
   if (similar >= 0.55) return { error: 'Слишком похоже на существующее задание.' };
   const skills = Array.isArray(raw.skills) ? raw.skills.filter(skill => family.skills.includes(skill)).slice(0, 3) : [];

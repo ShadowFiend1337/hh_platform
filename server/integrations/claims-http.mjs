@@ -1,4 +1,5 @@
 import { RequestError } from '../assessment.mjs';
+import { isLocalFixtureAccount } from '../local-fixtures.mjs';
 function query(url, allowed) {
   if ([...url.searchParams.keys()].some(key=>!allowed.includes(key) || url.searchParams.getAll(key).length!==1)) throw new RequestError(400,'Недопустимые параметры запроса.');
 }
@@ -8,6 +9,8 @@ export async function claimRoutes({request,response,url,identity,integrations,bo
   if(!identity.account) throw new RequestError(401,'Войдите в аккаунт.');
   const moderator=path.startsWith('/api/moderation/');
   if(moderator ? !identity.account.canModerate : identity.account.role!=='candidate') throw new RequestError(403,moderator?'Требуется право модератора.':'Заявки доступны кандидату.');
+  // The public team test moderator reviews tests and the item bank only; achievement claims hold private documents.
+  if(moderator && isLocalFixtureAccount(identity.account)) throw new RequestError(403,'Тестовый модератор проверяет тесты и банк заданий. Заявки на достижения — только реальный модератор.');
   integrations.claims.requireStorage();
   const scope='auth:'+identity.account.id;response.setHeader('X-Platform-Identity',scope);
   if(['POST','PUT','DELETE'].includes(request.method) && request.headers['x-platform-identity']!==scope) throw new RequestError(409,'Аккаунт изменился. Обновите страницу.');

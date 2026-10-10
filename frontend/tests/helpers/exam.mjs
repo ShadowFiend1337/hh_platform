@@ -22,20 +22,24 @@ export async function startExam(page) {
 
 /**
  * Answers every sequential question. `correct` may be a boolean or a function of the
- * question index. Unknown (pilot) questions take the first option.
+ * question index. Unknown (pilot) questions take the first option; open tasks get `openText`.
  */
-export async function answerExam(page, key, { correct = true } = {}) {
-  // The total can grow when a borderline result receives a clarifying block.
+export async function answerExam(page, key, { correct = true, openText = index => `Решение задачи ${index + 1}: шаги, код и проверка граничных случаев.` } = {}) {
+  // The total can grow when a borderline result receives a clarifying block or a passed closed part opens tasks.
   for (let index = 0; ; index++) {
     await page.locator(`.exam-progress[aria-valuenow="${index + 1}"]`).waitFor();
     const total = Number(await page.locator('.exam-progress').getAttribute('aria-valuemax'));
-    const choices = page.locator('.answer-option');
-    const texts = (await choices.locator('span').allTextContents()).map(text => text.trim());
-    const expected = key?.get((await page.locator('.question-text').textContent()).trim());
-    const wantCorrect = typeof correct === 'function' ? correct(index) : correct;
-    const chosen = expected ? texts.findIndex(text => (text === expected) === wantCorrect) : 0;
-    assert.ok(chosen >= 0, 'Expected an answer option for this program');
-    await choices.nth(chosen).click();
+    const openAnswer = page.locator('.open-answer textarea');
+    if (await openAnswer.count()) await openAnswer.fill(openText(index));
+    else {
+      const choices = page.locator('.answer-option');
+      const texts = (await choices.locator('span').allTextContents()).map(text => text.trim());
+      const expected = key?.get((await page.locator('.question-text').textContent()).trim());
+      const wantCorrect = typeof correct === 'function' ? correct(index) : correct;
+      const chosen = expected ? texts.findIndex(text => (text === expected) === wantCorrect) : 0;
+      assert.ok(chosen >= 0, 'Expected an answer option for this program');
+      await choices.nth(chosen).click();
+    }
     await page.getByRole('button', { name: index === total - 1 ? 'Завершить тест' : 'Ответить', exact: true }).click();
     if (index === total - 1) {
       const next = page.locator(`.exam-progress[aria-valuenow="${index + 2}"]`);

@@ -18,9 +18,14 @@ export interface AssessmentProgram {
 
 export interface AssessmentQuestion {
   id: string;
+  /** `open`: a practical task answered with text, code or SQL and graded by a moderator. */
+  type?: 'open';
   topic: string;
+  title?: string;
   text: string;
   options: { id: string; text: string }[];
+  answerFormat?: 'code' | 'sql' | 'calculation' | 'case';
+  timeLimitSec?: number;
 }
 
 export interface AssessmentAttempt {
@@ -59,6 +64,9 @@ export interface AssessmentAttempt {
   /** Borderline results get a clarifying block appended after the first 12 items. */
   extension?: { added: number; from: number };
   extended?: boolean;
+  /** Open tasks appended after a passed closed part. */
+  openStage?: { added: number; from: number };
+  opened?: boolean;
 }
 
 export interface AssessmentIntegrity {
@@ -176,6 +184,13 @@ export function resumeAssessment(attempt: SavedAssessment, signal?: AbortSignal)
 export function answerAssessment(attempt: AssessmentAttempt, questionId: string, optionId: string | null, signal?: AbortSignal) {
   return request<AssessmentAttempt>('/attempts/' + encodeURIComponent(attempt.id) + '/answer', {
     method: 'POST', signal, body: JSON.stringify({ token: attempt.token, questionId, optionId }),
+  });
+}
+
+/** Locks the text answer of an open task; `null` records a skipped or timed-out task. */
+export function answerOpenTask(attempt: AssessmentAttempt, questionId: string, answerText: string | null, signal?: AbortSignal) {
+  return request<AssessmentAttempt>('/attempts/' + encodeURIComponent(attempt.id) + '/answer', {
+    method: 'POST', signal, body: JSON.stringify({ token: attempt.token, questionId, answerText }),
   });
 }
 

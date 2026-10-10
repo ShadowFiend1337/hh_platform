@@ -94,7 +94,7 @@ export function App() {
     {identity.error ? <><p role="alert">{identity.error}</p><button className="button secondary" onClick={() => setRetry(value => value + 1)}>Повторить</button></> : <p role="status">Загружаем…</p>}
   </div></main>;
   if (location.pathname === '/moderation') return identity.account?.canModerate
-    ? <Moderation accountId={identity.account.id} role={identity.account.role} />
+    ? <Moderation accountId={identity.account.id} role={identity.account.role} testAccount={Boolean(identity.account.testAccount)} />
     : <main className="main-content"><div className="panel empty-state"><h1>Модерация</h1><p>Для доступа требуется назначенное право модератора.</p><a href={identity.account ? '/app?role='+identity.account.role : '/auth?mode=login'}>Вернуться в кабинет</a></div></main>;
   return <Workspace key={identity.account?.id || 'anonymous'} authAccount={identity.account} />;
 }

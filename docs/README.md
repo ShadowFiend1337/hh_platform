@@ -29,6 +29,7 @@
 | [assessment_integrity.md](assessment_integrity.md) | Прокторинг: последовательная выдача, лимит времени на вопрос, полноэкранный режим, аннулирование после трёх уходов, блокировка буфера и журнал |
 | [fsp_id.md](fsp_id.md) | Вход через ФСП ID: OpenID Connect + PKCE, тестовый стенд Keycloak, импорт достижений, подключение боевого Keycloak |
 | [search_match.md](search_match.md) | Процент совпадения в подборке: сигналы, базовые веса, их обоснование по ТЗ и пересчёт под запрос |
+| [open_tasks.md](open_tasks.md) | Открытые задачи теста, генерация похожих вариантов, проверка модератором и тестовый модератор |
 | [employer_tasks.md](employer_tasks.md) | Регулярные задания от работодателя, ИИ-разбор ответа и отметка свежести профиля |
 | [employer_protection.md](employer_protection.md) | Защита от фиктивных вакансий и недобросовестных работодателей: что работает и следующий этап |
 | [api/platform.openapi.json](api/platform.openapi.json) | Полный OpenAPI основного API (Swagger UI — `/api/docs`) |

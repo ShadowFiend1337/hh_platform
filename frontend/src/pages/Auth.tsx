@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { ArrowLeft, ArrowRight, BriefcaseBusiness, Check, FlaskConical, KeyRound, LockKeyhole, Mail, Medal, UserRound } from 'lucide-react';
+import { ArrowLeft, ArrowRight, BriefcaseBusiness, Check, ClipboardCheck, FlaskConical, KeyRound, LockKeyhole, Mail, Medal, UserRound } from 'lucide-react';
 import { Brand } from '../components/Brand';
 import type { Role } from '../model';
 import { PRIVACY_POLICY_VERSION } from '../../../shared/privacy';
@@ -7,6 +7,7 @@ import { PRIVACY_POLICY_VERSION } from '../../../shared/privacy';
 export type AuthMode = 'login' | 'register';
 
 type Account = {
+  canModerate?: boolean;
   id: string;
   email: string;
   login: string;
@@ -33,13 +34,15 @@ async function authRequest(path: string, body: Record<string, unknown>): Promise
   return payload;
 }
 
-type DemoAccount = { role: Role; login: string; password: string };
+type DemoAccount = { role: Role; login: string; password: string; moderator?: boolean };
 type FspTicket = { name: string; email: string; fspId: string | null; city: string; achievements: { title: string; result: string; year: string }[]; suggestedLogin: string };
 
 const demoCopy: Record<Role, { title: string; about: string }> = {
   employer: { title: 'Работодатель', about: 'Каталог кандидатов, потребности команды, процент совпадения, приглашения и вакансии' },
   candidate: { title: 'Кандидат', about: 'Подтверждённый грейд, достижения ФСП, предложения работодателя и каталог компаний' },
 };
+const moderatorCopy = { title: 'Модератор', about: 'Итоги тестов: ответы, ключи и рубрики, проверка открытых задач, происхождение вопросов и банк заданий' };
+const copyFor = (account: DemoAccount) => account.moderator ? moderatorCopy : demoCopy[account.role];
 const fspMessages: Record<string, string> = {
   exists: 'Аккаунт с почтой из ФСП ID уже есть. Войдите логином и паролем.',
   failed: 'Не удалось завершить вход через ФСП ID. Попробуйте ещё раз.',
@@ -109,6 +112,8 @@ export function Auth({
     setError(''); setNotice(''); setBusy(true);
     try {
       const response = await authRequest('/api/auth/login', { loginOrEmail: account.login, password: account.password });
+      // The moderator opens the review workspace instead of a cabinet.
+      if (account.moderator && response.account?.canModerate) { window.location.assign('/moderation#tests'); return; }
       onAuthenticated(response.account?.role || account.role);
     } catch (cause) { setError(authErrorMessage(cause)); } finally { setBusy(false); }
   }
@@ -270,8 +275,8 @@ export function Auth({
         {demo.accounts.length > 0 && !fspTicket && <section className="demo-accounts" aria-label="Тестовые аккаунты">
           <h2><FlaskConical size={16} />Тестовые аккаунты для проверки</h2>
           {demo.accounts.map(account => <div className="demo-account" key={account.login}>
-            <span className="demo-account-icon" aria-hidden="true">{account.role === 'employer' ? <BriefcaseBusiness size={18} /> : <UserRound size={18} />}</span>
-            <div className="demo-account-body"><strong>{demoCopy[account.role].title}</strong><span>{demoCopy[account.role].about}</span>
+            <span className="demo-account-icon" aria-hidden="true">{account.moderator ? <ClipboardCheck size={18} /> : account.role === 'employer' ? <BriefcaseBusiness size={18} /> : <UserRound size={18} />}</span>
+            <div className="demo-account-body"><strong>{copyFor(account).title}</strong><span>{copyFor(account).about}</span>
               <code>{account.login} · {account.password}</code></div>
             <button className="button secondary compact" type="button" disabled={busy} onClick={() => void demoLogin(account)}>Войти</button>
           </div>)}

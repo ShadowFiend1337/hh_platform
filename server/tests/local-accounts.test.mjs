@@ -21,7 +21,8 @@ test('local account setup prepares both cabinets on a fresh database and preserv
     rmdirSync(directoryPath);
   });
   const credentials = await prepareLocalAccounts(dbPath);
-  assert.deepEqual(credentials.map(item => item.role), ['candidate', 'employer']);
+  assert.deepEqual(credentials.map(item => item.role), ['candidate', 'employer', 'employer']);
+  assert.equal(credentials.find(item => item.login === 'local_moderator').moderator, true);
   auth = new AuthService(dbPath);
   directory = new DirectoryStore(dbPath);
   assessments = openStore(dbPath);
@@ -35,8 +36,9 @@ test('local account setup prepares both cabinets on a fresh database and preserv
   const employerState = platform.read(employer.platform_owner);
   assert(currentSurvey(candidateState.state));
   assert.equal(candidateState.state.profile.confirmed.grade, 'Junior');
-  assert.equal(candidateState.state.history.length, 1);
-  assert.equal(assessments.get(candidateState.state.history[0].id).owner, candidate.platform_owner);
+  assert.equal(candidateState.state.history.length, 2, 'A passed result and an attempt waiting for the test moderator');
+  assert.equal(candidateState.state.history.filter(item => item.pending).length, 1);
+  assert.ok(candidateState.state.history.every(item => assessments.get(item.id).owner === candidate.platform_owner));
   assert.equal(candidateState.state.invitations.length, 1);
   assert.equal(candidateState.state.invitations[0].status, 'sent');
   assert.equal(employerState.state.profile.consent, false);
@@ -56,5 +58,6 @@ test('local account setup prepares both cabinets on a fresh database and preserv
   assert.deepEqual(platform.read(candidate.platform_owner), savedCandidate);
   assert.deepEqual(platform.read(employer.platform_owner), savedEmployer);
   assert.deepEqual(marketplace.vacancies(employer.platform_owner, { own: true }).items, proposal);
-  assert.equal(auth.store.db.prepare('SELECT COUNT(*) AS n FROM auth_accounts').get().n, 2);
+  assert.equal(auth.store.db.prepare('SELECT COUNT(*) AS n FROM auth_accounts').get().n, 3);
+  assert.equal(auth.store.canModerate(auth.store.accountByIdentifier('local_moderator').id), true);
 });

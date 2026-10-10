@@ -27,6 +27,9 @@
       "name": "Тестирование"
     },
     {
+      "name": "Проверка тестов"
+    },
+    {
       "name": "Подбор"
     },
     {
@@ -2278,6 +2281,249 @@
           },
           "429": {
             "$ref": "#/components/responses/Error429"
+          }
+        }
+      }
+    },
+    "/api/moderation/assessments": {
+      "get": {
+        "tags": [
+          "Проверка тестов"
+        ],
+        "summary": "Очередь попыток с открытыми задачами",
+        "description": "Тестовый модератор видит только тестовые аккаунты, реальный — только реальные; собственные попытки скрыты.\n\nДоступ: Модератор (право выдаётся командой `npm run moderator`).",
+        "security": [
+          {
+            "accountSession": []
+          }
+        ],
+        "x-role": "moderator",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "completed",
+                "invalidated"
+              ]
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "description": "",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "",
+            "schema": {
+              "type": "integer",
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Успешно",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewQueue"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          }
+        }
+      }
+    },
+    "/api/moderation/assessments/{id}": {
+      "get": {
+        "tags": [
+          "Проверка тестов"
+        ],
+        "summary": "Итоги попытки: ответы, ключи, рубрики и происхождение заданий",
+        "description": "Закрытые вопросы с ключом и ответом кандидата; авторские или сгенерированные (генератор, решатель, уверенность). Открытые задачи с рубрикой, эталоном, ответом и, для сгенерированного варианта, исходным кейсом, моделью и списком изменений.\n\nДоступ: Модератор (право выдаётся командой `npm run moderator`).",
+        "security": [
+          {
+            "accountSession": []
+          }
+        ],
+        "x-role": "moderator",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Попытка",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Успешно",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          }
+        }
+      }
+    },
+    "/api/moderation/assessments/{id}/decision": {
+      "post": {
+        "tags": [
+          "Проверка тестов"
+        ],
+        "summary": "Оценить открытые ответы или аннулировать попытку",
+        "description": "Каждый критерий — 0, 1 или 2; пропущенный или поздний ответ — только 0. Открытая часть — среднее задач; итог 50% закрытой + 50% открытой части, порог 70. Пройденный итог подтверждает грейд в профиле по обычным правилам.\n\nДоступ: Модератор (право выдаётся командой `npm run moderator`).",
+        "security": [
+          {
+            "accountSession": []
+          }
+        ],
+        "x-role": "moderator",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Попытка",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewDecision"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Успешно",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewDetail"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          }
+        }
+      }
+    },
+    "/api/moderation/assessments/{id}/ai-review": {
+      "post": {
+        "tags": [
+          "Проверка тестов"
+        ],
+        "summary": "ИИ-подсказка оценок по рубрике",
+        "description": "Открытая модель получает задачи, рубрики, эталоны и ответы — без имени и контактов. Подсказка, решение за модератором.\n\nДоступ: Модератор (право выдаётся командой `npm run moderator`).",
+        "security": [
+          {
+            "accountSession": []
+          }
+        ],
+        "x-role": "moderator",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Попытка",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Успешно",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewSuggestion"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
           }
         }
       }
@@ -9559,7 +9805,17 @@
             "type": "string",
             "description": "Непрозрачный идентификатор"
           },
+          "type": {
+            "type": "string",
+            "description": "`open` — открытая задача с ответом текстом",
+            "enum": [
+              "open"
+            ]
+          },
           "topic": {
+            "type": "string"
+          },
+          "title": {
             "type": "string"
           },
           "text": {
@@ -9577,7 +9833,20 @@
                   "type": "string"
                 }
               }
-            }
+            },
+            "description": "Пусто у открытой задачи"
+          },
+          "answerFormat": {
+            "type": "string",
+            "enum": [
+              "code",
+              "sql",
+              "calculation",
+              "case"
+            ]
+          },
+          "timeLimitSec": {
+            "type": "integer"
           }
         },
         "required": [
@@ -9677,6 +9946,18 @@
               }
             }
           },
+          "openStage": {
+            "type": "object",
+            "properties": {
+              "added": {
+                "type": "integer"
+              },
+              "from": {
+                "type": "integer"
+              }
+            },
+            "description": "Открытые задачи, добавленные после пройденной закрытой части"
+          },
           "questions": {
             "type": "array",
             "items": {
@@ -9764,6 +10045,10 @@
                 "type": "boolean",
                 "description": "Добавлен уточняющий блок"
               },
+              "opened": {
+                "type": "boolean",
+                "description": "Закрытая часть пройдена, добавлены открытые задачи"
+              },
               "result": {
                 "$ref": "#/components/schemas/AssessmentResult"
               }
@@ -9784,7 +10069,19 @@
             "anyOf": [
               {
                 "type": "string",
-                "description": "null — пропуск"
+                "description": "Закрытый вопрос; null — пропуск"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "answerText": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "Открытая задача: текст, код или SQL до 12 000 символов; null — пропуск",
+                "maxLength": 12000
               },
               {
                 "type": "null"
@@ -9972,6 +10269,56 @@
           },
           "integrity": {
             "$ref": "#/components/schemas/IntegritySummary"
+          },
+          "pending": {
+            "type": "boolean",
+            "description": "Открытые ответы на проверке у модератора; грейд ещё не подтверждён"
+          },
+          "closedScore": {
+            "type": "integer",
+            "description": "Балл закрытой части"
+          },
+          "openScore": {
+            "type": "integer",
+            "description": "Балл открытой части после проверки"
+          },
+          "openCount": {
+            "type": "integer"
+          },
+          "openAnswered": {
+            "type": "integer"
+          },
+          "invalidated": {
+            "type": "boolean",
+            "description": "Аннулировано модератором из-за дефекта задания"
+          },
+          "review": {
+            "type": "object",
+            "properties": {
+              "decidedAt": {
+                "type": "string"
+              },
+              "note": {
+                "type": "string"
+              },
+              "marks": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "questionId": {
+                      "type": "string"
+                    },
+                    "score": {
+                      "type": "integer"
+                    },
+                    "comment": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         },
         "required": [
@@ -10880,6 +11227,481 @@
         "required": [
           "verdict",
           "source"
+        ]
+      },
+      "ReviewQueue": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "candidate": {
+                  "type": "string"
+                },
+                "specialization": {
+                  "type": "string"
+                },
+                "grade": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "pending",
+                    "completed",
+                    "invalidated"
+                  ]
+                },
+                "version": {
+                  "type": "integer"
+                },
+                "submittedAt": {
+                  "type": "string"
+                },
+                "decidedAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "closedScore": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "score": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "passed": {
+                  "type": "boolean"
+                },
+                "openCount": {
+                  "type": "integer"
+                },
+                "departures": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ]
+      },
+      "ReviewDetail": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "candidate": {
+            "type": "string"
+          },
+          "specialization": {
+            "type": "string"
+          },
+          "grade": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "integrity": {
+            "$ref": "#/components/schemas/IntegritySummary"
+          },
+          "result": {
+            "$ref": "#/components/schemas/AssessmentResult"
+          },
+          "closed": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "topic": {
+                  "type": "string"
+                },
+                "text": {
+                  "type": "string"
+                },
+                "options": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "text": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                "correctOptionId": {
+                  "type": "string"
+                },
+                "correct": {
+                  "type": "boolean"
+                },
+                "pilot": {
+                  "type": "boolean"
+                },
+                "answer": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "optionId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "late": {
+                          "type": "boolean"
+                        },
+                        "seconds": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "origin": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "authored",
+                        "generated"
+                      ]
+                    },
+                    "generator": {
+                      "type": "string"
+                    },
+                    "verifier": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "confidence": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "open": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "text": {
+                  "type": "string"
+                },
+                "answerFormat": {
+                  "type": "string"
+                },
+                "minutes": {
+                  "type": "integer"
+                },
+                "rubric": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "expected": {
+                        "type": "string"
+                      },
+                      "scale": {
+                        "type": "object",
+                        "properties": {},
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                },
+                "reference": {
+                  "type": "string"
+                },
+                "criticalErrors": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "answer": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "text": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "late": {
+                          "type": "boolean"
+                        },
+                        "seconds": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "origin": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "authored",
+                        "generated"
+                      ]
+                    },
+                    "model": {
+                      "type": "string"
+                    },
+                    "changes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {},
+                        "additionalProperties": true
+                      }
+                    },
+                    "equivalence": {
+                      "type": "string"
+                    },
+                    "anchor": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "prompt": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "policy": {
+            "type": "object",
+            "properties": {
+              "threshold": {
+                "type": "integer"
+              },
+              "closedWeight": {
+                "type": "number"
+              },
+              "openWeight": {
+                "type": "number"
+              }
+            }
+          }
+        },
+        "required": [
+          "id",
+          "closed",
+          "open"
+        ],
+        "additionalProperties": true
+      },
+      "ReviewDecision": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "integer",
+            "description": "Версия из карточки; конкурентное решение получает 409"
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "grade",
+              "invalidate"
+            ]
+          },
+          "note": {
+            "type": "string",
+            "description": "Комментарий кандидату; для аннулирования — причина от 10 символов",
+            "maxLength": 2000
+          },
+          "marks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "questionId": {
+                  "type": "string"
+                },
+                "criteria": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "score": {
+                        "type": "integer",
+                        "enum": [
+                          0,
+                          1,
+                          2
+                        ]
+                      }
+                    }
+                  }
+                },
+                "comment": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "required": [
+          "version",
+          "decision"
+        ]
+      },
+      "ReviewSuggestion": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "advisory": {
+            "type": "boolean"
+          },
+          "tasks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "questionId": {
+                  "type": "string"
+                },
+                "comment": {
+                  "type": "string"
+                },
+                "criteria": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "score": {
+                        "type": "integer"
+                      },
+                      "reason": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "required": [
+          "tasks"
         ]
       },
       "BankItem": {

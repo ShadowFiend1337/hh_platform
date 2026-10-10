@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowUpRight, BadgeCheck, Ban, Check, ClipboardCheck, Clock3, EyeOff, Fingerprint, Layers, Maximize2, RotateCcw, ShieldAlert, ShieldCheck, Timer } from 'lucide-react';
-import { AssessmentError, answerAssessment, createAssessment, getAssessmentProgram, readAssessment, resumeAssessment, saveAssessment, submitAssessment, type AssessmentAttempt, type AssessmentProgram } from '../assessment';
+import { ArrowUpRight, BadgeCheck, Ban, Check, ClipboardCheck, Clock3, EyeOff, Fingerprint, Hourglass, Layers, Maximize2, PenLine, RotateCcw, ShieldAlert, ShieldCheck, Timer } from 'lucide-react';
+import { AssessmentError, answerAssessment, answerOpenTask, createAssessment, getAssessmentProgram, readAssessment, resumeAssessment, saveAssessment, submitAssessment, type AssessmentAttempt, type AssessmentProgram } from '../assessment';
 import { CandidateSteps } from '../components/CandidateSteps';
 import { CodeDraftBoundary } from '../components/CodeDraftBoundary';
 import { categoryChangeUnlock, currentSurvey, dateLabel, gradeLabels, retakeUnlock, specializationNames, type Grade, type PlatformState, type TestResult } from '../model';
@@ -70,6 +70,10 @@ export function Assessment({ state, update, notify, onProfile, onSurvey, onActiv
   stateRef.current = state;
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
+  // Text of the current open task; kept in this tab so a reload during the task keeps the draft.
+  const [openText, setOpenText] = useState('');
+  const openTextRef = useRef(openText);
+  openTextRef.current = openText;
   const survey = currentSurvey(state);
   const surveyId = survey?.id;
   const specialization = session?.specialization || survey?.specialization || state.profile.specialization;
@@ -77,6 +81,16 @@ export function Assessment({ state, update, notify, onProfile, onSurvey, onActiv
   const total = session?.questionCount || session?.questions.length || 0;
   const position = session?.position ?? 0;
   const current = session?.questions[position];
+  const isOpen = current?.type === 'open';
+  const openDraftKey = session && current && isOpen ? 'predel:open-draft:' + session.id + ':' + current.id : '';
+  useEffect(() => {
+    if (!openDraftKey) { setOpenText(''); return; }
+    try { setOpenText(sessionStorage.getItem(openDraftKey) || ''); } catch { setOpenText(''); }
+  }, [openDraftKey]);
+  useEffect(() => {
+    if (!openDraftKey) return;
+    try { if (openText) sessionStorage.setItem(openDraftKey, openText); else sessionStorage.removeItem(openDraftKey); } catch { /* The draft stays in memory. */ }
+  }, [openDraftKey, openText]);
   const unlock = categoryChangeUnlock(state.profile, specialization, grade);
   const retake = retakeUnlock(state.history, specialization, grade, Date.now(), program?.retryDays ?? 7);
   const locked = unlock > Date.now() || Boolean(retake);
@@ -225,13 +239,15 @@ export function Assessment({ state, update, notify, onProfile, onSurvey, onActiv
     }
   }
 
-  const answer = useCallback(async (optionId: string | null) => {
+  const answer = useCallback(async (value: string | null) => {
     if (!session || !current || actionController.current) return;
     const controller = new AbortController(); actionController.current = controller;
     setBusy('answering'); setError('');
     let next: AssessmentAttempt | null = null;
     try {
-      const response = await answerAssessment(session, current.id, optionId, controller.signal);
+      const response = current.type === 'open'
+        ? await answerOpenTask(session, current.id, value && value.trim() ? value : null, controller.signal)
+        : await answerAssessment(session, current.id, value, controller.signal);
       if (controller.signal.aborted) return;
       next = { ...response, token: session.token };
       setSession(next); setSelected(null);
@@ -266,7 +282,7 @@ export function Assessment({ state, update, notify, onProfile, onSurvey, onActiv
       setRemainingSeconds(left);
       if (left <= 0 && !actionController.current && expiredQuestion.current !== key) {
         expiredQuestion.current = key;
-        void answer(selectedRef.current);
+        void answer(current?.type === 'open' ? openTextRef.current : selectedRef.current);
       }
     };
     tick();
@@ -309,18 +325,19 @@ export function Assessment({ state, update, notify, onProfile, onSurvey, onActiv
     {error && <div className="assessment-error" role="alert"><span>{error}</span>{resumePending && !resumeBusy && <button className="text-button" onClick={() => setResumeVersion(value => value + 1)}>Восстановить тест</button>}</div>}
     {resumeBusy ? <section className="panel" aria-busy="true"><p className="muted">Восстанавливаем тест…</p></section>
       : result ? <section className="panel assessment-result">
-        <div className={'result-icon ' + (result.passed ? 'result-passed' : result.annulled ? 'result-annulled' : '')}>{result.passed ? <BadgeCheck size={34} /> : result.annulled ? <ShieldAlert size={32} /> : <RotateCcw size={30} />}</div>
-        {!result.annulled && <span className="result-score">{result.score}<small>/100</small></span>}
-        <h2>{result.annulled ? 'Попытка аннулирована' : result.passed ? 'Грейд подтверждён' : 'Грейд не подтверждён'}</h2>
+        <div className={'result-icon ' + (result.passed ? 'result-passed' : result.annulled ? 'result-annulled' : result.pending ? 'result-pending' : '')}>{result.passed ? <BadgeCheck size={34} /> : result.annulled ? <ShieldAlert size={32} /> : result.pending ? <Hourglass size={30} /> : <RotateCcw size={30} />}</div>
+        {!result.annulled && <span className="result-score">{result.pending ? result.closedScore : result.score}<small>/100</small></span>}
+        <h2>{result.annulled ? 'Попытка аннулирована' : result.pending ? 'Ответы на проверке' : result.passed ? 'Грейд подтверждён' : 'Грейд не подтверждён'}</h2>
         <p className="muted">{specializationNames[result.specialization]} · {gradeLabels[result.grade]}</p>
+        {result.pending && <p className="result-note">Закрытая часть пройдена. Эксперт проверит открытые задачи ({result.openCount}) по критериям; итог — половина закрытой и половина открытой части, порог 70. Результат появится в истории и профиле.</p>}
         {result.annulled && <p className="result-note">Зафиксировано {result.integrity?.departures ?? maxStrikes} ухода со страницы теста. Повтор на этот грейд — через {program?.retryDays ?? 7} дн.{state.profile.confirmed ? '' : ', тест на грейд ниже доступен сразу'}.</p>}
         {result.competencies?.length ? <dl className="competency-results">{result.competencies.map(item => <div key={item.topic}><dt>{item.topic}</dt><dd>{item.score}/100</dd></div>)}</dl> : null}
         {result.clarified && <p className="field-help">Решение принято по {result.questionCount} вопросам: первые 12 дали пограничный результат, и тест добавил уточняющий блок.</p>}
         {!!result.timeouts && !result.annulled && <p className="field-help">Без ответа или после лимита времени: {result.timeouts}.</p>}
         {result.nextGradeAvailable && <div className="next-grade-offer"><ArrowUpRight size={18} /><span>Уверенный результат: тест на {gradeLabels[result.nextGradeAvailable]} доступен без ожидания.</span><button className="text-button" onClick={onSurvey}>Выбрать грейд</button></div>}
-        {!result.passed && !result.annulled && state.profile.confirmed && <p className="result-note">Ваша категория {specializationNames[state.profile.confirmed.specialization]} · {gradeLabels[state.profile.confirmed.grade]} сохранена.</p>}
-        {!result.passed && !result.annulled && <p className="field-help">Повтор на этот грейд — через {program?.retryDays ?? 7} дн.{state.profile.confirmed ? '' : ' Тест на грейд ниже доступен сразу и не сжигает попытку.'}</p>}
-        <div className="button-group"><button className="button secondary" onClick={onSurvey}>Изменить анкету</button>{result.passed ? <button className="button primary" onClick={onProfile}>К профилю</button> : <button className="button primary" onClick={() => setResult(null)}>К программе теста</button>}</div>
+        {!result.passed && !result.annulled && !result.pending && state.profile.confirmed && <p className="result-note">Ваша категория {specializationNames[state.profile.confirmed.specialization]} · {gradeLabels[state.profile.confirmed.grade]} сохранена.</p>}
+        {!result.passed && !result.annulled && !result.pending && <p className="field-help">Повтор на этот грейд — через {program?.retryDays ?? 7} дн.{state.profile.confirmed ? '' : ' Тест на грейд ниже доступен сразу и не сжигает попытку.'}</p>}
+        <div className="button-group"><button className="button secondary" onClick={onSurvey}>Изменить анкету</button>{result.passed || result.pending ? <button className="button primary" onClick={onProfile}>К профилю</button> : <button className="button primary" onClick={() => setResult(null)}>К программе теста</button>}</div>
       </section> : current && session ? <section className={'panel exam-panel' + (guard.fullscreen ? ' exam-fullscreen' : '')} aria-busy={busy === 'submitting'}>
         <div className="exam-header">
           <span>{specializationNames[specialization]} · {gradeLabels[grade]}</span>
@@ -332,6 +349,7 @@ export function Assessment({ state, update, notify, onProfile, onSurvey, onActiv
         </div>
         <div className="exam-progress" role="progressbar" aria-label="Прогресс теста" aria-valuemin={0} aria-valuemax={total} aria-valuenow={position + 1}><span style={{ width: ((position + 1) / Math.max(total, 1) * 100) + '%' }} /></div>
         {session.extension && position >= session.extension.from && <div className="exam-clarify" role="status"><Layers size={16} /><span>Результат пограничный — ещё {session.extension.added} вопросов уточнят решение. Порог прежний: 70 из 100 по всем вопросам.</span></div>}
+        {session.openStage && position === session.openStage.from && <div className="exam-clarify exam-open-stage" role="status"><PenLine size={16} /><span>Закрытая часть пройдена. Осталось {session.openStage.added} практические задачи — их проверит эксперт по критериям.</span></div>}
         {position === 0 && session.vacancy && <div className="vacancy-summary">
           {session.vacancy.matchedSkills.length ? <div className="tags" aria-label="Навыки из вакансии">{session.vacancy.matchedSkills.map(skill => <span key={skill}>{skill}</span>)}</div> : <p className="field-help">Совпадений для этого варианта нет. Используется стандартная программа.</p>}
           {session.vacancy.unmatchedSkills.length > 0 && <p className="field-help">Без проверки: {session.vacancy.unmatchedSkills.join(', ')}.</p>}
@@ -344,10 +362,19 @@ export function Assessment({ state, update, notify, onProfile, onSurvey, onActiv
           <button className="button primary" onClick={() => void guard.continueTest()}>Вернуться к тесту</button>
         </div> : guard.shielded ? <div className="exam-focus-cover" role="status"><EyeOff size={28} className="exam-cover-icon" /><h2>Снимок экрана недоступен</h2><p className="muted">Попытка отмечена в журнале контроля.</p></div> : <>
           <div className="exam-protected-content" ref={protectedContent} style={{ backgroundImage: mark }}>
-            <span className="question-topic">{current.topic}</span><h2 className="question-text">{current.text}</h2>
-            <fieldset className="answer-options" disabled={!!busy}><legend className="sr-only">Варианты ответа</legend>{current.options.map(option => <label key={option.id} className={'answer-option' + (selected === option.id ? ' selected' : '')}><input type="radio" name={current.id} checked={selected === option.id} onChange={() => setSelected(option.id)} /><span>{option.text}</span>{selected === option.id && <Check size={17} />}</label>)}</fieldset>
+            <span className="question-topic">{current.topic}</span>
+            {isOpen ? <>
+              {current.title && <h2 className="open-task-title">{current.title}</h2>}
+              <p className="question-text open-task-text">{current.text}</p>
+              <label className="field open-answer"><span>Ваше решение{current.answerFormat === 'code' ? ' — код и пояснение' : current.answerFormat === 'sql' ? ' — запрос и пояснение' : ''}</span>
+                <textarea value={openText} disabled={!!busy} rows={12} maxLength={12000} spellCheck={false}
+                  className={current.answerFormat === 'code' || current.answerFormat === 'sql' ? 'monospace' : undefined}
+                  onChange={event => setOpenText(event.target.value)} placeholder="Ход решения, код или запрос, проверка граничных случаев" /></label>
+              <p className="field-help">{openText.length} / 12 000 · оценивается экспертом по критериям; вставка из буфера отключена</p>
+            </> : <><h2 className="question-text">{current.text}</h2>
+            <fieldset className="answer-options" disabled={!!busy}><legend className="sr-only">Варианты ответа</legend>{current.options.map(option => <label key={option.id} className={'answer-option' + (selected === option.id ? ' selected' : '')}><input type="radio" name={current.id} checked={selected === option.id} onChange={() => setSelected(option.id)} /><span>{option.text}</span>{selected === option.id && <Check size={17} />}</label>)}</fieldset></>}
           </div>
-          {codeLanguage && <details className="exam-code-draft" key={session.id + ':' + current.id} open={['ML', 'DataAnalysis', 'DataEngineering'].includes(specialization)}>
+          {codeLanguage && !isOpen && <details className="exam-code-draft" key={session.id + ':' + current.id} open={['ML', 'DataAnalysis', 'DataEngineering'].includes(specialization)}>
             <summary>Черновик кода</summary>
             <p className="field-help">Сохраняется в этой вкладке и не оценивается. Для оценки выберите вариант ответа.</p>
             <CodeDraftBoundary><Suspense fallback={<p className="field-help" role="status">Загружаем редактор…</p>}>
@@ -357,8 +384,8 @@ export function Assessment({ state, update, notify, onProfile, onSurvey, onActiv
             {draftStorageFailed && <p className="field-help" role="alert">Черновик не сохранён. Оставьте вкладку открытой.</p>}
           </details>}
           <div className="exam-actions">
-            <button className="text-button" disabled={!!busy} onClick={() => void answer(null)}>Пропустить вопрос</button>
-            <button className="button primary" disabled={!selected || !!busy} onClick={() => void answer(selected)}>{busy === 'submitting' ? 'Проверяем…' : busy === 'answering' ? 'Сохраняем…' : position === total - 1 ? 'Завершить тест' : 'Ответить'}</button>
+            <button className="text-button" disabled={!!busy} onClick={() => void answer(null)}>{isOpen ? 'Пропустить задачу' : 'Пропустить вопрос'}</button>
+            <button className="button primary" disabled={(isOpen ? !openText.trim() : !selected) || !!busy} onClick={() => void answer(isOpen ? openText : selected)}>{busy === 'submitting' ? 'Проверяем…' : busy === 'answering' ? 'Сохраняем…' : position === total - 1 ? 'Завершить тест' : 'Ответить'}</button>
           </div>
           <p className="exam-footnote">Ответ фиксируется сразу — вернуться к вопросу нельзя.</p>
         </>}

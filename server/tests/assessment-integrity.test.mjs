@@ -16,7 +16,8 @@ const survey = () => ({ id: 'integrity-survey', date: new Date().toISOString(), 
 async function fixture(t) {
   let time = Date.now();
   const codes = new Map();
-  const service = createAssessmentServer({ dbPath: ':memory:', now: () => time, authEnv: {},
+  // Closed-part mechanics; the open stage has its own tests (open-assessment.test.mjs).
+  const service = createAssessmentServer({ dbPath: ':memory:', now: () => time, authEnv: { ASSESSMENT_OPEN_TASKS: '0' },
     authMailer: async ({ email, code }) => { codes.set(email, code); } });
   await new Promise(resolve => service.server.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise(resolve => { service.server.close(resolve); service.server.closeAllConnections(); }));

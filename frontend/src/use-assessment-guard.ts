@@ -148,7 +148,8 @@ export function useAssessmentGuard(
   const paused = !!attemptId && pausedId === attemptId;
   useEffect(() => {
     if (!attemptId) return;
-    const inEditor = (target: EventTarget | null) => target instanceof Element && Boolean(target.closest('.cm-editor'));
+    // The scratch editor and the open-task answer allow selection and editing shortcuts; the clipboard stays blocked.
+    const inEditor = (target: EventTarget | null) => target instanceof Element && Boolean(target.closest('.cm-editor, .open-answer textarea'));
     const block = (event: Event) => {
       if (!activeRef.current) return;
       if (event.type === 'selectstart' && inEditor(event.target)) return;

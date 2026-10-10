@@ -4,11 +4,13 @@
 const localFixtures = Object.freeze([
   Object.freeze({ role: 'candidate', login: 'local_candidate', email: 'candidate@local.example.test' }),
   Object.freeze({ role: 'employer', login: 'local_employer', email: 'employer@local.example.test' }),
+  // A staff account with the moderator grant; it sees only the test realm.
+  Object.freeze({ role: 'employer', login: 'local_moderator', email: 'moderator@local.example.test', moderator: true }),
 ]);
 
 /** Public demo password of the team test accounts (never available in production). */
 export const localFixturePassword = 'LocalDemo2026!';
-export const localFixtureLogins = localFixtures.map(fixture => ({ role: fixture.role, login: fixture.login }));
+export const localFixtureLogins = localFixtures.map(fixture => ({ role: fixture.role, login: fixture.login, ...(fixture.moderator ? { moderator: true } : {}) }));
 
 export function isLocalFixtureAccount(account) {
   const login = typeof account?.login === 'string' ? account.login.normalize('NFKC').toLowerCase() : '';

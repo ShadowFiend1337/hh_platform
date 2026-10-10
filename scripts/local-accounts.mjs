@@ -8,6 +8,8 @@ import { PlatformService } from '../server/platform.mjs';
 import { MarketplaceService } from '../server/marketplace.mjs';
 import { FspIntegrationService } from '../server/fsp-integration.mjs';
 import { RefreshTaskService } from '../server/refresh-tasks.mjs';
+import { appendOpenTasks, authoredOpenTask } from '../server/open-tasks.mjs';
+import { AssessmentReviewService } from '../server/assessment-review.mjs';
 import { openStore } from '../server/store.mjs';
 import { createAttempt, digest, evaluate } from '../server/assessment.mjs';
 import { createInitialState } from '../frontend/src/model.ts';
@@ -19,7 +21,43 @@ export const localAccountPassword = localFixturePassword;
 export const localAccountFixtures = [
   { role: 'candidate', login: 'local_candidate', email: 'candidate@local.example.test', name: 'Тестовый кандидат' },
   { role: 'employer', login: 'local_employer', email: 'employer@local.example.test', companyName: 'Тестовая компания' },
+  { role: 'employer', login: 'local_moderator', email: 'moderator@local.example.test', companyName: 'Экспертная проверка', moderator: true },
 ];
+
+// Two practical answers of the test candidate waiting for the moderator: a complete one and a partial one.
+const pendingOpenAnswers = {
+  'research:react:Junior': 'Причина: key={index}. После сортировки React сопоставляет строки по позиции, поэтому локальный draft остаётся '
+    + 'у компонента на том же месте и «переезжает» к другой записи.\n\nИсправление: key={row.id} — стабильный идентификатор записи.\n\n'
+    + 'Тест (Testing Library): рендерю список [a, b], начинаю редактировать b, вставляю новую строку в начало и проверяю, что '
+    + 'поле с draft по-прежнему относится к b; затем удаляю редактируемую строку и проверяю, что draft не появился у соседней.\n\n'
+    + 'Draft стоит вынести в родителя, если его нужно сохранять при сворачивании строки или отправлять всё одной кнопкой.',
+  'research:javascript-typescript:Junior': 'type LoadState<T> = { status: \'idle\' } | { status: \'loading\' } | { status: \'success\'; data: T } '
+    + '| { status: \'error\'; message: string };\n\nfunction render(state: LoadState<string>) {\n  switch (state.status) {\n'
+    + '    case \'success\': return state.data;\n    case \'error\': return state.message;\n    default: return \'…\';\n  }\n}\n\n'
+    + 'Если добавить cancelled, default его поглотит — нужно было бы добавить проверку, но я не уверен как.',
+};
+
+/** A second attempt of the test candidate whose open answers wait for the test moderator. */
+function seedPendingReview(assessments, owner, survey) {
+  const started = Date.now();
+  let attempt = createAttempt(survey, '', [], started);
+  const tasks = Object.keys(pendingOpenAnswers).map(authoredOpenTask);
+  attempt = appendOpenTasks(attempt, tasks, started);
+  const answers = {};
+  attempt.questions.forEach((question, index) => {
+    const answeredAt = new Date(started + (index + 1) * 45000).toISOString();
+    answers[question.id] = question.type === 'open'
+      ? { optionId: null, text: pendingOpenAnswers[question.familyId], answeredAt, ms: 600000, late: false }
+      // Ten of twelve closed answers are correct: 83/100 in the closed part.
+      : { optionId: index < 10 ? question.correctOptionId : question.options.find(option => option.id !== question.correctOptionId).id, answeredAt, ms: 45000, late: false };
+  });
+  const progress = { answers, revealedAt: {} };
+  assessments.insert(attempt, owner, digest(randomBytes(32).toString('hex')));
+  assessments.extend(attempt.id, attempt, progress);
+  const evaluation = evaluate(attempt, undefined, started + 30 * 60000, { progress });
+  assessments.complete(attempt.id, evaluation.answerDigest, evaluation.result);
+  new AssessmentReviewService({ db: assessments.db, store: assessments, platform: null }).enqueue(attempt.id, owner);
+}
 
 function candidateState(candidate) {
   const state = createInitialState();
@@ -105,11 +143,13 @@ export async function prepareLocalAccounts(dbPath = resolve(root, 'server/data/a
     for (const fixture of localAccountFixtures) {
       let account = auth.store.accountByIdentifier(fixture.login);
       if (!account) {
-        await auth.requestRegistration({ ...fixture, password: localAccountPassword, consent: true, privacyVersion: PRIVACY_POLICY_VERSION }, randomBytes(32).toString('hex'));
+        const { moderator, ...registration } = fixture;
+        await auth.requestRegistration({ ...registration, password: localAccountPassword, consent: true, privacyVersion: PRIVACY_POLICY_VERSION }, randomBytes(32).toString('hex'));
         account = auth.verifyRegistration({ email: fixture.email, code: codes.get(fixture.email) });
       }
       await auth.login({ loginOrEmail: fixture.login, password: localAccountPassword });
       if (account.email !== fixture.email || account.role !== fixture.role) throw new Error('Fixture login belongs to another account.');
+      if (fixture.moderator && !auth.store.canModerate(account.id)) auth.store.setModerator(account.id, true, 'local-fixture');
       accounts.push(account);
     }
     const [candidate, employer] = accounts;
@@ -134,6 +174,7 @@ export async function prepareLocalAccounts(dbPath = resolve(root, 'server/data/a
       state.history = [result];
       state.profile.confirmed = { specialization: result.specialization, grade: result.grade, score: result.score, date: result.date, surveyId: survey.id };
       const saved = platform.save(candidate.platform_owner, state, 0, 'candidate');
+      seedPendingReview(assessments, candidate.platform_owner, survey);
       // Demo FSP link: the candidate shows provider-marked achievements («ФСП · демо»).
       if (fsp.enabled) fsp.connect(candidate.platform_owner, { baseRevision: saved.revision, scenario: 'achievements', consent: true });
     }
@@ -152,7 +193,7 @@ export async function prepareLocalAccounts(dbPath = resolve(root, 'server/data/a
     for (const [owner, revision] of previousRevisions) {
       directory.db.prepare('UPDATE platform_accounts SET revision=revision+? WHERE owner=?').run(revision + 1, owner);
     }
-    return localAccountFixtures.map(({ role, login }) => ({ role, login, password: localAccountPassword }));
+    return localAccountFixtures.map(({ role, login, moderator }) => ({ role, login, password: localAccountPassword, ...(moderator ? { moderator } : {}) }));
   } finally {
     auth?.close(); assessments?.close(); directory?.close();
   }

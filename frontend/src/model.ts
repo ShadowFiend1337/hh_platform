@@ -32,6 +32,15 @@ export interface TestResult {
   /** The decision used the clarifying block (18 items). */
   clarified?: boolean;
   integrity?: { departures: number; blockedCopies: number; blockedActions?: number; fullscreenExits?: number };
+  /** Open answers wait for a moderator; the grade is not confirmed yet. */
+  pending?: boolean;
+  closedScore?: number;
+  openScore?: number;
+  openCount?: number;
+  openAnswered?: number;
+  /** Cancelled by a moderator because of a defective task; no retake wait. */
+  invalidated?: boolean;
+  review?: { decidedAt: string; note: string; marks?: { questionId: string; score: number; comment: string }[] };
 }
 
 export interface CandidateSurvey {
@@ -260,7 +269,7 @@ export function categoryChangeUnlock(profile: Candidate, specialization: Special
 export function retakeUnlock(history: TestResult[], specialization: Specialization, grade: Grade, now = Date.now(), days = retryDays): { until: number; lowerGrades: Grade[] } | null {
   if (!days) return null;
   const rank = gradeOrder.indexOf(grade);
-  const blocking = history.filter(result => !result.passed && result.specialization === specialization
+  const blocking = history.filter(result => !result.passed && !result.pending && !result.invalidated && result.specialization === specialization
     && gradeOrder.indexOf(result.grade) <= rank && now < Date.parse(result.date) + days * 86400000);
   if (!blocking.length) return null;
   const lowest = Math.min(...blocking.map(result => gradeOrder.indexOf(result.grade)));

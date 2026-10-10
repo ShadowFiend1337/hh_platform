@@ -5,7 +5,7 @@ import { resolve, relative, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openStore } from './store.mjs';
 import { annulledResult, createAttempt, digest, emptyProgress, evaluate, extendBorderline, integrityKinds, maxDepartures, programInfo, provisionalScore, publicAttempt,
-  recordAnswer, RequestError, retakeLock, retryDays, validateSurvey } from './assessment.mjs';
+  recordAnswer, RequestError, retakeLock, retryDays, threshold, validateSurvey } from './assessment.mjs';
 import { programs } from './bank.mjs';
 import { ItemBank } from './item-bank.mjs';
 import { ItemGenerationQueue } from './item-generator.mjs';
@@ -23,6 +23,8 @@ import { MarketplaceService } from './marketplace.mjs';
 import { RefreshTaskService } from './refresh-tasks.mjs';
 import { createTaskReviewer } from './task-review.mjs';
 import { platformOpenApi, swaggerPage } from './openapi.mjs';
+import { appendOpenTasks, openTaskCount, OpenVariantQueue, selectOpenTasks } from './open-tasks.mjs';
+import { AssessmentReviewService } from './assessment-review.mjs';
 import { AuthError, AuthService } from './auth.mjs';
 import { FspIntegrationService } from './fsp-integration.mjs';
 import { IntegrationService } from './integrations/service.mjs';
@@ -62,6 +64,8 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
   fsp.publishProfile = (owner, person) => platform.publication(owner, person).person;
   const marketplace = new MarketplaceService(directory.store, { now, accountForOwner });
   const tasks = new RefreshTaskService(directory.store, { now, accountForOwner });
+  const reviews = new AssessmentReviewService({ db: store.db, store, platform, bank, accountForOwner, llm, now });
+  const openVariants = new OpenVariantQueue({ llm, variants, now, enabled: authEnv === process.env && authEnv.OPEN_VARIANTS_AUTOGEN !== '0' });
   const taskReviewer = createTaskReviewer({ llm });
   directory.freshness = candidateId => tasks.freshnessFor(candidateId);
   const integrations = new IntegrationService(directory.store, { dbPath, env: authEnv, now, ...integrationOptions, projectProfile: (owner, profile) => platform.publication(owner, profile), candidateAccessible: (owner, row) => platform.candidateAccessible(owner, row), reservedProviders: ['fsp-demo'] });
@@ -467,7 +471,11 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
           limit('starts:' + clientAddress(request), 40, 3600000);
           if (store.countSince(session, new Date(now() - 3600000).toISOString()) >= 20) throw new RequestError(429, 'Слишком много попыток. Попробуйте позже.');
           const survey = validateSurvey(input.survey);
-          const lock = retakeLock(store.completed(session), survey.specialization, survey.desiredGrade, now(), retryDays(authEnv));
+          const completedRows = store.completed(session);
+          if (completedRows.some(item => item.result?.pending && item.result.specialization === survey.specialization && item.result.grade === survey.desiredGrade)) {
+            throw new RequestError(409, 'Предыдущая попытка на этот грейд ещё на проверке у эксперта.');
+          }
+          const lock = retakeLock(completedRows, survey.specialization, survey.desiredGrade, now(), retryDays(authEnv));
           if (lock) {
             const lower = lock.lowerGrades.length ? ' Тест на грейд ниже доступен сразу.' : '';
             throw new RequestError(409, `Повторить тест на этот грейд можно с ${new Date(lock.until).toLocaleDateString('ru-RU')}.${lower}`, { retryAt: lock.until, lowerGrades: lock.lowerGrades });
@@ -531,7 +539,21 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
               }
             }
           }
-          return send(response, 200, { ...publicAttempt(attempt, progress), complete, extended,
+          // A passed closed part opens the practical stage; a failed one ends the attempt here.
+          let opened = false;
+          const openCount = openTaskCount(authEnv);
+          if (complete && openCount && !attempt.openStage && provisionalScore(attempt, progress) >= threshold) {
+            const recent = store.recent(session, attempt.specialization, attempt.grade).filter(item => item.id !== attempt.id);
+            const withOpen = appendOpenTasks(attempt, selectOpenTasks(attempt, { count: openCount, variants, recent }), now());
+            if (withOpen) {
+              progress = { ...progress, revealedAt: { ...progress.revealedAt, [withOpen.questions[attempt.questions.length].id]: new Date(now()).toISOString() } };
+              if (store.extend(row.id, withOpen, progress)) {
+                openVariants.ensure(withOpen.questions.slice(attempt.questions.length).map(question => question.familyId));
+                attempt = withOpen; complete = false; opened = true;
+              }
+            }
+          }
+          return send(response, 200, { ...publicAttempt(attempt, progress), complete, extended, opened,
             serverNow: new Date(now()).toISOString(), integrity: store.integrity(row.id), status: 'active' });
         }
         const match = /^\/api\/assessment\/attempts\/([a-f0-9-]{36})(\/submit)?$/.exec(url.pathname);
@@ -558,7 +580,8 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
             if (saved.answer_digest !== evaluated.answerDigest) throw new RequestError(409, 'Попытка уже проверена. Ответы менять нельзя.');
             return send(response, 200, saved.result);
           }
-          bank.recordResponses(evaluated.responses, evaluated.result.score);
+          bank.recordResponses(evaluated.responses, evaluated.result.closedScore ?? evaluated.result.score);
+          if (evaluated.result.pending) reviews.enqueue(row.id, session);
           return send(response, 200, evaluated.result);
         }
         if (url.pathname.startsWith('/api/review-bank/variants')) {
@@ -605,6 +628,28 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
             catch { throw new RequestError(400, 'Нужны решение, независимая проверка всех критериев и обоснование; вариант с начатым пилотом заблокирован.'); }
           }
           throw new RequestError(404, 'Страница не найдена.');
+        }
+        if (url.pathname === '/api/moderation/assessments' || url.pathname.startsWith('/api/moderation/assessments/')) {
+          if (!identity.account?.canModerate) throw new RequestError(403, 'Проверка тестов доступна модератору.');
+          const moderator = { account: identity.account, owner: session };
+          if (url.pathname === '/api/moderation/assessments') {
+            if (request.method !== 'GET') throw new RequestError(405, 'Метод не поддерживается.');
+            return send(response, 200, reviews.list(moderator, { status: url.searchParams.get('status') || 'pending',
+              offset: Number(url.searchParams.get('offset') || 0), limit: Number(url.searchParams.get('limit') || 20) }));
+          }
+          const reviewRoute = /^\/api\/moderation\/assessments\/([a-f0-9-]{36})(\/decision|\/ai-review)?$/.exec(url.pathname);
+          if (!reviewRoute) throw new RequestError(404, 'Страница не найдена.');
+          if (!reviewRoute[2]) {
+            if (request.method !== 'GET') throw new RequestError(405, 'Метод не поддерживается.');
+            return send(response, 200, reviews.detail(moderator, reviewRoute[1]));
+          }
+          if (request.method !== 'POST') throw new RequestError(405, 'Метод не поддерживается.');
+          if (reviewRoute[2] === '/ai-review') {
+            limit('assessment-ai-review:' + identity.account.id, 20, 600000);
+            return send(response, 200, await reviews.suggest(moderator, reviewRoute[1]));
+          }
+          limit('assessment-decisions:' + identity.account.id, 60, 60000);
+          return send(response, 200, reviews.decide(moderator, reviewRoute[1], await body(request, 60000)));
         }
         if (url.pathname.startsWith('/api/item-bank/')) {
           if (!identity.account?.canModerate) throw new RequestError(403, 'Банк заданий доступен модератору.');

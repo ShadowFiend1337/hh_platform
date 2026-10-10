@@ -92,6 +92,10 @@ export function openStore(path) {
         ON CONFLICT(attempt_id, event_id) DO NOTHING`).run(id, event.id, event.kind, receivedAt, id);
       return written.changes ? 'inserted' : 'limit';
     },
+    /** Replaces a result still on review; a concurrent decision finds the old JSON changed. */
+    finalize(id, pending, result) {
+      return db.prepare('UPDATE attempts SET result = ? WHERE id = ? AND result = ?').run(JSON.stringify(result), id, JSON.stringify(pending)).changes === 1;
+    },
     complete(id, digest, result) {
       const update = db.prepare('UPDATE attempts SET answer_digest = ?, result = ? WHERE id = ? AND result IS NULL').run(digest, JSON.stringify(result), id);
       return update.changes === 1;

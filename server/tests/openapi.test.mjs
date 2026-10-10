@@ -17,7 +17,7 @@ function templates(source) {
   let variants = [''];
   for (const part of source.replaceAll('\\/', '/').split(/(\([^)]*\)\??)/u).filter(Boolean)) {
     const group = /^\((.*)\)(\?)?$/u.exec(part);
-    const options = !group ? [part] : group[2] ? ['', group[1]] : /^[\w|-]+$/u.test(group[1]) ? group[1].split('|') : ['{id}'];
+    const options = !group ? [part] : group[2] ? ['', ...group[1].split('|')] : /^[\w|-]+$/u.test(group[1]) ? group[1].split('|') : ['{id}'];
     variants = variants.flatMap(prefix => options.map(option => prefix + option));
   }
   return variants;
@@ -71,7 +71,7 @@ test('each documented operation reaches a real handler, never the generic 404 or
   service.auth.store.setModerator(employer.id, true, 'openapi-test');
   const clients = { guest: await client(), candidate: await client('local_candidate'), employer: await client('local_employer') };
   clients.moderator = clients.employer; clients.any = clients.candidate;
-  const sample = path => path.replace('{id}', path.includes('/attempts/') ? '00000000-0000-4000-8000-000000000000'
+  const sample = path => path.replace('{id}', path.includes('/attempts/') || path.includes('/assessments/') ? '00000000-0000-4000-8000-000000000000'
     : path.includes('/item-bank/') ? 'gen-00000000-0000-4000-8000-000000000000'
       : path.includes('/review-bank/') ? 'variant-00000000-0000-4000-8000-000000000000' : 'unknown')
     .replace('{provider}', 'codeforces').replace(/\{[^}]+\}/gu, 'unknown');

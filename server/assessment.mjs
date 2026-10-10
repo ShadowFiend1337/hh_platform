@@ -139,8 +139,11 @@ export function createAttempt(surveyInput, vacancyDescription = '', recent = [],
 }
 
 /** Share of correct scored answers among the locked ones, 0-100. */
+export const isOpenQuestion = question => question.type === 'open';
+const closedScored = attempt => attempt.questions.filter(question => !question.pilot && !isOpenQuestion(question));
+
 export function provisionalScore(attempt, progress) {
-  const scored = attempt.questions.filter(question => !question.pilot);
+  const scored = closedScored(attempt);
   const correct = scored.filter(question => {
     const answer = progress?.answers?.[question.id];
     return answer && !answer.late && answer.optionId === question.correctOptionId;
@@ -191,7 +194,11 @@ export function publicAttempt(attempt, progress = null) {
   return { id, bankVersion, specialization, grade, surveyId, createdAt, expiresAt, blueprint, vacancy,
     delivery: sequential ? 'sequential' : 'all', questionCount: attempt.questions.length,
     ...(attempt.extension ? { extension: { added: attempt.extension.added, from: attempt.questions.length - attempt.extension.added } } : {}),
-    questions: visible.map(({ id, topic, text, options }) => ({ id, topic, text, options })),
+    ...(attempt.openStage ? { openStage: attempt.openStage } : {}),
+    questions: visible.map(question => isOpenQuestion(question)
+      ? { id: question.id, type: 'open', topic: question.topic, title: question.title, text: question.text, options: [],
+        answerFormat: question.answerFormat, timeLimitSec: question.timeLimitSec }
+      : { id: question.id, topic: question.topic, text: question.text, options: question.options }),
     ...(sequential ? {
       position, questionSeconds: attempt.questionSeconds || questionSeconds,
       answeredIds: Object.keys(state.answers),
@@ -206,7 +213,7 @@ export function publicAttempt(attempt, progress = null) {
  */
 export function recordAnswer(attempt, progressInput, input, now = Date.now()) {
   if (now >= Date.parse(attempt.expiresAt)) throw new RequestError(410, 'Время теста истекло. Начните новую попытку.');
-  if (!input || typeof input !== 'object' || Object.keys(input).some(key => !['token', 'questionId', 'optionId'].includes(key))) {
+  if (!input || typeof input !== 'object' || Object.keys(input).some(key => !['token', 'questionId', 'optionId', 'answerText'].includes(key))) {
     throw new RequestError(400, 'Некорректный ответ.');
   }
   const progress = structuredClone(progressInput || emptyProgress(attempt));
@@ -214,26 +221,34 @@ export function recordAnswer(attempt, progressInput, input, now = Date.now()) {
   const question = attempt.questions[position];
   if (!question) throw new RequestError(409, 'Все ответы уже получены.');
   if (input.questionId !== question.id) {
-    if (progress.answers[input.questionId]) {
-      if (progress.answers[input.questionId].optionId === (input.optionId ?? null)) return { progress, changed: false };
+    const locked = progress.answers[input.questionId];
+    if (locked) {
+      if (locked.optionId === (input.optionId ?? null) && (locked.text ?? null) === (typeof input.answerText === 'string' ? input.answerText.trim() || null : null)) return { progress, changed: false };
       throw new RequestError(409, 'Ответ уже зафиксирован. Вернуться к вопросу нельзя.');
     }
     throw new RequestError(409, 'Сначала ответьте на текущий вопрос.');
   }
-  if (input.optionId !== null && input.optionId !== undefined && !question.options.some(option => option.id === input.optionId)) {
+  const open = isOpenQuestion(question);
+  if (open ? input.optionId !== undefined && input.optionId !== null : input.answerText !== undefined) throw new RequestError(400, 'Формат ответа не подходит к заданию.');
+  if (open && input.answerText !== undefined && input.answerText !== null
+    && (typeof input.answerText !== 'string' || input.answerText.length > 12000)) throw new RequestError(400, 'Ответ — текст до 12 000 символов.');
+  if (!open && input.optionId !== null && input.optionId !== undefined && !question.options.some(option => option.id === input.optionId)) {
     throw new RequestError(400, 'Ответ не относится к этой попытке.');
   }
   const revealed = Date.parse(progress.revealedAt[question.id] || attempt.createdAt);
   const ms = Math.max(0, now - revealed);
   const late = ms > (question.timeLimitSec || questionSeconds) * 1000 + answerGraceMs;
-  progress.answers[question.id] = { optionId: input.optionId ?? null, answeredAt: new Date(now).toISOString(), ms, late };
+  progress.answers[question.id] = open
+    ? { optionId: null, text: typeof input.answerText === 'string' && input.answerText.trim() ? input.answerText.trim() : null, answeredAt: new Date(now).toISOString(), ms, late }
+    : { optionId: input.optionId ?? null, answeredAt: new Date(now).toISOString(), ms, late };
   const next = attempt.questions[position + 1];
   if (next) progress.revealedAt[next.id] = new Date(now).toISOString();
   return { progress, changed: true, complete: !next };
 }
 
 function scoreAttempt(attempt, selection, now, integrity) {
-  const scored = attempt.questions.filter(question => !question.pilot);
+  const scored = closedScored(attempt);
+  const openTasks = attempt.questions.filter(isOpenQuestion);
   const isCorrect = question => {
     const answer = selection.get(question.id);
     return Boolean(answer && !answer.late && answer.optionId === question.correctOptionId);
@@ -247,10 +262,12 @@ function scoreAttempt(attempt, selection, now, integrity) {
   const correct = scored.filter(isCorrect).length;
   const score = Math.round(correct / scored.length * 100);
   const timeouts = scored.filter(question => { const answer = selection.get(question.id); return !answer || answer.late || answer.optionId === null; }).length;
-  const passed = score >= threshold;
+  // With open tasks the grade waits for a moderator: the closed score is final, the result is not yet.
+  const pending = openTasks.length > 0;
+  const passed = !pending && score >= threshold;
   const higher = nextGrade(attempt.grade);
-  const normalized = [...selection].map(([questionId, answer]) => [questionId, answer.optionId]).sort(([a], [b]) => a.localeCompare(b));
-  const responses = attempt.questions.map(question => ({ itemId: question.variantId, pilot: Boolean(question.pilot),
+  const normalized = [...selection].map(([questionId, answer]) => [questionId, answer.optionId ?? (answer.text ? digest(answer.text) : null)]).sort(([a], [b]) => a.localeCompare(b));
+  const responses = attempt.questions.filter(question => !isOpenQuestion(question)).map(question => ({ itemId: question.variantId, pilot: Boolean(question.pilot),
     correct: isCorrect(question), ms: selection.get(question.id)?.ms || 0 }));
   return { answerDigest: digest(JSON.stringify(normalized)), responses, result: {
     id: attempt.id, date: new Date(now).toISOString(), specialization: attempt.specialization, grade: attempt.grade,
@@ -258,6 +275,8 @@ function scoreAttempt(attempt, selection, now, integrity) {
     vacancySkills: attempt.vacancy?.matchedSkills || [], questionCount: scored.length, timeouts,
     ...(passed && score >= confidentThreshold && higher ? { nextGradeAvailable: higher } : {}),
     ...(attempt.extension ? { clarified: true } : {}),
+    ...(pending ? { pending: true, closedScore: score, openCount: openTasks.length,
+      openAnswered: openTasks.filter(question => selection.get(question.id)?.text && !selection.get(question.id)?.late).length } : {}),
     ...(integrity ? { integrity } : {}),
   } };
 }
@@ -296,7 +315,7 @@ export function evaluate(attempt, answers, now = Date.now(), { progress = null, 
 
 /** Annulment after repeated departures: a recorded failure that never confirms a grade. */
 export function annulledResult(attempt, now, integrity) {
-  const scored = attempt.questions.filter(question => !question.pilot);
+  const scored = closedScored(attempt);
   return { id: attempt.id, date: new Date(now).toISOString(), specialization: attempt.specialization, grade: attempt.grade,
     surveyId: attempt.surveyId, score: 0, passed: false, annulled: true, bankVersion: attempt.bankVersion,
     competencies: [], vacancySkills: [], questionCount: scored.length, timeouts: 0, integrity };
@@ -315,7 +334,7 @@ export const retryDays = (env = process.env) => {
 export function retakeLock(completed, specialization, grade, now, days) {
   if (!days) return null;
   const rank = gradeOrder.indexOf(grade);
-  const blocking = completed.filter(row => row.result && !row.result.passed && row.result.specialization === specialization
+  const blocking = completed.filter(row => row.result && !row.result.passed && !row.result.pending && !row.result.invalidated && row.result.specialization === specialization
     && gradeOrder.indexOf(row.result.grade) <= rank && now < Date.parse(row.result.date) + days * 86400000);
   if (!blocking.length) return null;
   const until = Math.max(...blocking.map(row => Date.parse(row.result.date) + days * 86400000));

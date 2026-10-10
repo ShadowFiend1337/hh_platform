@@ -29,3 +29,6 @@
   .history-dialog { padding: 20px; }
   .history-details > div { grid-template-columns: minmax(0, 1fr); gap: 4px; }
 }
+.history-score.pending { color: #9a5b00; }
+.history-review-note { white-space: pre-wrap; font-size: 14px; line-height: 1.7; }
+.history-review-marks { margin-left: 18px; font-size: 14px; line-height: 1.7; }
