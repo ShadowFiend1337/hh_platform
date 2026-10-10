@@ -20,6 +20,8 @@ import { PRIVACY_POLICY_VERSION } from '../shared/privacy.ts';
 import { DirectoryService } from './directory.mjs';
 import { PlatformService } from './platform.mjs';
 import { MarketplaceService } from './marketplace.mjs';
+import { RefreshTaskService } from './refresh-tasks.mjs';
+import { createTaskReviewer } from './task-review.mjs';
 import { AuthError, AuthService } from './auth.mjs';
 import { FspIntegrationService } from './fsp-integration.mjs';
 import { IntegrationService } from './integrations/service.mjs';
@@ -58,6 +60,9 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
   platform.profileSource = (owner, person) => fsp.applyProfile(owner, person);
   fsp.publishProfile = (owner, person) => platform.publication(owner, person).person;
   const marketplace = new MarketplaceService(directory.store, { now, accountForOwner });
+  const tasks = new RefreshTaskService(directory.store, { now, accountForOwner });
+  const taskReviewer = createTaskReviewer({ llm });
+  directory.freshness = candidateId => tasks.freshnessFor(candidateId);
   const integrations = new IntegrationService(directory.store, { dbPath, env: authEnv, now, ...integrationOptions, projectProfile: (owner, profile) => platform.publication(owner, profile), candidateAccessible: (owner, row) => platform.candidateAccessible(owner, row), reservedProviders: ['fsp-demo'] });
   directory.fspEvidence = person => integrations.rankingFspEvidence(person);
   const limits = new Map();
@@ -403,6 +408,35 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
           const requestedRole = url.searchParams.get('role') || identity.account?.role;
           if (identity.account && requestedRole !== identity.account.role) throw new RequestError(403, 'Отклики для этой роли недоступны.');
           return send(response, 200, marketplace.applications(session, requestedRole));
+        }
+        if (url.pathname === '/api/tasks') {
+          if (!identity.account) throw new RequestError(401, 'Войдите в аккаунт.');
+          if (request.method === 'GET') return send(response, 200, tasks.list(session, identity.account.role,
+            { offset: Number(url.searchParams.get('offset') || 0), limit: Number(url.searchParams.get('limit') || 30) }));
+          if (request.method === 'POST') {
+            allowRole(identity, 'employer', 'Назначать задания может только работодатель.');
+            limit('tasks:' + session, 60, 3600000);
+            return send(response, 201, tasks.assign(session, await body(request)));
+          }
+          throw new RequestError(405, 'Метод не поддерживается.');
+        }
+        if (request.method === 'GET' && url.pathname === '/api/tasks/candidates') {
+          allowRole(identity, 'employer', 'Назначать задания может только работодатель.');
+          return send(response, 200, tasks.eligible(session));
+        }
+        const taskAction = /^\/api\/tasks\/([^/]+)\/(answer|review|ai-review)$/.exec(url.pathname);
+        if (taskAction) {
+          if (request.method !== 'POST') throw new RequestError(405, 'Метод не поддерживается.');
+          const id = decodeURIComponent(taskAction[1]);
+          if (taskAction[2] === 'answer') {
+            allowRole(identity, 'candidate', 'Отвечать на задания может только соискатель.');
+            return send(response, 200, tasks.answer(session, id, await body(request, 30000)));
+          }
+          allowRole(identity, 'employer', 'Проверять задания может только работодатель.');
+          if (taskAction[2] === 'review') return send(response, 200, tasks.review(session, id, await body(request)));
+          const task = tasks.reviewable(session, id);
+          limit('task-review:' + session, 20, 600000);
+          return send(response, 200, await taskReviewer.review(task));
         }
         const answer = /^\/api\/applications\/([^/]+)$/.exec(url.pathname);
         if (request.method === 'PATCH' && answer) {

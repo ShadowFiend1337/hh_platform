@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Building2, Check, Inbox, LockKeyhole, Send, X } from 'lucide-react';
+import { Building2, Check, ClipboardCheck, Inbox, LockKeyhole, Send, X } from 'lucide-react';
 import { CompanyDirectory } from '../components/CompanyDirectory';
 import { ApplicationList } from '../components/ApplicationList';
+import { TaskBoard } from '../components/TaskBoard';
 import {
   dateLabel, initials, money, ownCandidateId, statusLabels,
   type Candidate, type PlatformState, type Role,
@@ -13,7 +14,7 @@ export function Invitations({ state, role, candidates, contactCandidateIds = [],
   notify: (message: string) => void; onProfile: (person: Candidate) => void;
   syncStatus: 'loading' | 'saving' | 'saved' | 'error'; revision: number;
 }) {
-  const [view, setView] = useState<'companies' | 'offers' | 'applications'>('offers');
+  const [view, setView] = useState<'companies' | 'offers' | 'applications' | 'tasks'>(() => location.hash === '#tasks' ? 'tasks' : 'offers');
   const [applicationsRevision, setApplicationsRevision] = useState(0);
   useEffect(() => {
     if (role !== 'candidate' || view !== 'offers' || !state.invitations.some(invitation => invitation.candidateId === ownCandidateId && invitation.status === 'sent')) return;
@@ -35,13 +36,16 @@ export function Invitations({ state, role, candidates, contactCandidateIds = [],
       {role === 'candidate' ? <>
         <button aria-current={view === 'companies' ? 'page' : undefined} onClick={() => setView('companies')}><Building2 size={18} />Найти компании</button>
         <button aria-current={view === 'offers' ? 'page' : undefined} onClick={() => setView('offers')}><Inbox size={18} />Предложения</button>
+        <button aria-current={view === 'tasks' ? 'page' : undefined} onClick={() => setView('tasks')}><ClipboardCheck size={18} />Задания</button>
       </> : <>
         <button aria-current={view === 'offers' ? 'page' : undefined} onClick={() => setView('offers')}><Send size={18} />Приглашения</button>
         <button aria-current={view === 'applications' ? 'page' : undefined} onClick={() => setView('applications')}><Inbox size={18} />Отклики</button>
+        <button aria-current={view === 'tasks' ? 'page' : undefined} onClick={() => setView('tasks')}><ClipboardCheck size={18} />Задания</button>
       </>}
     </nav>
     <section className="opportunities-content">
-    {view === 'companies' ? <CompanyDirectory notify={notify} syncStatus={syncStatus} onApplied={() => setApplicationsRevision(value => value + 1)} />
+    {view === 'tasks' ? <TaskBoard role={role} revision={revision + applicationsRevision} notify={notify} />
+      : view === 'companies' ? <CompanyDirectory notify={notify} syncStatus={syncStatus} onApplied={() => setApplicationsRevision(value => value + 1)} />
       : view === 'applications' ? <><div className="page-heading"><h1>Отклики</h1></div><ApplicationList role={role} revision={revision + applicationsRevision} notify={notify} /></>
         : <>
     <div className="page-heading"><h1>{role === 'candidate' ? 'Предложения' : 'Приглашения'}{invitations.length > 0 && <span className="heading-count">{invitations.length}</span>}</h1></div>

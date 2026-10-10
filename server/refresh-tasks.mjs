@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { RequestError } from './assessment.mjs';
+import { accountsShareRealm, isLocalFixtureAccount } from './local-fixtures.mjs';
 
 const day = 86400000;
 const ownCandidateId = 'candidate-anna';
@@ -59,7 +60,8 @@ export class RefreshTaskService {
   }
   candidate(candidateId, employer) {
     const row = this.store.get(candidateId);
-    if (!row?.owner || row.synthetic || this.accountForOwner(row.owner)?.role !== 'candidate') {
+    if (!row?.owner || this.syntheticProfile(row) || this.accountForOwner(row.owner)?.role !== 'candidate'
+      || employer && !this.sameRealm(employer, row.owner)) {
       throw new RequestError(404, 'Кандидат недоступен для задания.');
     }
     const account = this.store.db.prepare('SELECT profile FROM platform_accounts WHERE owner=?').get(row.owner);
@@ -73,6 +75,14 @@ export class RefreshTaskService {
       if (!accepted && !applied) throw new RequestError(403, 'Задание доступно после отклика или принятия приглашения вашей компании.');
     }
     return { row, profile };
+  }
+  /** Demo catalogue profiles never receive tasks; the team fixture candidate is marked synthetic but is a real account. */
+  syntheticProfile(row) {
+    return Boolean(row.synthetic) && !isLocalFixtureAccount(this.accountForOwner(row.owner));
+  }
+  /** Team fixture accounts and real accounts never exchange tasks. */
+  sameRealm(employer, candidate) {
+    return accountsShareRealm(this.accountForOwner(employer), this.accountForOwner(candidate));
   }
   row(id) {
     return this.store.db.prepare(`SELECT t.*,s.employer_owner,s.candidate_owner,s.candidate_id,s.title,s.description,
@@ -138,6 +148,7 @@ export class RefreshTaskService {
       WHERE s.${side}=? ORDER BY t.created_at DESC,t.cycle DESC,t.id`).all(owner)
       .filter(row => {
         if (this.accountForOwner(row.employer_owner)?.role !== 'employer' || this.accountForOwner(row.candidate_owner)?.role !== 'candidate') return false;
+        if (!this.sameRealm(row.employer_owner, row.candidate_owner)) return false;
         if (account.role === 'candidate') return true;
         const profile = this.store.db.prepare('SELECT profile FROM platform_accounts WHERE owner=?').get(row.candidate_owner);
         return profile && JSON.parse(profile.profile).consent === true;
@@ -193,12 +204,39 @@ export class RefreshTaskService {
       return { task: this.dto(this.row(row.id), owner), nextTask: next ? this.dto(next, owner) : null };
     });
   }
+  /** Candidates this employer may assign to: accepted invitation or an application to the company. */
+  eligible(owner) {
+    this.actor(owner, 'employer');
+    const rows = this.store.db.prepare(`SELECT candidate_id AS id,'invitation' AS source,created_at AS date FROM platform_invitations
+      WHERE sender=? AND status='accepted'
+      UNION ALL SELECT a.candidate_id,'application',a.created_at FROM marketplace_applications a
+      JOIN marketplace_companies c ON c.id=a.company_id WHERE c.owner=? ORDER BY date DESC`).all(owner, owner);
+    const items = new Map();
+    for (const row of rows) {
+      if (items.has(row.id)) continue;
+      let candidate;
+      try { candidate = this.candidate(row.id, owner); } catch (error) { if (error instanceof RequestError) continue; throw error; }
+      if (candidate.row.owner === owner) continue;
+      items.set(row.id, { id: row.id, name: candidate.profile.name || 'Кандидат', specialization: candidate.profile.specialization || '',
+        source: row.source, freshness: this.freshnessFor(row.id) });
+    }
+    return { items: [...items.values()] };
+  }
+  /** Task text and answer for an advisory review by the assigning employer. */
+  reviewable(owner, id) {
+    this.actor(owner, 'employer');
+    const row = this.row(id);
+    if (!row || row.employer_owner !== owner) throw new RequestError(404, 'Задание не найдено.');
+    this.candidate(row.candidate_id, owner);
+    if (row.status !== 'submitted' || !row.answer) throw new RequestError(409, 'Разбор доступен для присланного ответа до проверки.');
+    return { title: row.title, description: row.description, answer: row.answer };
+  }
   freshnessFor(candidateId) {
     const candidate = this.store.get(candidateId);
-    if (!candidate?.owner || candidate.synthetic || !candidate.consent || this.accountForOwner(candidate.owner)?.role !== 'candidate') return null;
+    if (!candidate?.owner || this.syntheticProfile(candidate) || !candidate.consent || this.accountForOwner(candidate.owner)?.role !== 'candidate') return null;
     const rows = this.store.db.prepare(`SELECT t.reviewed_at,s.employer_owner FROM refresh_tasks t
       JOIN refresh_task_series s ON s.id=t.series_id WHERE s.candidate_id=? AND t.status='approved' ORDER BY t.reviewed_at DESC,t.id`).all(candidateId);
-    const latest = rows.find(row => this.accountForOwner(row.employer_owner)?.role === 'employer');
+    const latest = rows.find(row => this.accountForOwner(row.employer_owner)?.role === 'employer' && this.sameRealm(row.employer_owner, candidate.owner));
     return latest ? { lastCompletedAt: latest.reviewed_at, source: 'employer_review' } : null;
   }
 }

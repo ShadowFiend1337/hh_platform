@@ -168,7 +168,9 @@ test('registered local accounts stay in an explicitly marked realm despite old r
     assert(!snapshot.data.state.candidateDecisions.some(item => item.candidateId === id));
     assert(!snapshot.data.directoryPeople.some(person => person.id === id)); assert(!snapshot.data.contactCandidateIds.includes(id));
     assert.equal((await client('/api/directory/' + id + '/contacts')).status, 404);
-    assert.deepEqual((await client('/api/applications?role=employer')).data.items, []);
+    assert(!(await client('/api/applications?role=employer')).data.items.some(item => item.id === applicationId));
+    assert(!(await client('/api/tasks/candidates')).data.items.some(item => item.id === id), 'A cross-realm link never enables tasks');
+    assert.equal((await client('/api/tasks', 'POST', { candidateId: id, title: 'Задание', description: 'Условие задания.' })).status, 404);
     assert.equal((await client('/api/applications/' + applicationId, 'PATCH', { status: 'accepted' })).status, 404);
   }
   assert.deepEqual((await realCandidate('/api/platform/state')).data.state.invitations, []);
@@ -188,8 +190,9 @@ test('registered local accounts stay in an explicitly marked realm despite old r
   assert.equal(applied.status, 201); assert.equal(applied.data.synthetic, true); assert.equal(applied.data.vacancy.synthetic, true);
   assert.equal(applied.data.candidate.synthetic, true);
   const incoming = await localEmployer('/api/applications?role=employer');
-  assert.deepEqual(incoming.data.items.map(item => item.id), [applied.data.id]);
-  assert.equal(incoming.data.items[0].candidate.synthetic, true);
+  const own = incoming.data.items.find(item => item.id === applied.data.id);
+  assert.ok(own); assert(incoming.data.items.every(item => item.candidate.synthetic === true));
+  assert.equal(own.candidate.synthetic, true);
   assert.equal((await localEmployer('/api/applications/' + applied.data.id, 'PATCH', { status: 'accepted' })).status, 200);
   assert.equal((await localEmployer('/api/companies/' + realPublished.data.companyId)).status, 404);
   assert.equal((await localEmployer('/api/vacancies/demo-company-vector-vacancy-1')).status, 200, 'Demo vacancies are public to signed-in users');

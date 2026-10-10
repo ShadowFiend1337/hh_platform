@@ -7,6 +7,7 @@ import { DirectoryStore } from '../server/directory-store.mjs';
 import { PlatformService } from '../server/platform.mjs';
 import { MarketplaceService } from '../server/marketplace.mjs';
 import { FspIntegrationService } from '../server/fsp-integration.mjs';
+import { RefreshTaskService } from '../server/refresh-tasks.mjs';
 import { openStore } from '../server/store.mjs';
 import { createAttempt, digest, evaluate } from '../server/assessment.mjs';
 import { createInitialState } from '../frontend/src/model.ts';
@@ -57,6 +58,29 @@ function employerState(employer, candidateId) {
   return state;
 }
 
+/** The candidate applies to the fixture vacancy; three employer tasks show the whole cycle. */
+function seedTasks(tasks, marketplace, { candidate, employer, candidateId, vacancyId }) {
+  marketplace.apply(candidate, vacancyId, { message: 'Здравствуйте! Интересна задача с личным кабинетом, могу выполнить тестовое задание.' });
+  const approved = tasks.assign(employer, { candidateId, recurrenceDays: 0, title: 'Доступность модального окна',
+    description: 'В модальном окне подтверждения фокус уходит на страницу под ним. Опишите, как это исправить и как проверить результат.' });
+  tasks.answer(candidate, approved.id, { answer: 'При открытии переношу фокус на заголовок окна, а Tab и Shift+Tab держу внутри окна '
+    + '(первый и последний фокусируемые элементы). Страница под окном получает inert, Esc закрывает окно, после закрытия фокус '
+    + 'возвращается на кнопку, которая его открыла. Окну задаю role="dialog", aria-modal="true" и aria-labelledby на заголовок. '
+    + 'Проверка: проход только с клавиатуры, NVDA читает заголовок при открытии, тест на Testing Library: после открытия '
+    + 'document.activeElement внутри окна, после Esc — на исходной кнопке.' });
+  tasks.review(employer, approved.id, { status: 'approved', feedback: 'Хорошо: учтены inert, возврат фокуса и автотест. Добавьте ещё проверку в VoiceOver.' });
+  const submitted = tasks.assign(employer, { candidateId, recurrenceDays: 7, title: 'Код-ревью формы входа',
+    description: 'Компонент LoginForm хранит пароль в localStorage «для удобства», показывает ошибку только цветом рамки и отправляет форму '
+      + 'по нажатию Enter даже при пустых полях. Перечислите проблемы по приоритету и предложите исправления.' });
+  tasks.answer(candidate, submitted.id, { answer: '1. Безопасность: пароль в localStorage доступен любому скрипту на странице (XSS) — убрать, '
+    + 'запоминать только логин; сессию держать в httpOnly cookie.\n2. Доступность: ошибка только цветом не видна части пользователей — '
+    + 'добавить текст ошибки, связать с полем через aria-describedby, aria-invalid="true", фокус на первое поле с ошибкой.\n'
+    + '3. Валидация: блокировать отправку пустой формы, required у полей и проверка в onSubmit, а не только по Enter.\n'
+    + '4. Тесты: сценарии пустой формы, неверного пароля и успешного входа на Testing Library.' });
+  tasks.assign(employer, { candidateId, recurrenceDays: 0, title: 'Медленная страница профиля',
+    description: 'После релиза страница профиля открывается 4 секунды вместо одной. Опишите по шагам, как найдёте причину и что проверите в первую очередь.' });
+}
+
 /**
  * Creates the team test accounts in the local database. `reset` restores the
  * fixture cabinets to their initial demo state (accounts and passwords are kept).
@@ -76,6 +100,7 @@ export async function prepareLocalAccounts(dbPath = resolve(root, 'server/data/a
     const marketplace = new MarketplaceService(directory);
     const accountForOwner = owner => auth.accountForPlatformOwner(owner);
     const fsp = new FspIntegrationService(directory, { accountForOwner, env: process.env });
+    const tasks = new RefreshTaskService(directory, { accountForOwner });
     const accounts = [];
     for (const fixture of localAccountFixtures) {
       let account = auth.store.accountByIdentifier(fixture.login);
@@ -116,12 +141,13 @@ export async function prepareLocalAccounts(dbPath = resolve(root, 'server/data/a
       const person = directory.forOwner(candidate.platform_owner);
       const invited = person?.eligible && person.visible && person.consent ? person.id : null;
       platform.save(employer.platform_owner, employerState(employer, invited), 0, 'employer');
-      marketplace.publish(employer.platform_owner, { title: 'Frontend-разработчик',
+      const vacancy = marketplace.publish(employer.platform_owner, { title: 'Frontend-разработчик',
         description: 'Личный кабинет на React и TypeScript: формы, дизайн-система, тесты.', specialization: 'Frontend', grade: 'Junior',
         stack: ['React', 'TypeScript'], city: 'Москва', format: 'Удалённо', salaryFrom: 110000, salaryTo: 150000 });
       marketplace.publish(employer.platform_owner, { title: 'Backend-разработчик платёжного сервиса',
         description: 'API платежей, идемпотентность, PostgreSQL и очереди.', specialization: 'Backend', grade: 'Middle',
         stack: ['Python', 'PostgreSQL'], city: 'Москва', format: 'Гибрид', salaryFrom: 200000, salaryTo: 260000 });
+      if (invited) seedTasks(tasks, marketplace, { candidate: candidate.platform_owner, employer: employer.platform_owner, candidateId: invited, vacancyId: vacancy.id });
     }
     for (const [owner, revision] of previousRevisions) {
       directory.db.prepare('UPDATE platform_accounts SET revision=revision+? WHERE owner=?').run(revision + 1, owner);

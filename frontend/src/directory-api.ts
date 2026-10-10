@@ -1,3 +1,4 @@
+import type { TaskFreshness } from './tasks-api';
 import type { Candidate } from './model';
 import { normalizeSearchFilters, type SearchFilters } from '../../shared/search.ts';
 import type { Specialization } from '../../shared/catalog.ts';
@@ -29,6 +30,8 @@ export interface DirectoryItem {
   rank: number;
   reason: string;
   match?: DirectoryMatch;
+  /** Last employer-approved task; marks the profile as recently active. */
+  freshness?: TaskFreshness | null;
   semanticScore: number | null;
   rerankerScore?: number;
   approximate?: true;
