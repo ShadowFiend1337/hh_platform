@@ -13,11 +13,13 @@ export const expiresInMinutes = 30;
 export const itemsPerFamily = 2;
 export const questionSeconds = 120;
 /**
- * Borderline results get a clarifying block: one more fresh item from every family
- * (6 items) when the first 12 scored items give 55-74. The decision then uses all
- * 18 items with the same threshold, which raises retest agreement (docs/assessment_validation_results.md).
+ * A pass by the narrowest margin (9 of 12, score 70-79) gets a clarifying block: one
+ * more fresh item from every family (6 items); the decision then uses all 18 items with
+ * the same threshold (13 of 18). Re-checking marginal passes lowers false confirmations
+ * of the grade; a block for failing scores would act as a second chance and raise them
+ * (docs/assessment_validation_results.md).
  */
-export const borderline = Object.freeze({ from: 55, to: 75, perFamily: 1, extraMinutes: 13 });
+export const borderline = Object.freeze({ from: 70, to: 80, perFamily: 1, extraMinutes: 13 });
 /** Network and rendering grace for the per-question limit. */
 export const answerGraceMs = 8000;
 /** Departures from the test (tab switch, window blur, leaving full screen) before annulment. */

@@ -195,7 +195,7 @@ test('a borderline result receives a clarifying block of fresh items; a clear re
     }
     return response;
   };
-  // 8 of 12 correct (67) is borderline: six more items arrive, from the same families, none repeated.
+  // 9 of 12 correct (75) is a marginal pass: six more items arrive, from the same families, none repeated.
   let extendedSeen = false;
   let index = 0;
   for (;;) {
@@ -205,7 +205,7 @@ test('a borderline result receives a clarifying block of fresh items; a clear re
     if (!question) break;
     const wrong = question.options.find(option => option.id !== question.correctOptionId).id;
     const response = await f.candidate(f.path + '/answer', 'POST', { token: f.attempt.token, questionId: question.id,
-      optionId: index < 8 || index >= 12 ? question.correctOptionId : wrong });
+      optionId: index < 9 || index >= 12 ? question.correctOptionId : wrong });
     index++;
     assert.equal(response.status, 200);
     if (response.data.extended) {
@@ -221,7 +221,7 @@ test('a borderline result receives a clarifying block of fresh items; a clear re
   assert.equal(new Set(extended.questions.map(question => question.variantId)).size, 18, 'Clarifying items are fresh');
   const result = await f.candidate(f.path + '/submit', 'POST', { token: f.attempt.token });
   assert.equal(result.data.questionCount, 18); assert.equal(result.data.clarified, true);
-  assert.equal(result.data.score, 78, '14 of 18 correct'); assert.equal(result.data.passed, true);
+  assert.equal(result.data.score, 83, '15 of 18 correct'); assert.equal(result.data.passed, true);
 
   const second = await f.candidate('/api/assessment/attempts', 'POST', { survey: { ...survey(), desiredGrade: 'Middle' } });
   const done = await answerAll(second.data, `/api/assessment/attempts/${second.data.id}`, 11);

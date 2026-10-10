@@ -1,7 +1,7 @@
 {
   "source": "npm run validate:assessment-model",
   "kind": "simulation",
-  "perCell": 400,
+  "perCell": 1500,
   "grades": [
     "Intern",
     "Junior",
@@ -11,77 +11,77 @@
   ],
   "matrix": {
     "Intern": {
-      "Intern": 0.835,
-      "Junior": 0.1,
-      "Middle": 0.0025,
+      "Intern": 0.6853333333333333,
+      "Junior": 0.056,
+      "Middle": 0,
       "Senior": 0,
       "Lead": 0
     },
     "Junior": {
-      "Intern": 1,
-      "Junior": 0.775,
-      "Middle": 0.105,
-      "Senior": 0.005,
-      "Lead": 0.0025
+      "Intern": 0.994,
+      "Junior": 0.672,
+      "Middle": 0.04466666666666667,
+      "Senior": 0,
+      "Lead": 0
     },
     "Middle": {
       "Intern": 1,
-      "Junior": 0.995,
-      "Middle": 0.7875,
-      "Senior": 0.09,
+      "Junior": 0.9946666666666667,
+      "Middle": 0.654,
+      "Senior": 0.056666666666666664,
       "Lead": 0
     },
     "Senior": {
       "Intern": 1,
       "Junior": 1,
-      "Middle": 1,
-      "Senior": 0.825,
-      "Lead": 0.0975
+      "Middle": 0.9946666666666667,
+      "Senior": 0.676,
+      "Lead": 0.03666666666666667
     },
     "Lead": {
       "Intern": 1,
       "Junior": 1,
       "Middle": 1,
-      "Senior": 0.9975,
-      "Lead": 0.7725
+      "Senior": 0.9953333333333333,
+      "Lead": 0.682
     }
   },
   "retest": {
     "single": {
-      "pairs": 2000,
-      "agreement": 0.7485,
-      "kappa": 0.47698418475039783,
-      "correlation": 0.6667576557568562,
-      "accuracy": 0.8275,
-      "falsePass": 0.15683453237410072,
-      "falseFail": 0.18084291187739462,
+      "pairs": 7500,
+      "agreement": 0.7496,
+      "kappa": 0.47099163772425684,
+      "correlation": 0.6655260034210599,
+      "accuracy": 0.8162666666666667,
+      "falsePass": 0.1939443535188216,
+      "falseFail": 0.1787974683544304,
       "clarifiedShare": 0,
-      "sharedItems": 0,
+      "sharedItems": 0.988,
       "meanQuestions": 12
     },
     "clarified": {
-      "pairs": 2000,
-      "agreement": 0.773,
-      "kappa": 0.501813333625954,
-      "correlation": 0.6901058395101637,
-      "accuracy": 0.85,
-      "falsePass": 0.2353870458135861,
-      "falseFail": 0.11046086320409657,
-      "clarifiedShare": 0.2195,
-      "sharedItems": 1.317,
-      "meanQuestions": 13.317
+      "pairs": 7500,
+      "agreement": 0.7530666666666667,
+      "kappa": 0.4853965240220903,
+      "correlation": 0.6720286150071328,
+      "accuracy": 0.8184,
+      "falsePass": 0.14689034369885434,
+      "falseFail": 0.19837816455696203,
+      "clarifiedShare": 0.16466666666666666,
+      "sharedItems": 0.988,
+      "meanQuestions": 12.988
     }
   },
   "leak": [
     {
       "poolPerFamily": 4,
       "leakedAttempts": 1,
-      "knownShare": 0.5069444444444444
+      "knownShare": 0.4986111111111111
     },
     {
       "poolPerFamily": 4,
       "leakedAttempts": 5,
-      "knownShare": 0.9638888888888889
+      "knownShare": 0.9708333333333333
     },
     {
       "poolPerFamily": 4,
@@ -96,17 +96,17 @@
     {
       "poolPerFamily": 10,
       "leakedAttempts": 1,
-      "knownShare": 0.19722222222222222
+      "knownShare": 0.18194444444444444
     },
     {
       "poolPerFamily": 10,
       "leakedAttempts": 5,
-      "knownShare": 0.6694444444444444
+      "knownShare": 0.6305555555555555
     },
     {
       "poolPerFamily": 10,
       "leakedAttempts": 20,
-      "knownShare": 0.9819444444444444
+      "knownShare": 0.9888888888888889
     },
     {
       "poolPerFamily": 10,
@@ -116,17 +116,17 @@
     {
       "poolPerFamily": 20,
       "leakedAttempts": 1,
-      "knownShare": 0.1125
+      "knownShare": 0.08333333333333333
     },
     {
       "poolPerFamily": 20,
       "leakedAttempts": 5,
-      "knownShare": 0.42777777777777776
+      "knownShare": 0.41944444444444445
     },
     {
       "poolPerFamily": 20,
       "leakedAttempts": 20,
-      "knownShare": 0.875
+      "knownShare": 0.8680555555555556
     },
     {
       "poolPerFamily": 20,
@@ -145,7 +145,7 @@
     },
     {
       "poolPerFamily": 20,
-      "passRate": 0.995
+      "passRate": 0.9913333333333333
     }
   ]
 }

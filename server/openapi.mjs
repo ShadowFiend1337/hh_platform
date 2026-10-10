@@ -246,7 +246,7 @@ const paths = {
   '/api/assessment/attempts/{id}': { get: { ...op({ tag: 'Тестирование', summary: 'Восстановить попытку', role: 'candidate', response: ref('AttemptState'), codes: [404], params: [attemptId] }),
     parameters: [attemptId, { name: 'X-Attempt-Token', in: 'header', required: true, schema: string() }] } },
   '/api/assessment/attempts/{id}/answer': { post: op({ tag: 'Тестирование', summary: 'Ответить на текущий вопрос', role: 'candidate', params: [attemptId], body: ref('AnswerRequest'), response: ref('AttemptState'), codes: [400, 404, 409, 410],
-    description: 'Фиксирует ответ без возврата и выдаёт следующий вопрос. Ответ позже 120 + 8 секунд засчитывается как неверный. Пограничный балл 55–74 после 12 вопросов добавляет уточняющий блок из 6 заданий (`extended: true`).' }) },
+    description: 'Фиксирует ответ без возврата и выдаёт следующий вопрос. Ответ позже 120 + 8 секунд засчитывается как неверный. Балл 70–79 после 12 вопросов (порог пройден впритык) добавляет уточняющий блок из 6 заданий (`extended: true`).' }) },
   '/api/assessment/attempts/{id}/integrity': { post: op({ tag: 'Тестирование', summary: 'Событие прокторинга', role: 'candidate', params: [attemptId], body: ref('IntegrityEventRequest'), response: ref('IntegrityStatus'), codes: [400, 404, 409, 429],
     description: 'Уход со страницы, выход из полноэкранного режима, второй экземпляр, заблокированное копирование. Третий уход аннулирует попытку на сервере (`annulled: true`).' }) },
   '/api/assessment/attempts/{id}/submit': { post: op({ tag: 'Тестирование', summary: 'Завершить попытку', role: 'candidate', params: [attemptId], body: ref('SubmitRequest'), response: ref('AssessmentResult'), codes: [400, 404, 409],

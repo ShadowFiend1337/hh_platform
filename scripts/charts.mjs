@@ -104,8 +104,8 @@ writeFileSync(dir + 'assessment-grades.svg', groupedColumns({
 }));
 const single = validation.retest.single, clarified = validation.retest.clarified;
 writeFileSync(dir + 'assessment-retest.svg', groupedColumns({
-  title: 'Уточняющий блок точнее решает пограничные случаи',
-  subtitle: `Решение «подтверждён / нет» против истинного уровня; блок из 6 вопросов получают ${pct(clarified.clarifiedShare)}% попыток с баллом 55–74`,
+  title: 'Уточняющий блок снижает ошибочные подтверждения',
+  subtitle: `Решение «подтверждён / нет» против истинного уровня; блок из 6 вопросов получают ${pct(clarified.clarifiedShare)}% попыток с баллом 70–79 (9 из 12)`,
   legend: [{ label: '12 вопросов', color: colors.base }, { label: 'С уточняющим блоком', color: colors.accent }],
   groups: [
     { label: 'Точность решения', values: [pct(single.accuracy), pct(clarified.accuracy)] },

@@ -23,7 +23,7 @@ import { gradeOptions } from '../shared/grading.ts';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const argument = (name, fallback) => { const index = process.argv.indexOf('--' + name); return index >= 0 ? process.argv[index + 1] : fallback; };
-const perCell = Number(argument('candidates', 400));
+const perCell = Number(argument('candidates', 1500));
 const output = resolve(root, argument('out', 'docs/assessment_validation_results.md'));
 let seed = Number(argument('seed', 7)) >>> 0;
 const random = () => { seed = (seed + 0x6D2B79F5) >>> 0; let t = seed; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
@@ -58,9 +58,9 @@ const answerFor = (theta, question, grade) => ({ questionId: question.id,
 function takeTest(theta, specialization, grade, { recent = [], clarify = true } = {}) {
   let attempt = createAttempt(survey(specialization, grade), '', recent, time);
   let answers = attempt.questions.map(question => answerFor(theta, question, grade));
+  const scored = attempt.questions.filter(question => !question.pilot);
+  const provisional = Math.round(scored.filter(question => answers.find(answer => answer.questionId === question.id).optionId === question.correctOptionId).length / scored.length * 100);
   if (clarify) {
-    const scored = attempt.questions.filter(question => !question.pilot);
-    const provisional = Math.round(scored.filter(question => answers.find(answer => answer.questionId === question.id).optionId === question.correctOptionId).length / scored.length * 100);
     const longer = extendBorderline(attempt, provisional, { recent, now: time });
     if (longer) {
       answers = [...answers, ...longer.questions.slice(attempt.questions.length).map(question => answerFor(theta, question, grade))];
@@ -68,7 +68,9 @@ function takeTest(theta, specialization, grade, { recent = [], clarify = true } 
     }
   }
   const { result } = evaluate(attempt, answers, time + 60000);
-  return { attempt, result, correctness: attempt.questions.map((question, index) => answers[index].optionId === question.correctOptionId) };
+  // The 12-item decision of the same attempt, for a paired comparison with the clarifying block.
+  return { attempt, result, provisional: { score: provisional, passed: provisional >= threshold, questionCount: scored.length },
+    correctness: attempt.questions.map((question, index) => answers[index].optionId === question.correctOptionId) };
 }
 
 const specializations = Object.keys(programs);
@@ -104,7 +106,8 @@ const discriminations = [...itemStats.values()].filter(stats => stats.correct > 
 report.itemDiscrimination = { families: discriminations.length, mean: mean(discriminations), shareAbove02: discriminations.filter(value => value >= 0.2).length / discriminations.length };
 
 // 2. Retest on a realistic mix of claims: 60% claim their grade, 25% one above, 15% one below.
-function retest(clarify) {
+// Paired: the same simulated attempts give the 12-item decision and the decision with the clarifying block.
+function simulatePairs() {
   const pairs = [];
   for (let index = 0; index < perCell * grades.length; index++) {
     const trueGrade = grades[index % grades.length];
@@ -112,29 +115,32 @@ function retest(clarify) {
     const claimed = grades[Math.min(grades.length - 1, Math.max(0, grades.indexOf(trueGrade) + shift))];
     const theta = level[trueGrade] + 0.5 + 0.3 * normal();
     const specialization = specializations[index % specializations.length];
-    const first = takeTest(theta, specialization, claimed, { clarify });
-    const second = takeTest(theta, specialization, claimed, { clarify, recent: [first.attempt] });
-    const truth = theta >= level[claimed] + cutOffset;
-    pairs.push({ first: first.result, second: second.result, truth,
-      overlap: second.attempt.questions.filter(question => first.attempt.questions.some(other => other.variantId === question.variantId)).length,
-      clarified: Boolean(first.result.clarified) });
+    const first = takeTest(theta, specialization, claimed);
+    const second = takeTest(theta, specialization, claimed, { recent: [first.attempt] });
+    pairs.push({ first, second, truth: theta >= level[claimed] + cutOffset,
+      overlap: second.attempt.questions.filter(question => first.attempt.questions.some(other => other.variantId === question.variantId)).length });
   }
-  const n = pairs.length;
-  const agree = pairs.filter(pair => pair.first.passed === pair.second.passed).length / n;
-  const p1 = pairs.filter(pair => pair.first.passed).length / n, p2 = pairs.filter(pair => pair.second.passed).length / n;
-  const pe = p1 * p2 + (1 - p1) * (1 - p2);
-  const xs = pairs.map(pair => pair.first.score), ys = pairs.map(pair => pair.second.score), mx = mean(xs), my = mean(ys);
-  const correlation = pairs.reduce((sum, pair) => sum + (pair.first.score - mx) * (pair.second.score - my), 0)
-    / Math.sqrt(xs.reduce((sum, x) => sum + (x - mx) ** 2, 0) * ys.reduce((sum, y) => sum + (y - my) ** 2, 0));
-  return { pairs: n, agreement: agree, kappa: (agree - pe) / (1 - pe), correlation,
-    accuracy: pairs.filter(pair => pair.first.passed === pair.truth).length / n,
-    falsePass: pairs.filter(pair => pair.first.passed && !pair.truth).length / Math.max(1, pairs.filter(pair => !pair.truth).length),
-    falseFail: pairs.filter(pair => !pair.first.passed && pair.truth).length / Math.max(1, pairs.filter(pair => pair.truth).length),
-    clarifiedShare: pairs.filter(pair => pair.clarified).length / n, sharedItems: mean(pairs.map(pair => pair.overlap)),
-    meanQuestions: mean(pairs.map(pair => pair.first.questionCount)) };
+  return pairs;
 }
-report.retest.single = retest(false);
-report.retest.clarified = retest(true);
+function retestMetrics(pairs, pick) {
+  const n = pairs.length, first = pairs.map(pair => pick(pair.first)), second = pairs.map(pair => pick(pair.second));
+  const agree = first.filter((decision, index) => decision.passed === second[index].passed).length / n;
+  const p1 = first.filter(decision => decision.passed).length / n, p2 = second.filter(decision => decision.passed).length / n;
+  const pe = p1 * p2 + (1 - p1) * (1 - p2);
+  const xs = first.map(decision => decision.score), ys = second.map(decision => decision.score), mx = mean(xs), my = mean(ys);
+  const correlation = xs.reduce((sum, x, index) => sum + (x - mx) * (ys[index] - my), 0)
+    / Math.sqrt(xs.reduce((sum, x) => sum + (x - mx) ** 2, 0) * ys.reduce((sum, y) => sum + (y - my) ** 2, 0));
+  const below = pairs.filter(pair => !pair.truth).length, above = pairs.filter(pair => pair.truth).length;
+  return { pairs: n, agreement: agree, kappa: (agree - pe) / (1 - pe), correlation,
+    accuracy: first.filter((decision, index) => decision.passed === pairs[index].truth).length / n,
+    falsePass: first.filter((decision, index) => decision.passed && !pairs[index].truth).length / Math.max(1, below),
+    falseFail: first.filter((decision, index) => !decision.passed && pairs[index].truth).length / Math.max(1, above),
+    clarifiedShare: pairs.filter(pair => pick(pair.first).clarified).length / n, sharedItems: mean(pairs.map(pair => pair.overlap)),
+    meanQuestions: mean(first.map(decision => decision.questionCount)) };
+}
+const retestPairs = simulatePairs();
+report.retest.single = retestMetrics(retestPairs, attempt => attempt.provisional);
+report.retest.clarified = retestMetrics(retestPairs, attempt => attempt.result);
 
 // 3. Leak resistance: share of a new attempt known in advance after N leaked attempts.
 for (const poolPerFamily of [4, 10, 20]) {
@@ -177,6 +183,7 @@ lines.push('', '```mermaid', 'xychart-beta', '  title "Подтверждают 
 lines.push(`Свой грейд подтверждают в среднем ${pct(own)}%, грейд на ступень выше — ${pct(above)}%. Средняя точечно-бисериальная корреляция семейств заданий ${report.itemDiscrimination.mean.toFixed(2)}, у ${pct(report.itemDiscrimination.shareAbove02)}% семейств она не ниже 0,2.`, '');
 lines.push('## Повторное прохождение (test-retest)', '');
 lines.push('Тот же кандидат сдаёт тот же грейд второй раз на новой форме (задания первой попытки исключены). Смесь заявок: 60% — свой грейд, 25% — на ступень выше, 15% — ниже.', '');
+lines.push('Сравнение парное: обе колонки посчитаны на одних и тех же попытках — по первым 12 вопросам и с уточняющим блоком.', '');
 lines.push('| Показатель | 12 вопросов | С уточняющим блоком |', '| --- | --- | --- |');
 lines.push(`| Совпадение решения «подтверждён / нет» | ${pct(single.agreement)}% | ${pct(clarified.agreement)}% |`);
 lines.push(`| Каппа Коэна | ${single.kappa.toFixed(2)} | ${clarified.kappa.toFixed(2)} |`);
@@ -202,7 +209,7 @@ for (const item of report.leakedPass) lines.push(`| ${item.poolPerFamily} | ${pc
 lines.push('', `Без утечки такой кандидат подтверждает Middle в ${pct(report.matrix.Junior.Middle)}% случаев. Конечный авторский банк расходится быстро, поэтому зачётный пул пополняется проверенными сгенерированными заданиями, сгенерированные выводятся после 150 показов, а последовательная выдача с лимитом 2 минуты на вопрос мешает собирать ответы во время теста.`, '');
 lines.push('## Выводы и ограничения', '');
 lines.push(`- Тест разделяет соседние грейды: свой грейд подтверждают ${pct(own)}%, грейд выше — ${pct(above)}%.`);
-lines.push(`- Уточняющий блок (его получают ${pct(clarified.clarifiedShare)}% попыток) повышает точность решения с ${pct(single.accuracy)}% до ${pct(clarified.accuracy)}% и снижает долю ошибочно не подтверждённых с ${pct(single.falseFail)}% до ${pct(clarified.falseFail)}%; цена — ошибочно подтверждённых ${pct(single.falsePass)}% → ${pct(clarified.falsePass)}%. Совпадение решений при пересдаче: ${pct(single.agreement)}% → ${pct(clarified.agreement)}%.`);
+lines.push(`- Уточняющий блок получают ${pct(clarified.clarifiedShare)}% попыток — те, кто прошёл порог впритык. На тех же попытках он меняет долю ошибочно подтверждённых с ${pct(single.falsePass)}% до ${pct(clarified.falsePass)}%, ошибочно не подтверждённых — с ${pct(single.falseFail)}% до ${pct(clarified.falseFail)}%; точность решения ${pct(single.accuracy)}% → ${pct(clarified.accuracy)}%, совпадение при пересдаче ${pct(single.agreement)}% → ${pct(clarified.agreement)}%. Ошибочное подтверждение вредит работодателю, а ошибочный отказ кандидат может пересдать через 7 дней, поэтому блок перепроверяет именно прошедших.`);
 lines.push('- Формы практически не пересекаются: задания прошлой попытки исключаются.');
 lines.push('- Параметры заданий заданы моделью. Настоящие сложность и дискриминацию даёт пилот: незачётные задания и статистика ответов в банке.');
 writeFileSync(output, lines.join('\n') + '\n');
