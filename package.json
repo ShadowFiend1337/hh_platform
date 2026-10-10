@@ -56,6 +56,7 @@
     "test:hiring-needs": "node frontend/tests/hiring-needs.mjs",
     "test:tasks": "node frontend/tests/tasks.mjs",
     "test:item-bank-ui": "node frontend/tests/item-bank-moderation.mjs",
+    "docs:openapi": "node scripts/openapi.mjs",
     "test:fsp": "node frontend/tests/fsp-link.mjs",
     "test:unconfirmed": "node frontend/tests/unconfirmed-directory.mjs",
     "test:assessment-guard": "node frontend/tests/assessment-guard.mjs",

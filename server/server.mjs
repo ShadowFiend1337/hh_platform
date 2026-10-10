@@ -22,6 +22,7 @@ import { PlatformService } from './platform.mjs';
 import { MarketplaceService } from './marketplace.mjs';
 import { RefreshTaskService } from './refresh-tasks.mjs';
 import { createTaskReviewer } from './task-review.mjs';
+import { platformOpenApi, swaggerPage } from './openapi.mjs';
 import { AuthError, AuthService } from './auth.mjs';
 import { FspIntegrationService } from './fsp-integration.mjs';
 import { IntegrationService } from './integrations/service.mjs';
@@ -165,6 +166,13 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
           ...(webOrigin ? [webOrigin] : ['http://127.0.0.1:5173', 'http://127.0.0.1:4173', 'http://localhost:5173', 'http://localhost:4173'])]);
         if (origin && !allowed.has(origin)) throw new RequestError(403, 'Источник запроса не разрешён.');
         if (request.method === 'GET' && url.pathname === '/api/health') return send(response, 200, { status: 'ok' });
+        if (url.pathname === '/api/openapi.json' && request.method === 'GET') return send(response, 200, platformOpenApi());
+        if (url.pathname === '/api/docs' && request.method === 'GET') {
+          response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache', 'X-Content-Type-Options': 'nosniff',
+            'Content-Security-Policy': "default-src 'none'; script-src https://cdn.jsdelivr.net 'unsafe-inline'; style-src https://cdn.jsdelivr.net 'unsafe-inline'; "
+              + "img-src 'self' data: https://cdn.jsdelivr.net; font-src https://cdn.jsdelivr.net data:; connect-src 'self'; frame-ancestors 'none'" });
+          return response.end(swaggerPage());
+        }
         if (url.pathname === '/api/integrations/openapi.json' && request.method === 'GET') {
           return send(response, 200, JSON.parse(await readFile(resolve(root, 'docs/api/integrations.openapi.json'), 'utf8')));
         }
