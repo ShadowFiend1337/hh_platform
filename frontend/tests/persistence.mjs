@@ -20,6 +20,9 @@ function fixture() {
   state.surveys = [{ id: 'fixture-survey', date, industry: state.profile.industry,
     professionalRole: state.profile.professionalRole, specialization: state.profile.specialization,
     desiredGrade: state.profile.desiredGrade, stack: [...state.profile.stack], softSkills: [], experience: state.profile.experience }];
+  // The confirmed category is backed by a passed server result, as for a real account.
+  state.history = [{ id: 'fixture-result', date, specialization: 'Frontend', grade: 'Junior', surveyId: 'fixture-survey', score: 90,
+    passed: true, bankVersion: 'fixture', competencies: [], vacancySkills: [], questionCount: 12, timeouts: 0 }];
   return state;
 }
 
@@ -40,7 +43,9 @@ async function session({ employer = false } = {}) {
   await context.route('**/api/**', async route => {
     const request = route.request();
     const url = new URL(request.url());
-    if (url.pathname === '/api/auth/me') { await route.fulfill({ status: 401, json: { error: 'Гостевой кабинет.' } }); return; }
+    // Cabinets require a signed-in account; the mocked one never reaches a real server.
+    if (url.pathname === '/api/auth/me') { await route.fulfill({ json: { account: { id: 'mock-account', login: 'mock.account', email: 'mock@example.invalid',
+      role: employer ? 'employer' : 'candidate', canModerate: false } } }); return; }
     if (url.pathname === '/api/directory/search') {
       backend.directorySearches += 1;
       await route.fulfill({ json: { items: backend.searchPeople.map(person => ({ person: clone(person), rank: 1,
@@ -50,7 +55,9 @@ async function session({ employer = false } = {}) {
       return;
     }
     if (url.pathname !== '/api/platform/state') {
-      await route.fulfill({ json: { items: [], total: 0, cities: [], industries: [], languages: [], employmentTypes: [] } });
+      // Empty, well-formed answers for panels unrelated to state persistence.
+      await route.fulfill({ json: { items: [], total: 0, cities: [], industries: [], languages: [], employmentTypes: [],
+        claims: [], sources: [], providers: [], connections: [], evidence: [], records: [], llm: false, notice: '' } });
       return;
     }
     if (request.method() === 'PUT') {
@@ -72,7 +79,8 @@ async function session({ employer = false } = {}) {
     } else if (request.method() === 'DELETE') {
       backend.state = null; backend.revision = 0;
     } else backend.gets += 1;
-    await route.fulfill({ json: { state: clone(backend.state), revision: backend.revision, directoryPeople: clone(backend.directoryPeople) } });
+    await route.fulfill({ headers: { 'X-Platform-Identity': 'auth:mock-account' },
+      json: { state: clone(backend.state), revision: backend.revision, directoryPeople: clone(backend.directoryPeople) } });
   });
   const page = await context.newPage();
   page.setDefaultTimeout(15000);

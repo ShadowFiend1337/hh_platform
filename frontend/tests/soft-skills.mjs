@@ -1,12 +1,18 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { chromium } from 'playwright';
-import { programs } from '../../server/bank.mjs';
+import { answerExam, answerKey, startExam } from './helpers/exam.mjs';
+import { register } from './helpers/accounts.mjs';
+import { startIsolatedService } from './helpers/isolated-service.mjs';
 
-const base = process.env.PREDEL_URL || 'http://127.0.0.1:5173';
+// Registered candidate on a disposable service.
+const isolated = await startIsolatedService();
+const { base } = isolated;
 const browser = await chromium.launch();
 const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
+await register(context, isolated, 'candidate', 'soft.skills');
 const page = await context.newPage();
+page.on('dialog', dialog => dialog.type() === 'beforeunload' ? dialog.accept() : dialog.dismiss());
 const errors = [];
 page.on('pageerror', error => errors.push(error.message));
 page.setDefaultTimeout(15000);
@@ -54,24 +60,10 @@ try {
   assert.match(current.profile.bio, /Обучаю начинающих разработчиков/);
   await page.reload();
   await page.getByRole('button', { name: 'Начать тест', exact: true }).waitFor();
-  const responsePromise = page.waitForResponse(response => response.url().endsWith('/api/assessment/attempts') && response.request().method() === 'POST');
-  await page.getByRole('button', { name: 'Начать тест', exact: true }).click();
-  const response = await responsePromise;
-  assert.equal(response.status(), 201);
-  const request = response.request().postDataJSON();
-  assert.deepEqual([...request.survey.softSkills].sort(), expected, 'The test uses the saved self-assessment');
-  const attempt = await response.json();
-  const answers = new Map(programs.Frontend.Junior.families.flatMap(family => family.variants.map(variant => [variant.text, variant.options[variant.correct]])));
-  for (let index = 0; index < attempt.questions.length; index++) {
-    await page.locator(`.exam-progress[aria-valuenow="${index + 1}"]`).waitFor();
-    const answer = answers.get(await page.locator('.question-text').textContent());
-    assert.ok(answer);
-    const choices = page.locator('.answer-option');
-    const choice = (await choices.locator('span').allTextContents()).findIndex(text => text.trim() === answer);
-    assert.ok(choice >= 0);
-    await choices.nth(choice).click();
-    await page.getByRole('button', { name: index === attempt.questions.length - 1 ? 'Завершить тест' : 'Далее', exact: true }).click();
-  }
+  const requestPromise = page.waitForRequest(request => request.url().endsWith('/api/assessment/attempts') && request.method() === 'POST');
+  await startExam(page);
+  assert.deepEqual([...(await requestPromise).postDataJSON().survey.softSkills].sort(), expected, 'The test uses the saved self-assessment');
+  await answerExam(page, answerKey('Frontend', 'Junior'));
   await page.getByRole('button', { name: 'К профилю', exact: true }).click();
   await page.getByRole('heading', { name: 'Мой профиль', exact: true }).waitFor();
   await saved();
@@ -103,7 +95,7 @@ try {
   assert.deepEqual(errors, []);
   console.log('PASS optional self-assessment: resume merge, saved questionnaire, real test, reload, preview, edit and 320px accessibility');
 } finally {
-  await context.request.delete(base + '/api/platform/state');
   await context.close();
   await browser.close();
+  await isolated.close();
 }

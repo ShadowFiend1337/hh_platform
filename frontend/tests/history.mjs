@@ -2,12 +2,17 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { chromium } from 'playwright';
-import { programs } from '../../server/bank.mjs';
 import { createInitialState } from '../src/model.ts';
+import { answerKey } from './helpers/exam.mjs';
+import { register } from './helpers/accounts.mjs';
+import { startIsolatedService } from './helpers/isolated-service.mjs';
 
-const base = process.env.PREDEL_URL || 'http://127.0.0.1:5173';
+// Registered candidate on a disposable service; retakes are allowed immediately to build a long history.
+const isolated = await startIsolatedService({ authEnv: { ASSESSMENT_RETRY_DAYS: '0', API_RATE_LIMIT_PER_MINUTE: '3000' } });
+const { base } = isolated;
 const browser = await chromium.launch();
 const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
+await register(context, isolated, 'candidate', 'history.candidate');
 const page = await context.newPage();
 const errors = [];
 page.on('pageerror', error => errors.push(error.message));
@@ -32,16 +37,21 @@ async function complete(survey, passed) {
     data: { survey: { id, date, industry, professionalRole, specialization, desiredGrade, experience, stack, softSkills } },
   });
   assert.equal(response.status(), 201, await response.text());
-  const attempt = await response.json();
-  const keys = new Map(programs[specialization][desiredGrade].families.flatMap(family => family.variants.map(variant => [variant.text, variant.options[variant.correct]])));
-  const answers = attempt.questions.map(question => {
+  let attempt = await response.json();
+  const { id: attemptId, token } = attempt;
+  const keys = answerKey(specialization, desiredGrade);
+  // Questions arrive one at a time; each answer is locked before the next one is revealed.
+  for (;;) {
+    const question = attempt.questions[attempt.position];
     const answer = keys.get(question.text);
-    assert.ok(answer);
-    const option = question.options.find(item => passed ? item.text === answer : item.text !== answer);
+    const option = answer ? question.options.find(item => passed ? item.text === answer : item.text !== answer) : question.options[0];
     assert.ok(option);
-    return { questionId: question.id, optionId: option.id };
-  });
-  const graded = await context.request.post(base + `/api/assessment/attempts/${attempt.id}/submit`, { data: { token: attempt.token, answers } });
+    const reply = await context.request.post(base + `/api/assessment/attempts/${attemptId}/answer`, { data: { token, questionId: question.id, optionId: option.id } });
+    assert.equal(reply.status(), 200, await reply.text());
+    attempt = await reply.json();
+    if (attempt.complete) break;
+  }
+  const graded = await context.request.post(base + `/api/assessment/attempts/${attemptId}/submit`, { data: { token } });
   assert.equal(graded.status(), 200, await graded.text());
   const result = await graded.json();
   assert.equal(result.passed, passed);
@@ -134,7 +144,7 @@ try {
   assert.deepEqual(errors, []);
   console.log('PASS history: 12 real owned results and surveys, pass/fail, read-only linked snapshots, complete pagination, reload, legacy explanation and 320px accessibility');
 } finally {
-  await context.request.delete(base + '/api/platform/state');
   await context.close();
   await browser.close();
+  await isolated.close();
 }

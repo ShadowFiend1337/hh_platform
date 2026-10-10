@@ -1,10 +1,16 @@
 import assert from 'node:assert/strict';
 import { readFile, mkdir } from 'node:fs/promises';
 import { chromium } from 'playwright';
+import { register, useFixedEncoder } from './helpers/accounts.mjs';
+import { startIsolatedService } from './helpers/isolated-service.mjs';
 
-const base = process.env.PREDEL_URL || 'http://127.0.0.1:5173';
+// A registered employer on a disposable service sees the demo catalogue.
+const isolated = await startIsolatedService();
+useFixedEncoder(isolated.service);
+const { base } = isolated;
 const browser = await chromium.launch({ headless: true });
 const context = await browser.newContext({ acceptDownloads: true });
+await register(context, isolated, 'employer', 'pdf.employer');
 const page = await context.newPage();
 page.setDefaultTimeout(30000);
 const errors = []; page.on('pageerror', error => errors.push(error.message));
@@ -40,9 +46,9 @@ try {
   assert.equal(generated.subarray(0, 5).toString(), '%PDF-');
   const actual = await readPdf(generated);
   assert.ok(actual.text.includes(name.trim()), 'The downloaded file contains the displayed candidate');
-  assert.ok(actual.text.includes('Контакты скрыты'));
+  assert.ok(actual.text.includes('Недоступны для демопрофиля'), 'Demo profiles never export contacts');
   assert.ok(actual.text.includes('Демонстрационный профиль'));
-  console.log('PASS PDF button downloads the displayed profile locally with Cyrillic, demo provenance and hidden contacts');
+  console.log('PASS PDF button downloads the displayed demo profile locally with Cyrillic, demo provenance and no contacts');
 
   const samples = await page.evaluate(async () => {
     const [{ createProfilePdf }, { createInitialState }] = await Promise.all([import('/src/profile-pdf.ts'), import('/src/model.ts')]);
@@ -65,6 +71,5 @@ try {
   assert.deepEqual(errors, []);
   console.log('PASS Multi-page profile preserves its last section, wraps long words and exports contacts only with permission');
 } finally {
-  await context.request.delete(base + '/api/platform/state');
-  await context.close(); await browser.close();
+  await context.close(); await browser.close(); await isolated.close();
 }
