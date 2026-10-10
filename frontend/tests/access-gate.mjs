@@ -132,7 +132,7 @@ try {
   await assertGuestScreen(guest);
   await guest.page.goto(base + '/');
   await guest.page.getByLabel('Кого вы ищете?', { exact: true }).fill('Разработчик интерфейсов');
-  await guest.page.locator('#try').getByRole('button', { name: 'Попробовать', exact: true }).click();
+  await guest.page.locator('#try').getByRole('button', { name: 'Подобрать специалистов', exact: true }).click();
   await assertGuestScreen(guest);
   assert.equal(new URL(guest.page.url()).searchParams.get('role'), 'employer');
   await guest.page.goto(base + '/');

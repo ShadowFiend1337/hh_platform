@@ -1,15 +1,17 @@
 import { useRef, useState, type FormEvent } from 'react';
 import { motion, useReducedMotion, useScroll, useTransform } from 'motion/react';
-import { ArrowDown, ArrowRight, ArrowUpRight, BadgeCheck, Check, CheckCheck, FileSliders, Layers3, Menu, Plus, Search, UsersRound, X } from 'lucide-react';
+import { ArrowDown, ArrowRight, ArrowUpRight, BadgeCheck, Check, CheckCheck, ChevronDown, FileSliders, Layers3, LockKeyhole, Menu, Plus, Search, Sparkles, UsersRound, X } from 'lucide-react';
 import { Brand } from '../components/Brand';
 import { PlatformPreview } from '../components/PlatformPreview';
-import { specializationOptions, type Role } from '../model';
+import { gradeOptions, specializationOptions, type Role } from '../model';
 
 const examples = [
-  { title: 'Frontend', brief: 'Frontend Middle React TypeScript' },
-  { title: 'Backend', brief: 'Backend Middle Python PostgreSQL' },
-  { title: 'Junior', brief: 'Frontend Junior JavaScript' },
+  { title: 'Личный кабинет', meta: 'Frontend · Middle', brief: 'Frontend Middle: интерфейсы личного кабинета на React и TypeScript, доступные формы и тесты' },
+  { title: 'Платёжный сервис', meta: 'Backend · Middle', brief: 'Backend Middle: API платежей на Python и PostgreSQL, идемпотентность, очереди' },
+  { title: 'Первый аналитик', meta: 'Аналитика · Junior', brief: 'Аналитик данных Junior: SQL, дашборды и отчёты по продажам' },
 ];
+const briefLimit = 2000;
+const exampleText = (brief: string) => { const text = brief.split(': ')[1] || brief; return text.charAt(0).toLocaleUpperCase('ru') + text.slice(1); };
 const variants = ['Подбор', 'Профиль', 'Приглашение'];
 
 export function Landing({ onStart, onAuth }: { onStart: (role?: Role, query?: string) => void; onAuth: (mode: 'login' | 'register', role?: Role) => void }) {
@@ -17,6 +19,7 @@ export function Landing({ onStart, onAuth }: { onStart: (role?: Role, query?: st
   const [variant, setVariant] = useState(0);
   const [brief, setBrief] = useState('');
   const [direction, setDirection] = useState('');
+  const [grade, setGrade] = useState('');
   const briefInput = useRef<HTMLTextAreaElement>(null);
   const hero = useRef<HTMLElement>(null);
   const reduced = useReducedMotion();
@@ -31,7 +34,7 @@ export function Landing({ onStart, onAuth }: { onStart: (role?: Role, query?: st
   };
   function submit(event: FormEvent) {
     event.preventDefault();
-    if (brief.trim()) onStart('employer', [direction, brief.trim()].filter(Boolean).join(' '));
+    if (brief.trim()) onStart('employer', [direction, grade, brief.trim()].filter(Boolean).join(' '));
   }
   return <div className="landing">
     <a className="skip-link" href="#main">К содержимому</a>
@@ -79,11 +82,37 @@ export function Landing({ onStart, onAuth }: { onStart: (role?: Role, query?: st
         </motion.article>)}</div>
       </section>
       <section id="try" className="create-section section-pad"><motion.div {...reveal} className="create-inner">
-        <div className="create-title"><h2>Кто нужен<br /><span>вашей команде?</span></h2></div>
-        <div className="brief-area"><form onSubmit={submit}><label className="sr-only" htmlFor="brief">Кого вы ищете?</label>
-          <textarea ref={briefInput} id="brief" rows={4} maxLength={2000} value={brief} onChange={event => setBrief(event.target.value)} placeholder="Frontend · Middle · React…" required />
-          <div className="brief-toolbar"><label className="count-select" htmlFor="direction"><UsersRound size={17} /><select id="direction" value={direction} onChange={event => setDirection(event.target.value)} aria-label="Направление поиска"><option value="">Направление</option>{specializationOptions.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}</select></label><button className="button ink" type="submit">Попробовать<ArrowUpRight size={18} /></button></div>
-        </form><div className="prompt-examples">{examples.map(example => <button type="button" key={example.title} onClick={() => { setBrief(example.brief); setDirection(''); briefInput.current?.focus(); }}><Plus size={13} />{example.title}</button>)}</div></div>
+        <div className="create-title">
+          <span className="create-eyebrow"><Sparkles size={14} />Подбор по задачам</span>
+          <h2>Кто нужен<br /><span>вашей команде?</span></h2>
+          <p className="create-lead">Опишите задачи своими словами — найдём специалистов с подтверждённым грейдом и покажем, насколько каждый совпадает с запросом.</p>
+          <ul className="create-points">
+            <li><span><BadgeCheck size={16} /></span>Грейд подтверждён тестом, а не резюме</li>
+            <li><span><Search size={16} /></span>Поиск по смыслу задач, а не по ключевым словам</li>
+            <li><span><LockKeyhole size={16} /></span>Контакты — только после согласия кандидата</li>
+          </ul>
+        </div>
+        <div className="brief-area">
+          <form className="brief-card" onSubmit={submit}>
+            <div className="brief-head"><label htmlFor="brief">Кого вы ищете?</label><span aria-live="polite">{brief.length} / {briefLimit}</span></div>
+            <textarea ref={briefInput} id="brief" rows={4} maxLength={briefLimit} value={brief} onChange={event => setBrief(event.target.value)}
+              placeholder="Например: backend-разработчик для платёжного сервиса — API на Python, PostgreSQL, очереди. Удалённо, до 250 000 ₽." required />
+            <div className="brief-filters">
+              <label className="brief-select" htmlFor="direction"><UsersRound size={15} aria-hidden="true" />
+                <select id="direction" value={direction} onChange={event => setDirection(event.target.value)} aria-label="Направление поиска">
+                  <option value="">Любое направление</option>{specializationOptions.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
+                </select><ChevronDown size={14} aria-hidden="true" /></label>
+              <div className="grade-pills" role="group" aria-label="Грейд">{gradeOptions.map(({ value, label }) => <button type="button" key={value}
+                aria-pressed={grade === value} onClick={() => setGrade(previous => previous === value ? '' : value)}>{label}</button>)}</div>
+            </div>
+            <div className="brief-toolbar"><span className="brief-note">Запрос сохранится после входа</span>
+              <button className="button ink" type="submit">Подобрать специалистов<ArrowUpRight size={18} /></button></div>
+          </form>
+          <div className="brief-examples" role="group" aria-label="Примеры запросов">{examples.map(example => <button type="button" key={example.title}
+            onClick={() => { setBrief(example.brief); setDirection(''); setGrade(''); briefInput.current?.focus(); }}>
+            <span className="example-meta">{example.meta}</span><strong>{example.title}</strong><span className="example-text">{exampleText(example.brief)}</span>
+            <Plus size={15} className="example-add" aria-hidden="true" /></button>)}</div>
+        </div>
       </motion.div></section>
       <section className="faq section-pad" aria-labelledby="faqTitle"><h2 id="faqTitle">Пара деталей.</h2><div>
         {[

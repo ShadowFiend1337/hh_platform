@@ -629,7 +629,7 @@ try {
   await role('Работодатель');
   await page.locator('.site-header .brand').click();
   await page.getByLabel('Кого вы ищете?').fill('Frontend Middle React CSS');
-  await page.locator('.brief-toolbar').getByRole('button', { name: 'Попробовать', exact: true }).click();
+  await page.locator('.brief-toolbar').getByRole('button', { name: 'Подобрать специалистов', exact: true }).click();
   const landingSelected = await directoryResults();
   assert.ok(landingSelected.total > 0 && landingSelected.items.every(item => item.person.confirmed.specialization === 'Frontend' && item.person.confirmed.grade === 'Middle'),
     'The task-rich fixture must support the carried semantic request: ' + JSON.stringify({ interpreted: landingSelected.interpreted, effectiveFilters: landingSelected.effectiveFilters, warnings: landingSelected.warnings }));
