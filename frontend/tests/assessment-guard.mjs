@@ -7,7 +7,7 @@ import { startIsolatedService } from './helpers/isolated-service.mjs';
 
 // Real registration, attempt and grading, with a disposable database and an
 // in-memory mail transport. This test never reaches SMTP or the working store.
-const isolated = await startIsolatedService();
+const isolated = await startIsolatedService({assessmentMode:'legacy'});
 const { base, codes } = isolated;
 const require = createRequire(import.meta.url);
 let browser;
@@ -179,7 +179,8 @@ try {
 
   const profileLink = page.locator('.main-nav').getByRole('link', { name: 'Профиль', exact: true });
   assert.equal(await profileLink.getAttribute('aria-disabled'), 'true');
-  await page.getByRole('button', { name: 'Выйти', exact: true }).click();
+  // This control is outside fullscreen. Dispatch its click to verify the logout handler's guard.
+  await page.getByRole('button', { name: 'Выйти', exact: true }).evaluate(button => button.click());
   await questionVisible(page);
   assert.equal((await context.request.get(base + '/api/auth/me')).status(), 200, 'Logout is blocked during the attempt');
 

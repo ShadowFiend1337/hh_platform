@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { claimRequest, claimLabels, checkLabels, publicRecordUrl, type AchievementClaim, type PublicSource } from '../claims-api';
+import { AssessmentModeration } from '../components/AssessmentModeration';
 import { Brand } from '../components/Brand';
 export function Moderation({accountId,role}:{accountId:string;role:string}) {
+  const [view,setView]=useState<'claims'|'tests'>('claims');
   const [status,setStatus]=useState<AchievementClaim['status']>('pending'),[offset,setOffset]=useState(0),[total,setTotal]=useState(0);
   const [claims,setClaims]=useState<AchievementClaim[]>([]),[selected,setSelected]=useState<AchievementClaim|null>(null),[refresh,setRefresh]=useState(0);
   const [error,setError]=useState(''),[busy,setBusy]=useState(false),[loading,setLoading]=useState(true);
@@ -29,7 +31,7 @@ export function Moderation({accountId,role}:{accountId:string;role:string}) {
   }catch(cause){setError(cause instanceof Error?cause.message:'Проверка источника не завершена.');}finally{setBusy(false);}}
   const actionable=selected&&['pending','needs_info','approved'].includes(selected.status);
   return <div className="app-shell"><header className="site-header"><div className="header-inner"><Brand onHome={()=>window.location.assign('/')} />
-    <a href={'/app?role='+role}>Вернуться в кабинет</a></div></header><main className="main-content"><h1>Модерация достижений</h1>
+    <a href={'/app?role='+role}>Вернуться в кабинет</a></div></header><main className="main-content"><h1>Модерация</h1><div className="button-group"><button className="button secondary" aria-pressed={view==='claims'} onClick={()=>setView('claims')}>Достижения</button><button className="button secondary" aria-pressed={view==='tests'} onClick={()=>setView('tests')}>Тесты</button></div>{view==='tests'?<AssessmentModeration accountId={accountId}/>:<>
     <p className="muted">Проверьте результат в официальном источнике и материалы, подтверждающие принадлежность кандидату. Автоматическая сверка помогает проверке.</p>
     <details className="panel public-source-management"><summary>Сбор из открытых источников</summary>{sourceError&&<p className="form-error" role="alert">{sourceError}</p>}{sources.map(source=><article className="integration-source" key={source.id}><strong>{source.publisher} · {source.title}</strong><p>{source.activeJob?'Обновляется…':source.status==='matched'?'Источник актуален':'Требуется обновление'} · записей: {source.recordCount}</p><p className="field-help">{source.lastSuccessAt?'Последний успешный разбор: '+new Date(source.lastSuccessAt).toLocaleString('ru-RU'):'Успешного разбора пока нет'}{source.lastError?' · '+(source.lastError==='invalid_source_response'?'Формат изменился; нужна проверка парсера':'Источник недоступен'):''}</p><button className="button secondary compact" disabled={busy||!!source.activeJob} onClick={()=>void collect(source.id)}>Обновить источник</button></article>)}</details>
     <div className="moderation-layout"><section className="panel"><h2>Очередь заявок</h2><label className="field"><span>Статус заявки</span><select value={status} onChange={event=>{setStatus(event.target.value as AchievementClaim['status']);setOffset(0);}}>{Object.entries(claimLabels).map(([value,label])=><option value={value} key={value}>{label}</option>)}</select></label>
@@ -65,5 +67,5 @@ export function Moderation({accountId,role}:{accountId:string;role:string}) {
         </div>}
         <details><summary>История действий</summary>{selected.audit?.map(event=><p key={event.id}>{new Date(event.createdAt).toLocaleString('ru-RU')} · {event.action} · версия {event.version}</p>)}</details>
       </>}
-    </section></div></main></div>;
+    </section></div></>}</main></div>;
 }

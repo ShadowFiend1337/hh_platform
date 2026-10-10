@@ -242,7 +242,7 @@ test('remote transport rejects unsafe URLs, limits response sizes and classifies
 });
 
 async function httpFixture(t) {
-  const codes = new Map(); const service = createAssessmentServer({ dbPath: ':memory:', authEnv: {},
+  const codes = new Map(); const service = createAssessmentServer({ assessmentMode: 'legacy', dbPath: ':memory:', authEnv: {},
     authMailer: async ({ email, code }) => codes.set(email, code), integrationOptions: { automatic: false, retryDelayMs: 1,
       providers: [Object.assign(new DemoFspProvider(), { id: 'test-demo' })] } });
   await new Promise(resolve => service.server.listen(0, '127.0.0.1', resolve));

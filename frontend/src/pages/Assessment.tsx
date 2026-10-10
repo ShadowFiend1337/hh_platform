@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowUpRight, BadgeCheck, Ban, Check, ClipboardCheck, Clock3, EyeOff, Fingerprint, Layers, Maximize2, RotateCcw, ShieldAlert, ShieldCheck, Timer } from 'lucide-react';
-import { AssessmentError, answerAssessment, createAssessment, getAssessmentProgram, readAssessment, resumeAssessment, saveAssessment, submitAssessment, type AssessmentAttempt, type AssessmentProgram } from '../assessment';
+import { AssessmentError, answerAssessment, createAssessment, getAssessmentProgram, getAssessmentResult, startAssessment, readAssessment, resumeAssessment, saveAssessment, submitAssessment, type AssessmentAttempt, type AssessmentProgram } from '../assessment';
 import { CandidateSteps } from '../components/CandidateSteps';
 import { CodeDraftBoundary } from '../components/CodeDraftBoundary';
 import { categoryChangeUnlock, currentSurvey, dateLabel, gradeLabels, retakeUnlock, specializationNames, type Grade, type PlatformState, type TestResult } from '../model';
@@ -46,7 +46,8 @@ export function Assessment({ state, update, notify, onProfile, onSurvey, onActiv
   const [selected, setSelected] = useState<string | null>(null);
   const [codeDrafts, setCodeDrafts] = useState<Record<string, CodeDraft>>({});
   const [draftStorageFailed, setDraftStorageFailed] = useState(false);
-  const [result, setResult] = useState<TestResult | null>(null);
+  const [result, setResult] = useState<TestResult | null>(() => !readAssessment() ? state.history.find(r => r.status === 'pending-review' && r.surveyId === currentSurvey(state)?.id) || null : null);
+  const [answerDrafts, setAnswerDrafts] = useState<Record<string,string>>({});
   const [program, setProgram] = useState<AssessmentProgram | null>(null);
   const [programBusy, setProgramBusy] = useState(true);
   const [programError, setProgramError] = useState('');
@@ -77,6 +78,10 @@ export function Assessment({ state, update, notify, onProfile, onSurvey, onActiv
   const total = session?.questionCount || session?.questions.length || 0;
   const position = session?.position ?? 0;
   const current = session?.questions[position];
+  const isOpen = current?.type === 'open';
+  const active = !!session && (!session.status || session.status === 'active');
+  const answerText = current ? [answerDrafts[current.id] || '', codeDrafts[current.id]?.source ? '\n```' + codeDrafts[current.id].language + '\n' + codeDrafts[current.id].source + '\n```' : ''].join('').trim() : '';
+  const answerTextRef = useRef(answerText); answerTextRef.current = answerText;
   const unlock = categoryChangeUnlock(state.profile, specialization, grade);
   const retake = retakeUnlock(state.history, specialization, grade, Date.now(), program?.retryDays ?? 7);
   const locked = unlock > Date.now() || Boolean(retake);
@@ -84,28 +89,21 @@ export function Assessment({ state, update, notify, onProfile, onSurvey, onActiv
   const mark = useMemo(() => watermark(`${watermarkLabel || 'predel'} · ${session?.id.slice(0, 8) || ''}`), [watermarkLabel, session?.id]);
 
   useEffect(() => {
-    onActiveChange?.(!!session && !result);
+    onActiveChange?.(active && !result);
     return () => onActiveChange?.(false);
-  }, [session, result, onActiveChange]);
+  }, [active, result, onActiveChange]);
 
   const receiveResult = useCallback((attempt: TestResult, expectedSurveyId: string) => {
     clearAssessmentGuard(attempt.id);
     leaveFullscreen();
-    const latestState = stateRef.current;
-    if (attempt.surveyId !== expectedSurveyId || currentSurvey(latestState)?.id !== expectedSurveyId
-      || attempt.passed && categoryChangeUnlock(latestState.profile, attempt.specialization, attempt.grade) > Date.now()) {
-      saveAssessment(null); setSession(null); setCodeDrafts({});
-      setError('Анкета изменилась. Пройдите тест заново.');
-      return;
-    }
+    if (attempt.surveyId !== expectedSurveyId) return;
     update(previousState => {
-      if (previousState.history.some(item => item.id === attempt.id) || currentSurvey(previousState)?.id !== expectedSurveyId) return previousState;
-      if (attempt.passed && categoryChangeUnlock(previousState.profile, attempt.specialization, attempt.grade) > Date.now()) return previousState;
+      const canConfirm = attempt.passed && currentSurvey(previousState)?.id === expectedSurveyId && categoryChangeUnlock(previousState.profile, attempt.specialization, attempt.grade) <= Date.now();
       const confirmed = previousState.profile.confirmed;
       const changed = !confirmed || confirmed.grade !== attempt.grade || confirmed.specialization !== attempt.specialization;
       return {
-        ...previousState, history: [attempt, ...previousState.history],
-        profile: attempt.passed ? {
+        ...previousState, history: [attempt, ...previousState.history.filter(r => r.id !== attempt.id)],
+        profile: canConfirm ? {
           ...previousState.profile,
           confirmed: { specialization: attempt.specialization, grade: attempt.grade, score: attempt.score, date: attempt.date, surveyId: expectedSurveyId },
           gradeChangedAt: changed ? attempt.date : previousState.profile.gradeChangedAt || confirmed?.date,
@@ -113,7 +111,7 @@ export function Assessment({ state, update, notify, onProfile, onSurvey, onActiv
       };
     });
     saveAssessment(null); setResult(attempt); setSession(null); setSelected(null); setCodeDrafts({}); setError('');
-    notify(attempt.annulled ? 'Попытка аннулирована' : 'Результат сохранён');
+    notify(attempt.status === 'pending-review' ? 'Тест отправлен модератору' : attempt.annulled ? 'Попытка аннулирована' : 'Результат сохранён');
   }, [update, notify]);
 
   const guard = useAssessmentGuard(session, busy === 'submitting', protectedContent, {
@@ -147,13 +145,14 @@ export function Assessment({ state, update, notify, onProfile, onSurvey, onActiv
       if (attempt.surveyId !== saved.surveyId || currentSurvey(stateRef.current)?.id !== saved.surveyId) {
         saveAssessment(null); setResumePending(false); return;
       }
-      if (attempt.status === 'completed' && attempt.result) receiveResult(attempt.result, saved.surveyId);
+      if (attempt.result) receiveResult(attempt.result, saved.surveyId);
       else {
         const currentQuestion = attempt.questions[attempt.position ?? 0];
         const restored = currentQuestion && saved.answers[currentQuestion.id];
         setSession({ ...attempt, token: saved.token });
         setSelected(currentQuestion?.options.some(option => option.id === restored) ? restored : null);
         setCodeDrafts(readCodeDrafts(saved.codeDrafts, attempt.questions.map(question => question.id)));
+        setAnswerDrafts(saved.answerDrafts || {});
         setResult(null);
       }
       setResumePending(false);
@@ -169,12 +168,12 @@ export function Assessment({ state, update, notify, onProfile, onSurvey, onActiv
 
   useEffect(() => {
     if (session) setDraftStorageFailed(!saveAssessment({ id: session.id, token: session.token, surveyId: session.surveyId,
-      answers: current && selected ? { [current.id]: selected } : {}, index: position, codeDrafts }));
-  }, [session, current, selected, position, codeDrafts]);
+      answers: current && selected ? { [current.id]: selected } : {}, index: position, codeDrafts, answerDrafts }));
+  }, [session, current, selected, position, codeDrafts, answerDrafts]);
 
   // Whole-attempt deadline, measured from the server clock.
   useEffect(() => {
-    if (!session || !session.serverNow) { deadlineRef.current = null; return; }
+    if (!active || !session || !session.serverNow) { deadlineRef.current = null; return; }
     const expiresAt = Date.parse(session.expiresAt);
     const serverNow = Date.parse(session.serverNow);
     if (!Number.isFinite(expiresAt) || !Number.isFinite(serverNow)) return;
@@ -194,13 +193,13 @@ export function Assessment({ state, update, notify, onProfile, onSurvey, onActiv
     checkDeadline();
     const timer = window.setInterval(checkDeadline, 1000);
     return () => window.clearInterval(timer);
-  }, [session, busy]);
+  }, [session, busy, active]);
 
   useEffect(() => () => actionController.current?.abort(), []);
 
   // A restored attempt whose answers are all locked only needs grading.
   useEffect(() => {
-    if (!session || !total || position < total || busy || actionController.current || autoGraded.current === session.id) return;
+    if (!active || !session || !total || position < total || busy || actionController.current || autoGraded.current === session.id) return;
     autoGraded.current = session.id;
     void finish(session);
   });
@@ -215,7 +214,7 @@ export function Assessment({ state, update, notify, onProfile, onSurvey, onActiv
       if (controller.signal.aborted) return;
       try {
         const recovered = await resumeAssessment({ id: attempt.id, token: attempt.token, surveyId: attempt.surveyId, answers: {}, index: 0 }, controller.signal);
-        if (!controller.signal.aborted && recovered.status === 'completed' && recovered.result) { receiveResult(recovered.result, attempt.surveyId); return; }
+        if (!controller.signal.aborted && recovered.result) { receiveResult(recovered.result, attempt.surveyId); return; }
       } catch { /* Keep the attempt available for a manual retry. */ }
       if (unavailableAttempt(reason)) { saveAssessment(null); setSession(null); setCodeDrafts({}); leaveFullscreen(); }
       setError(errorMessage(reason));
@@ -231,7 +230,7 @@ export function Assessment({ state, update, notify, onProfile, onSurvey, onActiv
     setBusy('answering'); setError('');
     let next: AssessmentAttempt | null = null;
     try {
-      const response = await answerAssessment(session, current.id, optionId, controller.signal);
+      const response = await answerAssessment(session, current.id, optionId, controller.signal, isOpen && optionId !== null ? answerTextRef.current : null);
       if (controller.signal.aborted) return;
       next = { ...response, token: session.token };
       setSession(next); setSelected(null);
@@ -240,7 +239,7 @@ export function Assessment({ state, update, notify, onProfile, onSurvey, onActiv
       if (reason instanceof AssessmentError && reason.status === 409) {
         try {
           const restored = await resumeAssessment({ id: session.id, token: session.token, surveyId: session.surveyId, answers: {}, index: 0 }, controller.signal);
-          if (restored.status === 'completed' && restored.result) { receiveResult(restored.result, session.surveyId); return; }
+          if (restored.result) { receiveResult(restored.result, session.surveyId); return; }
           setSession({ ...restored, token: session.token }); setSelected(null);
         } catch { setError(errorMessage(reason)); }
       } else {
@@ -252,7 +251,7 @@ export function Assessment({ state, update, notify, onProfile, onSurvey, onActiv
       if (!controller.signal.aborted) setBusy(null);
     }
     if (next?.complete) { autoGraded.current = next.id; await finish(next); }
-  }, [session, current, receiveResult]);
+  }, [session, current, receiveResult, isOpen]);
 
   // Per-question countdown from the server deadline; at zero the current choice is locked.
   useEffect(() => {
@@ -266,7 +265,7 @@ export function Assessment({ state, update, notify, onProfile, onSurvey, onActiv
       setRemainingSeconds(left);
       if (left <= 0 && !actionController.current && expiredQuestion.current !== key) {
         expiredQuestion.current = key;
-        void answer(selectedRef.current);
+        void answer(current.type === 'open' ? (answerTextRef.current && answerTextRef.current.length <= 12000 ? 'open' : null) : selectedRef.current);
       }
     };
     tick();
@@ -278,7 +277,7 @@ export function Assessment({ state, update, notify, onProfile, onSurvey, onActiv
     if (!survey || locked || !program || resumeBusy || resumePending || actionController.current) return;
     if (!rulesAccepted) return;
     // Full screen needs the click's user activation, so it is requested before the network call.
-    await enterFullscreen();
+    if (!program?.closedCount) await enterFullscreen();
     const controller = new AbortController(); actionController.current = controller;
     setBusy('starting'); setError(''); setServerLock(null);
     try {
@@ -286,7 +285,7 @@ export function Assessment({ state, update, notify, onProfile, onSurvey, onActiv
       if (controller.signal.aborted) return;
       if (currentSurvey(stateRef.current)?.id !== survey.id) { setError('Анкета изменилась. Пройдите тест заново.'); leaveFullscreen(); return; }
       saveAssessment({ id: attempt.id, token: attempt.token, surveyId: attempt.surveyId, answers: {}, index: 0 });
-      setSession(attempt); setSelected(null); setCodeDrafts({}); setResult(null);
+      setSession(attempt); setSelected(null); setCodeDrafts({}); setAnswerDrafts({}); setResult(null);
     } catch (reason) {
       if (!controller.signal.aborted) {
         leaveFullscreen();
@@ -299,21 +298,69 @@ export function Assessment({ state, update, notify, onProfile, onSurvey, onActiv
     }
   }
 
+  useEffect(() => {
+    if (session?.status !== 'preparing') return;
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      resumeAssessment({id:session.id,token:session.token,surveyId:session.surveyId,answers:{},index:0},controller.signal)
+        .then(value => { if (!controller.signal.aborted) {setSession({...value,token:session.token});setError('');} })
+        .catch(cause => { if (!controller.signal.aborted) {setError(errorMessage(cause)); if(unavailableAttempt(cause)){saveAssessment(null);setSession(null);} else setSession({...session});} });
+    },2000);
+    return () => {controller.abort();clearTimeout(timer);};
+  },[session]);
+  useEffect(() => {
+    if (session || result || resumeBusy || busy) return;
+    const pending = state.history.find(r => r.status === 'pending-review' && r.surveyId === surveyId);
+    if (pending) setResult(pending);
+  },[state.history, surveyId, session, result, resumeBusy, busy]);
+  useEffect(() => {
+    if (result?.status !== 'pending-review') return;
+    const controller = new AbortController();
+    const timer = setTimeout(() => { getAssessmentResult(result.id,controller.signal).then(value => {
+      if (!controller.signal.aborted) { if(value.status !== 'pending-review') receiveResult(value,result.surveyId || ''); else setResult(value); }
+    }).catch(cause => { if (!controller.signal.aborted) {setError(errorMessage(cause));setResult({...result});} }); },10000);
+    return () => {controller.abort();clearTimeout(timer);};
+  },[result,receiveResult]);
+  async function beginPrepared() {
+    if (!session || busy) return;
+    await enterFullscreen(); setBusy('starting');setError('');
+    try {const value = await startAssessment(session);setSession({...value,token:session.token});}
+    catch(cause){leaveFullscreen();setError(errorMessage(cause));}
+    finally{setBusy(null);}
+  }
+
   const lowerGrades = (serverLock?.lowerGrades as Grade[] | undefined) || retake?.lowerGrades || [];
   const retryAt = serverLock?.retryAt ? Date.parse(serverLock.retryAt) : retake?.until;
   const warning = remainingSeconds !== null && remainingSeconds <= 20;
+  const resultConfirmsCategory = result && state.profile.confirmed?.date === result.date
+    && state.profile.confirmed.specialization === result.specialization && state.profile.confirmed.grade === result.grade;
 
   return <>
     {initialPath && <CandidateSteps step={result?.passed ? 2 : 1} />}
     <div className="page-heading"><h1>Тестирование</h1></div>
     {error && <div className="assessment-error" role="alert"><span>{error}</span>{resumePending && !resumeBusy && <button className="text-button" onClick={() => setResumeVersion(value => value + 1)}>Восстановить тест</button>}</div>}
     {resumeBusy ? <section className="panel" aria-busy="true"><p className="muted">Восстанавливаем тест…</p></section>
-      : result ? <section className="panel assessment-result">
+      : result && ['pending-review','invalidated'].includes(result.status || '') ? <section className="panel assessment-result">
+        <ClipboardCheck size={34} /><h2>{result.status === 'pending-review' ? 'Тест на ручной проверке' : 'Попытка отозвана'}</h2>
+        <p>{result.status === 'pending-review' ? 'Модератор проверит пять развёрнутых ответов. Закрытая и открытая части дают по 50% итоговой оценки. Результат обновится автоматически.' : 'В заданиях обнаружена проблема. Можно начать новую попытку без ожидания.'}</p>
+        {result.review?.comment && <p>{result.review.comment}</p>}
+        <button className="button secondary" onClick={onProfile}>К профилю</button>
+        {result.status === 'invalidated' && <button className="button primary" onClick={() => setResult(null)}>К программе теста</button>}
+      </section> : session && ['preparing','ready','failed'].includes(session.status || '') ? <section className="panel" aria-busy={session.status === 'preparing'}>
+        <h2>{session.status === 'ready' ? 'Тест готов' : session.status === 'failed' ? 'Не удалось подготовить тест' : 'Готовим задания'}</h2>
+        <p>{session.status === 'preparing' ? `Подготовлено кейсов: ${session.generation?.done || 0} из ${session.generation?.total || 13}. Таймер решения ещё не запущен.` : session.status === 'ready' ? '15 закрытых вопросов и 5 развёрнутых задач. Таймер начнётся после нажатия кнопки.' : session.preparationError}</p>
+        {session.status === 'ready' && <button className="button primary" disabled={!!busy} onClick={() => void beginPrepared()}>Начать решение</button>}
+        {session.status === 'failed' && <button className="button primary" onClick={() => {saveAssessment(null);setSession(null);}}>Создать заново</button>}
+      </section> : result ? <section className="panel assessment-result">
         <div className={'result-icon ' + (result.passed ? 'result-passed' : result.annulled ? 'result-annulled' : '')}>{result.passed ? <BadgeCheck size={34} /> : result.annulled ? <ShieldAlert size={32} /> : <RotateCcw size={30} />}</div>
         {!result.annulled && <span className="result-score">{result.score}<small>/100</small></span>}
-        <h2>{result.annulled ? 'Попытка аннулирована' : result.passed ? 'Грейд подтверждён' : 'Грейд не подтверждён'}</h2>
+        <h2>{result.annulled ? 'Попытка аннулирована' : result.passed ? resultConfirmsCategory ? 'Грейд подтверждён' : 'Тест пройден' : 'Грейд не подтверждён'}</h2>
         <p className="muted">{specializationNames[result.specialization]} · {gradeLabels[result.grade]}</p>
+        {result.passed && !resultConfirmsCategory && <p className="result-note">Результат сохранён. Текущая анкета или срок смены категории не позволяют обновить грейд.</p>}
         {result.annulled && <p className="result-note">Зафиксировано {result.integrity?.departures ?? maxStrikes} ухода со страницы теста. Повтор на этот грейд — через {program?.retryDays ?? 7} дн.{state.profile.confirmed ? '' : ', тест на грейд ниже доступен сразу'}.</p>}
+        {result.review?.comment && <p className="result-note">{result.review.comment}</p>}
+        {result.review?.answers.map((a,i)=>a.comment && <p key={a.questionId}>Комментарий к открытому ответу {i+1}: {a.comment}</p>)}
+        {result.openScore !== undefined && <p>Закрытая часть: {result.closedScore}/100 · Открытая часть: {result.openScore}/100 · веса 50/50</p>}
         {result.competencies?.length ? <dl className="competency-results">{result.competencies.map(item => <div key={item.topic}><dt>{item.topic}</dt><dd>{item.score}/100</dd></div>)}</dl> : null}
         {!!result.timeouts && !result.annulled && <p className="field-help">Без ответа или после лимита времени: {result.timeouts}.</p>}
         {result.nextGradeAvailable && <div className="next-grade-offer"><ArrowUpRight size={18} /><span>Уверенный результат: тест на {gradeLabels[result.nextGradeAvailable]} доступен без ожидания.</span><button className="text-button" onClick={onSurvey}>Выбрать грейд</button></div>}
@@ -342,21 +389,21 @@ export function Assessment({ state, update, notify, onProfile, onSurvey, onActiv
           <button className="button primary" onClick={() => void guard.continueTest()}>Вернуться к тесту</button>
         </div> : guard.shielded ? <div className="exam-focus-cover" role="status"><EyeOff size={28} className="exam-cover-icon" /><h2>Снимок экрана недоступен</h2><p className="muted">Попытка отмечена в журнале контроля.</p></div> : <>
           <div className="exam-protected-content" ref={protectedContent} style={{ backgroundImage: mark }}>
-            <span className="question-topic">{current.topic}</span><h2 className="question-text">{current.text}</h2>
-            <fieldset className="answer-options" disabled={!!busy}><legend className="sr-only">Варианты ответа</legend>{current.options.map(option => <label key={option.id} className={'answer-option' + (selected === option.id ? ' selected' : '')}><input type="radio" name={current.id} checked={selected === option.id} onChange={() => setSelected(option.id)} /><span>{option.text}</span>{selected === option.id && <Check size={17} />}</label>)}</fieldset>
+            <span className="question-topic">{current.topic}</span>{current.context && <p className="body-copy" style={{whiteSpace:'pre-wrap'}}>{current.context}</p>}<h2 className="question-text">{current.text}</h2>
+            {isOpen ? <label className="field"><span>Развёрнутый ответ</span><textarea aria-label="Развёрнутый ответ" rows={10} maxLength={12000} disabled={!!busy} value={answerDrafts[current.id] || ''} onChange={event => setAnswerDrafts(previous => ({...previous,[current.id]:event.target.value}))} /><span className="field-help">Обоснуйте решение. Ответ вместе с кодом: {answerText.length}/12000 символов.</span></label> : <fieldset className="answer-options" disabled={!!busy}><legend className="sr-only">Варианты ответа</legend>{current.options.map(option => <label key={option.id} className={'answer-option' + (selected === option.id ? ' selected' : '')}><input type="radio" name={current.id} checked={selected === option.id} onChange={() => setSelected(option.id)} /><span>{option.text}</span>{selected === option.id && <Check size={17} />}</label>)}</fieldset>}
           </div>
           {codeLanguage && <details className="exam-code-draft" key={session.id + ':' + current.id} open={['ML', 'DataAnalysis', 'DataEngineering'].includes(specialization)}>
-            <summary>Черновик кода</summary>
-            <p className="field-help">Сохраняется в этой вкладке и не оценивается. Для оценки выберите вариант ответа.</p>
+            <summary>{isOpen ? 'Код в ответе' : 'Черновик кода'}</summary>
+            <p className="field-help">{isOpen ? 'Код будет отправлен модератору вместе с объяснением решения.' : 'Сохраняется в этой вкладке и не оценивается. Для оценки выберите вариант ответа.'}</p>
             <CodeDraftBoundary><Suspense fallback={<p className="field-help" role="status">Загружаем редактор…</p>}>
-              <CodeEditor value={codeDrafts[current.id] || { language: codeLanguage, source: '' }} disabled={!!busy}
+              <CodeEditor value={codeDrafts[current.id] || { language: codeLanguage, source: '' }} disabled={!!busy} graded={isOpen}
                 onChange={draft => setCodeDrafts(previous => ({ ...previous, [current.id]: draft }))} />
             </Suspense></CodeDraftBoundary>
             {draftStorageFailed && <p className="field-help" role="alert">Черновик не сохранён. Оставьте вкладку открытой.</p>}
           </details>}
           <div className="exam-actions">
             <button className="text-button" disabled={!!busy} onClick={() => void answer(null)}>Пропустить вопрос</button>
-            <button className="button primary" disabled={!selected || !!busy} onClick={() => void answer(selected)}>{busy === 'submitting' ? 'Проверяем…' : busy === 'answering' ? 'Сохраняем…' : position === total - 1 ? 'Завершить тест' : 'Ответить'}</button>
+            <button className="button primary" disabled={(isOpen ? !answerText || answerText.length > 12000 : !selected) || !!busy} onClick={() => void answer(isOpen ? 'open' : selected)}>{busy === 'submitting' ? 'Проверяем…' : busy === 'answering' ? 'Сохраняем…' : position === total - 1 ? 'Завершить тест' : 'Ответить'}</button>
           </div>
           <p className="exam-footnote">Ответ фиксируется сразу — вернуться к вопросу нельзя.</p>
         </>}
@@ -369,9 +416,10 @@ export function Assessment({ state, update, notify, onProfile, onSurvey, onActiv
       </section> : <div className="assessment-layout">
         <section className="panel assessment-setup"><div className="assessment-category"><strong>{specializationNames[specialization]} · {gradeLabels[grade]}</strong><button className="text-button" onClick={onSurvey}>Изменить анкету</button></div>
           {programBusy ? <p className="muted" role="status">Загружаем программу…</p> : programError ? <div className="assessment-error" role="alert"><span>{programError}</span><button className="text-button" onClick={() => setProgramVersion(value => value + 1)}>Повторить</button></div> : program && <>
-            <div className="assessment-info"><div><ClipboardCheck size={18} /><span>{program.questionCount} вопросов</span></div><div><Clock3 size={18} /><span>{Math.round(program.questionSeconds / 60)} мин на вопрос</span></div><div><BadgeCheck size={18} /><span>Порог {program.threshold}/100</span></div></div>
+            <div className="assessment-info"><div><ClipboardCheck size={18} /><span>{program.closedCount ? `${program.closedCount} закрытых + ${program.openCount} открытых` : `${program.questionCount} вопросов`}</span></div><div><Clock3 size={18} /><span>{Math.round(program.questionSeconds / 60)} мин на вопрос</span></div><div><BadgeCheck size={18} /><span>Порог {program.threshold}/100</span></div></div>
             <h2 className="section-heading">Программа</h2><div className="competency-list">{program.topics.map(topic => <div key={topic}><Check size={15} />{topic}</div>)}</div>
-            <p className="assessment-bank"><Layers size={15} />Банк: {program.bank.authored} авторских заданий{program.bank.generated && program.bank.generated.active + program.bank.generated.pilot > 0 ? ` и ${program.bank.generated.active + program.bank.generated.pilot} сгенерированных` : ''}. Каждый кандидат получает свой набор равной сложности.</p>
+            <p className="assessment-bank"><Layers size={15} />Банк: {program.bank.authored} авторских заданий{program.bank.generated && program.bank.generated.active + program.bank.generated.pilot > 0 ? ` и ${program.bank.generated.active + program.bank.generated.pilot} сгенерированных` : ''}. Варианты сохраняют логику исходных кейсов. Модератор проверяет решения и соответствие грейду.</p>
+            {program.closedCount && <p className="field-help">Веса: 50% закрытые / 50% открытые. На открытую задачу — {program.openMinutes?.min}–{program.openMinutes?.max} мин. Итоговая оценка — после ручной проверки.</p>}
             <details className="vacancy-builder"><summary>По вакансии</summary><label className="field"><span>Описание вакансии</span><textarea value={vacancyDescription} onChange={event => setVacancyDescription(event.target.value)} maxLength={4000} rows={4} placeholder="Роль, стек и задачи" disabled={busy === 'starting'} /></label>
               <div className="vacancy-examples">{program.examples.map(example => <button type="button" className="filter-chip" key={example.id} onClick={() => setVacancyDescription(example.description)} disabled={busy === 'starting'}>{example.title}</button>)}</div>
             </details>
@@ -380,7 +428,7 @@ export function Assessment({ state, update, notify, onProfile, onSurvey, onActiv
               <ul>
                 <li><Maximize2 size={16} /><span>Тест идёт в полноэкранном режиме{fullscreenSupported() ? '' : ' (в этом браузере недоступен — следите за вкладкой)'}.</span></li>
                 <li><EyeOff size={16} /><span>Переход на другую вкладку, в другое окно или выход из полноэкранного режима — нарушение. После {program.maxDepartures}-го попытка аннулируется.</span></li>
-                <li><Timer size={16} /><span>На каждый вопрос — {Math.round(program.questionSeconds / 60)} минуты. Вопросы показываются по одному, вернуться к прошлому нельзя.</span></li>
+                <li><Timer size={16} /><span>На закрытый вопрос — {Math.round(program.questionSeconds / 60)} мин.{program.openMinutes ? ` На открытую задачу — ${program.openMinutes.min}–${program.openMinutes.max} мин.` : ''} Вопросы показываются по одному, вернуться к прошлому нельзя.</span></li>
                 <li><Ban size={16} /><span>Копирование, вставка, печать, снимки экрана и инструменты разработчика отключены.</span></li>
                 <li><Fingerprint size={16} /><span>Вопросы помечены водяным знаком вашей попытки.</span></li>
               </ul>

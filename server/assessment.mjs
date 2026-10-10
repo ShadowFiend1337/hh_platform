@@ -131,7 +131,7 @@ export function createAttempt(surveyInput, vacancyDescription = '', recent = [],
 }
 
 export function emptyProgress(attempt) {
-  return { answers: {}, revealedAt: { [attempt.questions[0].id]: attempt.createdAt } };
+  return { answers: {}, revealedAt: attempt.questions.length ? { [attempt.questions[0].id]: attempt.createdAt } : {} };
 }
 
 function answeredCount(progress) {
@@ -151,7 +151,8 @@ export function publicAttempt(attempt, progress = null) {
   const current = sequential ? attempt.questions[position] : null;
   return { id, bankVersion, specialization, grade, surveyId, createdAt, expiresAt, blueprint, vacancy,
     delivery: sequential ? 'sequential' : 'all', questionCount: attempt.questions.length,
-    questions: visible.map(({ id, topic, text, options }) => ({ id, topic, text, options })),
+    questions: visible.map(({ id, topic, text, options, type, context, title, answerFormat, timeLimitSec }) => ({ id, topic, text, options,
+      ...(type ? { type, context, title, answerFormat, timeLimitSec } : {}) })),
     ...(sequential ? {
       position, questionSeconds: attempt.questionSeconds || questionSeconds,
       answeredIds: Object.keys(state.answers),
@@ -166,27 +167,33 @@ export function publicAttempt(attempt, progress = null) {
  */
 export function recordAnswer(attempt, progressInput, input, now = Date.now()) {
   if (now >= Date.parse(attempt.expiresAt)) throw new RequestError(410, 'Время теста истекло. Начните новую попытку.');
-  if (!input || typeof input !== 'object' || Object.keys(input).some(key => !['token', 'questionId', 'optionId'].includes(key))) {
+  if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(key => !['token', 'questionId', 'optionId', 'answerText'].includes(key))) {
     throw new RequestError(400, 'Некорректный ответ.');
   }
   const progress = structuredClone(progressInput || emptyProgress(attempt));
   const position = answeredCount(progress);
+  const target = attempt.questions.find(q => q.id === input.questionId);
+  if (!target) throw new RequestError(400, 'Ответ не относится к этой попытке.');
+  const open = target.type === 'open';
+  if (open ? Object.hasOwn(input, 'optionId') : Object.hasOwn(input, 'answerText')) throw new RequestError(400, 'Неверный формат ответа.');
+  if (open && input.answerText != null && (typeof input.answerText !== 'string' || input.answerText.length > 12000)) throw new RequestError(400, 'Ответ — до 12000 символов.');
+  const key = open ? 'answerText' : 'optionId', value = input[key] ?? null;
+  if (progress.answers[input.questionId]) {
+    if (progress.answers[input.questionId][key] === value) return { progress, changed: false };
+    throw new RequestError(409, 'Ответ уже зафиксирован. Вернуться к вопросу нельзя.');
+  }
   const question = attempt.questions[position];
   if (!question) throw new RequestError(409, 'Все ответы уже получены.');
   if (input.questionId !== question.id) {
-    if (progress.answers[input.questionId]) {
-      if (progress.answers[input.questionId].optionId === (input.optionId ?? null)) return { progress, changed: false };
-      throw new RequestError(409, 'Ответ уже зафиксирован. Вернуться к вопросу нельзя.');
-    }
     throw new RequestError(409, 'Сначала ответьте на текущий вопрос.');
   }
-  if (input.optionId !== null && input.optionId !== undefined && !question.options.some(option => option.id === input.optionId)) {
+  if (!open && value !== null && !question.options.some(option => option.id === value)) {
     throw new RequestError(400, 'Ответ не относится к этой попытке.');
   }
   const revealed = Date.parse(progress.revealedAt[question.id] || attempt.createdAt);
   const ms = Math.max(0, now - revealed);
   const late = ms > (question.timeLimitSec || questionSeconds) * 1000 + answerGraceMs;
-  progress.answers[question.id] = { optionId: input.optionId ?? null, answeredAt: new Date(now).toISOString(), ms, late };
+  progress.answers[question.id] = { [key]: value, answeredAt: new Date(now).toISOString(), ms, late };
   const next = attempt.questions[position + 1];
   if (next) progress.revealedAt[next.id] = new Date(now).toISOString();
   return { progress, changed: true, complete: !next };
@@ -274,7 +281,7 @@ export const retryDays = (env = process.env) => {
 export function retakeLock(completed, specialization, grade, now, days) {
   if (!days) return null;
   const rank = gradeOrder.indexOf(grade);
-  const blocking = completed.filter(row => row.result && !row.result.passed && row.result.specialization === specialization
+  const blocking = completed.filter(row => row.result && !['pending-review', 'invalidated'].includes(row.result.status) && !row.result.passed && row.result.specialization === specialization
     && gradeOrder.indexOf(row.result.grade) <= rank && now < Date.parse(row.result.date) + days * 86400000);
   if (!blocking.length) return null;
   const until = Math.max(...blocking.map(row => Date.parse(row.result.date) + days * 86400000));

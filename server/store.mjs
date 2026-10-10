@@ -48,6 +48,10 @@ export function openStore(path) {
       return row ? { ...row, attempt: JSON.parse(row.payload), result: row.result ? JSON.parse(row.result) : null,
         progress: row.progress ? JSON.parse(row.progress) : null } : null;
     },
+    updateAttempt(attempt, expectedState) {
+      return db.prepare("UPDATE attempts SET payload=?,expires_at=? WHERE id=? AND result IS NULL AND json_extract(payload,'$.state')=?")
+        .run(JSON.stringify(attempt), attempt.expiresAt, attempt.id, expectedState).changes === 1;
+    },
     completed(owner) {
       return db.prepare(`SELECT id,owner,specialization,grade,created_at,result,json_extract(payload,'$.surveyId') AS survey_id
         FROM attempts WHERE owner = ? AND result IS NOT NULL ORDER BY created_at DESC, rowid DESC LIMIT 500`)
@@ -60,7 +64,7 @@ export function openStore(path) {
         .all(owner, specialization, grade, limit).map(row => JSON.parse(row.payload));
     },
     activeAttempt(owner, nowText) {
-      return db.prepare('SELECT id FROM attempts WHERE owner = ? AND result IS NULL AND expires_at > ? LIMIT 1').get(owner, nowText) || null;
+      return db.prepare("SELECT id FROM attempts WHERE owner = ? AND result IS NULL AND expires_at > ? AND COALESCE(json_extract(payload,'$.state'),'active')='active' LIMIT 1").get(owner, nowText) || null;
     },
     countSince(owner, date) {
       return db.prepare('SELECT COUNT(*) AS count FROM attempts WHERE owner = ? AND created_at >= ?').get(owner, date).count;

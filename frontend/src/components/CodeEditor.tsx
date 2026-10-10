@@ -36,10 +36,11 @@ const editorTheme = EditorView.theme({
   '.cm-placeholder': { color: '#777d89' },
 });
 
-export default function CodeEditor({ value, onChange, disabled = false }: {
+export default function CodeEditor({ value, onChange, disabled = false, graded = false }: {
   value: CodeDraft;
   onChange: (value: CodeDraft) => void;
   disabled?: boolean;
+  graded?: boolean;
 }) {
   const id = useId();
   const helpId = id + '-help';
@@ -137,7 +138,7 @@ export default function CodeEditor({ value, onChange, disabled = false }: {
 
   return <div className={'code-editor' + (disabled ? ' code-editor-readonly' : '')}>
     <div className="code-editor-toolbar">
-      <span className="code-editor-note">Не оценивается</span>
+      <span className="code-editor-note">{graded ? 'Входит в ответ' : 'Не оценивается'}</span>
       <div className="code-editor-controls">
         <label className="code-editor-language" htmlFor={id + '-language'}><span>Язык</span>
           <select id={id + '-language'} aria-label="Язык кода" value={value.language} disabled={disabled} onChange={event => changeLanguage(event.target.value)}>

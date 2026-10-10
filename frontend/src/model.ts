@@ -14,6 +14,10 @@ export type InvitationStatus = 'sent' | 'viewed' | 'accepted' | 'rejected';
 export type Page = 'candidates' | 'invitations' | 'company' | 'profile' | 'assessment' | 'onboarding';
 
 export interface TestResult {
+  status?: 'pending-review' | 'completed' | 'invalidated';
+  closedScore?: number;
+  openScore?: number;
+  review?: { reviewedAt: string; comment: string; answers: {questionId: string; comment: string; score: number}[] };
   id: string;
   date: string;
   specialization: Specialization;
@@ -258,7 +262,7 @@ export function categoryChangeUnlock(profile: Candidate, specialization: Special
 export function retakeUnlock(history: TestResult[], specialization: Specialization, grade: Grade, now = Date.now(), days = retryDays): { until: number; lowerGrades: Grade[] } | null {
   if (!days) return null;
   const rank = gradeOrder.indexOf(grade);
-  const blocking = history.filter(result => !result.passed && result.specialization === specialization
+  const blocking = history.filter(result => !['pending-review','invalidated'].includes(result.status || '') && !result.passed && result.specialization === specialization
     && gradeOrder.indexOf(result.grade) <= rank && now < Date.parse(result.date) + days * 86400000);
   if (!blocking.length) return null;
   const lowest = Math.min(...blocking.map(result => gradeOrder.indexOf(result.grade)));

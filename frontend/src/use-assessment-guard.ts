@@ -53,7 +53,7 @@ export function useAssessmentGuard(
   contentRef: RefObject<HTMLDivElement | null>,
   { onAnnulled }: { onAnnulled?: (result: TestResult) => void } = {},
 ) {
-  const active = attempt && attempt.status !== 'completed' ? attempt : null;
+  const active = attempt && (!attempt.status || attempt.status === 'active') ? attempt : null;
   const attemptId = active?.id || null;
   const activeRef = useRef(active);
   const submittingRef = useRef(submitting);
@@ -148,7 +148,7 @@ export function useAssessmentGuard(
   const paused = !!attemptId && pausedId === attemptId;
   useEffect(() => {
     if (!attemptId) return;
-    const inEditor = (target: EventTarget | null) => target instanceof Element && Boolean(target.closest('.cm-editor'));
+    const inEditor = (target: EventTarget | null) => target instanceof Element && Boolean(target.closest('.cm-editor, textarea'));
     const block = (event: Event) => {
       if (!activeRef.current) return;
       if (event.type === 'selectstart' && inEditor(event.target)) return;

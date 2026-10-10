@@ -45,7 +45,7 @@ function assertBlueprint(attempt, program) {
 }
 async function startServer(t, options = {}) {
   const codes = new Map();
-  const service = createAssessmentServer({ dbPath: ':memory:', authEnv: {}, authMailer: async ({ email, code }) => { codes.set(email, code); }, ...options });
+  const service = createAssessmentServer({ assessmentMode: 'legacy', dbPath: ':memory:', authEnv: {}, authMailer: async ({ email, code }) => { codes.set(email, code); }, ...options });
   service.server.listen(0, '127.0.0.1');
   await once(service.server, 'listening');
   t.after(() => new Promise((resolveClose, reject) => service.server.close(error => error ? reject(error) : resolveClose())));
@@ -377,7 +377,7 @@ test('SQLite keeps private attempts, owner restrictions and immutable results ac
   const dbPath = join(directory, 'attempts.sqlite');
   const codes = new Map();
   const mailer = async ({ email, code }) => { codes.set(email, code); };
-  const first = createAssessmentServer({ dbPath, now: () => initialTime, authEnv: {}, authMailer: mailer });
+  const first = createAssessmentServer({ assessmentMode: 'legacy', dbPath, now: () => initialTime, authEnv: {}, authMailer: mailer });
   openServers.push(first.server);
   first.server.listen(0, '127.0.0.1'); await once(first.server, 'listening');
   const firstBase = `http://127.0.0.1:${first.server.address().port}`;
@@ -391,7 +391,7 @@ test('SQLite keeps private attempts, owner restrictions and immutable results ac
   });
   assert.equal(submit.status, 200); const result = await submit.json();
   await new Promise((resolveClose, reject) => first.server.close(error => error ? reject(error) : resolveClose()));
-  const reopened = createAssessmentServer({ dbPath, now: () => initialTime + 1000, authEnv: {}, authMailer: mailer });
+  const reopened = createAssessmentServer({ assessmentMode: 'legacy', dbPath, now: () => initialTime + 1000, authEnv: {}, authMailer: mailer });
   openServers.push(reopened.server);
   reopened.server.listen(0, '127.0.0.1'); await once(reopened.server, 'listening');
   reopened.base = `http://127.0.0.1:${reopened.server.address().port}`;

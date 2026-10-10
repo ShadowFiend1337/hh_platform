@@ -10,10 +10,12 @@ import { startExam } from './helpers/exam.mjs';
 
 // The candidate, questions and grading use the real local API. Registration mail
 // and the database remain in memory; the browser cannot access external hosts.
-const isolated = await startIsolatedService();
+const isolated = await startIsolatedService({assessmentMode:'legacy'});
 const { base, codes } = isolated;
 const require = createRequire(import.meta.url);
 const storageKey = 'predel:assessment:v1';
+// CodeMirror follows the host platform's Mod key (Cmd on macOS, Ctrl elsewhere).
+const modifier = process.platform === 'darwin' ? 'Meta' : 'Control';
 const screenshots = fileURLToPath(new URL('../../server/data/code-editor-ui/', import.meta.url));
 const answerKeys = new Map(programs.ML.Junior.families.flatMap(family =>
   family.variants.map(variant => [variant.text, variant.options[variant.correct]])));
@@ -38,7 +40,7 @@ async function editorSource() {
 
 async function replaceSource(source) {
   await editor().focus();
-  await page.keyboard.press('Control+a');
+  await page.keyboard.press(modifier + '+a');
   await page.keyboard.insertText(source);
   await page.waitForFunction(expected => {
     const lines = [...document.querySelectorAll('.cm-content .cm-line')].map(line => line.textContent);
@@ -174,14 +176,14 @@ try {
         ctrl: event.ctrlKey, shift: event.shiftKey, prevented: event.defaultPrevented }));
     });
   });
-  await page.keyboard.press('Control+a');
+  await page.keyboard.press(modifier + '+a');
   await page.keyboard.press('Tab');
   await waitDraft(firstId, indented, 'python');
   assert.equal(await editorSource(), indented, 'Tab indents the selected Python lines by four spaces');
-  await page.keyboard.press('Control+z');
+  await page.keyboard.press(modifier + '+z');
   await waitDraft(firstId, firstSource, 'python');
   // Playwright requires an uppercase Z to emit the real shifted character.
-  await page.keyboard.press('Control+Shift+Z');
+  await page.keyboard.press(modifier + '+Shift+Z');
   await waitDraft(firstId, indented, 'python');
   await page.keyboard.press('Shift+Tab');
   await waitDraft(firstId, firstSource, 'python');
@@ -190,10 +192,10 @@ try {
   const before = (await readAttempt(attempt)).integrity;
   await page.evaluate(() => navigator.clipboard.writeText('outside text'));
   await editor().focus();
-  await page.keyboard.press('Control+a');
-  await page.keyboard.press('Control+c');
+  await page.keyboard.press(modifier + '+a');
+  await page.keyboard.press(modifier + '+c');
   assert.equal(await page.evaluate(() => navigator.clipboard.readText()), 'outside text', 'Copy is blocked during the test');
-  await page.keyboard.press('Control+v');
+  await page.keyboard.press(modifier + '+v');
   assert.equal(await editorSource(), firstSource, 'Paste is blocked during the test');
   for (let index = 0; index < 25; index++) {
     const current = (await readAttempt(attempt)).integrity;

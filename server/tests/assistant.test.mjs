@@ -66,7 +66,7 @@ test('a model failure falls back to curated hints; invalid input is rejected', a
 test('HTTP: signed-in only, blocked during an active attempt, rate limited per account', async t => {
   const codes = new Map();
   const llm = mockLlm('Ответ. [Профиль](#profile)');
-  const service = createAssessmentServer({ dbPath: ':memory:', authEnv: {}, llm,
+  const service = createAssessmentServer({ assessmentMode: 'legacy', dbPath: ':memory:', authEnv: {}, llm,
     authMailer: async ({ email, code }) => { codes.set(email, code); } });
   await new Promise(resolve => service.server.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise(resolve => { service.server.close(resolve); service.server.closeAllConnections(); }));

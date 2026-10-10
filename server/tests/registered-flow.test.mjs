@@ -6,7 +6,7 @@ import { createInitialState } from '../../frontend/src/model.ts';
 
 test('registered candidate category, employer invitation and accepted contacts survive another browser login', async t => {
   const codes = new Map();
-  const service = createAssessmentServer({ dbPath: ':memory:', authEnv: {}, webOrigin: 'http://127.0.0.1:5173',
+  const service = createAssessmentServer({ assessmentMode: 'legacy', dbPath: ':memory:', authEnv: {}, webOrigin: 'http://127.0.0.1:5173',
     authMailer: async ({ email, code }) => { codes.set(email, code); } });
   await new Promise(resolve => service.server.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise(resolve => { service.server.close(resolve); service.server.closeAllConnections(); }));

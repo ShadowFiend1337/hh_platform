@@ -2,6 +2,11 @@ import type { CandidateSurvey, Grade, Specialization, TestResult } from './model
 import { readCodeDrafts, type CodeDraft } from './code-drafts';
 
 export interface AssessmentProgram {
+  closedCount?: number;
+  openCount?: number;
+  openMinutes?: { min: number; max: number };
+  weights?: { closed: number; open: number };
+  generation?: { configured: boolean; required: boolean };
   bankVersion: string;
   topics: string[];
   questionCount: number;
@@ -17,6 +22,11 @@ export interface AssessmentProgram {
 }
 
 export interface AssessmentQuestion {
+  type?: 'open' | 'single-choice';
+  context?: string;
+  title?: string;
+  answerFormat?: string;
+  timeLimitSec?: number;
   id: string;
   topic: string;
   text: string;
@@ -45,7 +55,9 @@ export interface AssessmentAttempt {
     focusTopics: string[];
     recognized: boolean;
   } | null;
-  status?: 'active' | 'completed';
+  status?: 'preparing' | 'ready' | 'failed' | 'active' | 'pending-review' | 'completed';
+  generation?: { done: number; total: number };
+  preparationError?: string;
   result?: TestResult;
   integrity?: AssessmentIntegrity;
   /** Sequential delivery: only answered questions and the current one are present. */
@@ -87,6 +99,7 @@ export interface SavedAssessment {
   answers: Record<string, string>;
   index: number;
   codeDrafts?: Record<string, CodeDraft>;
+  answerDrafts?: Record<string, string>;
 }
 
 export class AssessmentError extends Error {
@@ -112,6 +125,7 @@ export function readAssessment(): SavedAssessment | null {
         ? Object.fromEntries(Object.entries(value.answers).filter((entry): entry is [string, string] => typeof entry[1] === 'string')) : {},
       index: Number.isInteger(value.index) && value.index >= 0 ? value.index : 0,
       codeDrafts: readCodeDrafts(value.codeDrafts),
+      answerDrafts: value.answerDrafts && typeof value.answerDrafts === 'object' && !Array.isArray(value.answerDrafts) ? Object.fromEntries(Object.entries(value.answerDrafts).filter((e): e is [string,string] => typeof e[1] === 'string' && e[1].length <= 12000)) : {},
     };
   } catch { return null; }
 }
@@ -169,10 +183,17 @@ export function resumeAssessment(attempt: SavedAssessment, signal?: AbortSignal)
   });
 }
 
+export function startAssessment(attempt: AssessmentAttempt, signal?: AbortSignal) {
+  return request<AssessmentAttempt>('/attempts/' + attempt.id + '/start', {method:'POST', signal, body:JSON.stringify({token:attempt.token})});
+}
+export function getAssessmentResult(id: string, signal?: AbortSignal) {
+  return request<TestResult>('/results/' + encodeURIComponent(id), {signal});
+}
+
 /** Locks the answer to the current question; `null` records a skipped or timed-out question. */
-export function answerAssessment(attempt: AssessmentAttempt, questionId: string, optionId: string | null, signal?: AbortSignal) {
+export function answerAssessment(attempt: AssessmentAttempt, questionId: string, optionId: string | null, signal?: AbortSignal, answerText?: string | null) {
   return request<AssessmentAttempt>('/attempts/' + encodeURIComponent(attempt.id) + '/answer', {
-    method: 'POST', signal, body: JSON.stringify({ token: attempt.token, questionId, optionId }),
+    method: 'POST', signal, body: JSON.stringify({ token: attempt.token, questionId, ...(attempt.questions.find(q => q.id === questionId)?.type === 'open' ? {answerText:answerText ?? null} : {optionId}) }),
   });
 }
 

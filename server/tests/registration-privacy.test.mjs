@@ -21,7 +21,7 @@ async function fixture(t) {
       occurredAt: '2026-09-01T00:00:00.000Z', result: 'Финалист', place: 3, participation: 'individual',
       teamRole: null, sourceUrl: null, status: 'active',
     }] }) };
-  const service = createAssessmentServer({ dbPath: ':memory:', authEnv: {}, now: () => clock,
+  const service = createAssessmentServer({ assessmentMode: 'legacy', dbPath: ':memory:', authEnv: {}, now: () => clock,
     authMailer: async ({ email, code }) => { codes.set(email, code); return { delivery: 'development' }; },
     integrationOptions: { automatic: false, providers: [provider] } });
   assert.equal(service.store.db, service.directory.store.db);

@@ -73,7 +73,9 @@
     "sample:open-bank": "node scripts/open-bank.mjs sample",
     "export:open-bank": "node scripts/open-bank.mjs export",
     "test:registration-privacy": "node frontend/tests/registration-privacy.mjs",
-    "tour:screens": "node frontend/tests/visual-tour.mjs"
+    "tour:screens": "node frontend/tests/visual-tour.mjs",
+    "test:mixed-assessment": "node --test server/tests/mixed-assessment.test.mjs",
+    "test:mixed-assessment-browser": "node frontend/tests/mixed-assessment.mjs"
   },
   "dependencies": {
     "parse5": "8.0.0"

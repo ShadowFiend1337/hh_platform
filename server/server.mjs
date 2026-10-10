@@ -11,6 +11,8 @@ import { ItemBank } from './item-bank.mjs';
 import { ItemGenerationQueue } from './item-generator.mjs';
 import { createLlmClient, LlmError } from './llm.mjs';
 import { anchorPassport, generateAnchoredVariant, AnchoredGenerationError } from './anchored-generator.mjs';
+import { createMixedDraft, mixedProgramInfo, publicMixedAttempt, MixedAssessmentPreparation } from './mixed-assessment.mjs';
+import { AssessmentReviewService } from './assessment-review.mjs';
 import { AnchoredVariantStore } from './anchored-variant-store.mjs';
 import { createAssistant } from './assistant.mjs';
 import { applyProxyFromEnv } from './proxy.mjs';
@@ -34,7 +36,7 @@ const mime = {
   '.json': 'application/json; charset=utf-8', '.txt': 'text/plain; charset=utf-8',
 };
 
-export function createAssessmentServer({ dbPath = resolve(root, 'server/data/assessment.sqlite'), now = Date.now, webOrigin = process.env.WEB_ORIGIN, secureCookie = process.env.COOKIE_SECURE === '1', distPath = resolve(root, 'frontend/dist'), authEnv = process.env, authMailer, authCodeTtlMinutes, authSessionDays, integrationOptions = {}, llm: llmOverride } = {}) {
+export function createAssessmentServer({ dbPath = resolve(root, 'server/data/assessment.sqlite'), now = Date.now, webOrigin = process.env.WEB_ORIGIN, secureCookie = process.env.COOKIE_SECURE === '1', distPath = resolve(root, 'frontend/dist'), authEnv = process.env, authMailer, authCodeTtlMinutes, authSessionDays, integrationOptions = {}, llm: llmOverride, assessmentMode = 'mixed' } = {}) {
   const store = openStore(dbPath);
   const bank = new ItemBank(store.db, { programs, now });
   const variants = new AnchoredVariantStore(store.db, { now });
@@ -44,11 +46,15 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
   catch (error) { console.error('OpenRouter:', error.message); llm = createLlmClient({ env: {} }); }
   // Background generation only for the real process environment, never for isolated test servers.
   const assistant = createAssistant({ llm });
-  const generation = new ItemGenerationQueue({ llm, bank, enabled: authEnv === process.env && authEnv.ITEM_BANK_AUTOGEN !== '0' });
+  const generation = new ItemGenerationQueue({ llm, bank, enabled: assessmentMode === 'legacy' && authEnv === process.env && authEnv.ITEM_BANK_AUTOGEN !== '0' });
   const auth = new AuthService(dbPath, { now, env: authEnv, mailer: authMailer, codeTtlMinutes: authCodeTtlMinutes, sessionDays: authSessionDays, database: store.db });
   const accountForOwner = owner => typeof owner === 'string' ? auth.accountForPlatformOwner(owner) : null;
+  const preparation = new MixedAssessmentPreparation({ store, variants, llm, now });
+  const assessmentReviews = new AssessmentReviewService(store, { now, accountForOwner });
+  const viewAttempt = row => row.attempt.state ? publicMixedAttempt(row.attempt, row.progress, row.result) : { ...publicAttempt(row.attempt, row.progress), status: row.result ? 'completed' : 'active', ...(row.result ? { result: row.result } : {}) };
   const directory = new DirectoryService(dbPath, { accountForOwner, database: store.db });
   const platform = new PlatformService(directory.store, store, { now, accountForOwner });
+  assessmentReviews.onFinalized = (owner,id) => platform.applyReviewedAssessment(owner,id,{withinTransaction:true});
   const fsp = new FspIntegrationService(directory.store, { now, accountForOwner, env: authEnv });
   platform.profileSource = (owner, person) => fsp.applyProfile(owner, person);
   fsp.publishProfile = (owner, person) => platform.publication(owner, person).person;
@@ -113,7 +119,7 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
     const row = store.get(id);
     if (!row || row.owner !== session) throw new RequestError(404, 'Попытка не найдена.');
     if (typeof token !== 'string' || token.length !== 64 || !timingSafeEqual(Buffer.from(digest(token)), Buffer.from(row.token_hash))) throw new RequestError(403, 'Нет доступа к попытке.');
-    if (!row.result && now() >= Date.parse(row.expires_at)) throw new RequestError(410, 'Время теста истекло. Начните новую попытку.');
+    if (!row.result && row.attempt.state !== 'failed' && now() >= Date.parse(row.expires_at)) throw new RequestError(410, 'Время теста истекло. Начните новую попытку.');
     return row;
   }
   function allowRole(identity, role, message) {
@@ -207,7 +213,7 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
         }
         if (request.method === 'GET' && url.pathname === '/api/assessment/program') {
           allowRole(identity, 'candidate', 'Тестирование доступно соискателю.');
-          return send(response, 200, programInfo(url.searchParams.get('specialization'), url.searchParams.get('grade'), bank, { retryDays: retryDays(authEnv) }));
+          return send(response, 200, assessmentMode === 'mixed' ? mixedProgramInfo(url.searchParams.get('specialization'), url.searchParams.get('grade'), llm, authEnv) : programInfo(url.searchParams.get('specialization'), url.searchParams.get('grade'), bank, { retryDays: retryDays(authEnv) }));
         }
         if (url.pathname === '/api/platform/state') {
           const identityScope = identity.account ? 'auth:' + identity.account.id : 'anonymous:' + session;
@@ -299,6 +305,35 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
           allowRole(identity, 'employer', 'Ответить на отклик может только работодатель.');
           return send(response, 200, marketplace.respond(session, decodeURIComponent(answer[1]), await body(request)));
         }
+        const reviewedResult = /^\/api\/assessment\/results\/([a-f0-9-]{36})$/.exec(url.pathname);
+        if (reviewedResult && request.method === 'GET') {
+          allowRole(identity, 'candidate', 'Тестирование доступно соискателю.');
+          const row = store.get(reviewedResult[1]);
+          if (!row || row.owner !== session || !row.result) throw new RequestError(404, 'Результат не найден.');
+          return send(response, 200, row.result);
+        }
+        if (url.pathname.startsWith('/api/moderation/assessments')) {
+          if (!identity.account?.canModerate) throw new RequestError(403, 'Требуется право модератора.');
+          const detail = /^\/api\/moderation\/assessments\/([a-f0-9-]{36})(\/decision)?$/.exec(url.pathname);
+          if ([...url.searchParams.keys()].some(k => !['status','limit','offset'].includes(k) || url.searchParams.getAll(k).length !== 1)) throw new RequestError(400, 'Недопустимые параметры.');
+          if (request.method === 'GET' && url.pathname === '/api/moderation/assessments') return send(response,200,assessmentReviews.list(identity.account,Object.fromEntries(url.searchParams)));
+          if (detail && request.method === 'GET' && !detail[2]) return send(response,200,assessmentReviews.get(detail[1],identity.account));
+          if (detail?.[2] && request.method === 'POST') {
+            if (request.headers['x-platform-identity'] !== 'auth:' + identity.account.id) throw new RequestError(409, 'Аккаунт изменился. Обновите страницу.');
+            limit('assessment-review:' + session,30,60000);
+            return send(response,200,assessmentReviews.decide(detail[1],await body(request,64000),identity.account));
+          }
+          throw new RequestError(405, 'Метод или путь не поддерживается.');
+        }
+        const startRoute = /^\/api\/assessment\/attempts\/([a-f0-9-]{36})\/start$/.exec(url.pathname);
+        if (startRoute && request.method === 'POST') {
+          allowRole(identity, 'candidate', 'Тестирование доступно соискателю.');
+          const input = await body(request,1024);
+          if (Object.keys(input).some(k => k !== 'token')) throw new RequestError(400,'Недопустимые поля.');
+          authorized(startRoute[1],session,input.token);
+          const row = preparation.start(startRoute[1]);
+          return send(response,200,{...viewAttempt(row),serverNow:new Date(now()).toISOString(),integrity:store.integrity(row.id)});
+        }
         if (request.method === 'POST' && url.pathname === '/api/assessment/attempts') {
           if (identity.account?.role === 'employer') throw new RequestError(403, 'Тестирование доступно соискателю.');
           const input = await body(request);
@@ -312,6 +347,15 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
             throw new RequestError(409, `Повторить тест на этот грейд можно с ${new Date(lock.until).toLocaleDateString('ru-RU')}.${lower}`, { retryAt: lock.until, lowerGrades: lock.lowerGrades });
           }
           const previous = store.recent(session, survey.specialization, survey.desiredGrade);
+          if (assessmentMode === 'mixed') {
+            preparation.ensureCapacity();
+            const unfinished = store.db.prepare("SELECT id FROM attempts WHERE owner=? AND result IS NULL AND expires_at>? AND COALESCE(json_extract(payload,'$.state'),'active') IN ('preparing','ready','active') LIMIT 1").get(session,new Date(now()).toISOString());
+            if (unfinished) throw new RequestError(409,'У вас уже есть незавершённый тест.');
+            if (store.completed(session).some(r => r.result.status === 'pending-review' && r.result.specialization === survey.specialization && r.result.grade === survey.desiredGrade)) throw new RequestError(409,'Тест на этот грейд ожидает проверки.');
+            const attempt = createMixedDraft(survey,input.vacancyDescription,previous,now()), token = randomBytes(32).toString('hex');
+            store.insert(attempt,session,digest(token)); preparation.enqueue(attempt);
+            return send(response,202,{...publicMixedAttempt(attempt),token,serverNow:new Date(now()).toISOString(),integrity:store.integrity(attempt.id)});
+          }
           const attempt = createAttempt(survey, input.vacancyDescription, previous, now(), { bank });
           const token = randomBytes(32).toString('hex');
           store.insert(attempt, session, digest(token));
@@ -326,6 +370,7 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
           if (Object.keys(input).some(key => !['token', 'event'].includes(key))) throw new RequestError(400, 'Недопустимые поля события.');
           const row = authorized(integrity[1], session, input.token);
           if (row.result) throw new RequestError(409, 'Тест уже завершён.');
+          if (row.attempt.state && row.attempt.state !== 'active') throw new RequestError(409,'Тест ещё не начат.');
           const event = input.event;
           if (!event || typeof event !== 'object' || Array.isArray(event)
             || Object.keys(event).some(key => !['id', 'kind'].includes(key))
@@ -347,9 +392,10 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
         const answerRoute = /^\/api\/assessment\/attempts\/([a-f0-9-]{36})\/answer$/.exec(url.pathname);
         if (answerRoute && request.method === 'POST') {
           allowRole(identity, 'candidate', 'Тестирование доступно соискателю.');
-          const input = await body(request, 4096);
+          const input = await body(request, 64000);
           let row = authorized(answerRoute[1], session, input.token);
           if (row.result) throw new RequestError(409, row.result.annulled ? 'Попытка аннулирована из-за нарушений.' : 'Тест уже завершён.');
+          if (row.attempt.state && row.attempt.state !== 'active') throw new RequestError(409,'Тест ещё не начат.');
           if (row.attempt.delivery !== 'sequential') throw new RequestError(409, 'Эта попытка принимает ответы целиком.');
           let recorded = recordAnswer(row.attempt, row.progress, input, now());
           if (recorded.changed && !store.saveProgress(row.id, recorded.progress, row.progress)) {
@@ -365,7 +411,7 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
         if (match && !match[2] && request.method === 'GET') {
           allowRole(identity, 'candidate', 'Тестирование доступно соискателю.');
           const row = authorized(match[1], session, request.headers['x-attempt-token']);
-          return send(response, 200, { ...publicAttempt(row.attempt, row.progress), serverNow: new Date(now()).toISOString(), integrity: store.integrity(row.id), status: row.result ? 'completed' : 'active', ...(row.result ? { result: row.result } : {}) });
+          return send(response, 200, { ...viewAttempt(row), serverNow: new Date(now()).toISOString(), integrity: store.integrity(row.id) });
         }
         if (match?.[2] && request.method === 'POST') {
           allowRole(identity, 'candidate', 'Тестирование доступно соискателю.');
@@ -373,6 +419,10 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
           if (Object.keys(input).some(key => !['token', 'answers'].includes(key))) throw new RequestError(400, 'Недопустимые поля ответа.');
           const row = authorized(match[1], session, input.token);
           if (row.result?.annulled) return send(response, 200, row.result);
+          if (row.attempt.state) {
+            if (Object.hasOwn(input,'answers')) throw new RequestError(400,'Ответы принимаются последовательно.');
+            return send(response,200,assessmentReviews.submit(row,integritySummary(store.integrity(row.id))));
+          }
           const evaluated = evaluate(row.attempt, input.answers, row.result ? Date.parse(row.result.date) : now(),
             { progress: row.progress, integrity: integritySummary(store.integrity(row.id)) });
           if (row.result) {
@@ -393,7 +443,7 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
           if (request.method === 'GET' && url.pathname === '/api/review-bank/variants') {
             return send(response, 200, { items: variants.list({ anchorId: url.searchParams.get('anchorId') || undefined,
               grade: url.searchParams.get('grade') || undefined }), generator: { configured: llm.configured, running: variantGenerationRunning,
-              mode: 'anchored', llmCallsPerVariant: 1, certificationEnabled: false } });
+              mode: 'anchored', llmCallsPerVariant: 1, certificationEnabled: assessmentMode === 'mixed', manualReviewRequired: true } });
           }
           if (request.method === 'POST' && url.pathname === '/api/review-bank/variants/generate') {
             const input = await body(request, 1024);
@@ -483,8 +533,8 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
   });
   server.requestTimeout = 15000;
   server.headersTimeout = 10000;
-  server.on('close', () => { integrations.close(); auth.close(); directory.close(); store.close(); });
-  return { server, store, directory, platform, marketplace, auth, fsp, integrations, bank, llm, generation, variants };
+  server.on('close', () => { preparation.close(); integrations.close(); auth.close(); directory.close(); store.close(); });
+  return { server, store, directory, platform, marketplace, auth, fsp, integrations, bank, llm, generation, variants, preparation, assessmentReviews };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

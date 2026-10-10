@@ -52,9 +52,14 @@ npm run dev
 | `POST` | `/api/auth/logout` | Отзывает серверную сессию и очищает cookie |
 | `DELETE` | `/api/auth/account` | Требует сессию и `X-Platform-Identity`; атомарно удаляет аккаунт, все его сессии и связанные частные данные, возвращает `{status: "deleted", deletedAt}` |
 | `GET` | `/api/assessment/program` | Возвращает программу без ключей ответов |
-| `POST` | `/api/assessment/attempts` | Создаёт попытку и возвращает одноразовый токен |
+| `POST` | `/api/assessment/attempts` | Начинает подготовку 15 закрытых + 5 открытых, возвращает `202`, токен и статус |
 | `GET` | `/api/assessment/attempts/{id}` | Требует `X-Attempt-Token` для восстановления попытки |
-| `POST` | `/api/assessment/attempts/{id}/submit` | Проверяет `{token, answers}`; повтор идентичных ответов возвращает прежний результат |
+| `POST` | `/api/assessment/attempts/{id}/submit` | Принимает `{token}` после 20 зафиксированных ответов, ставит тест в очередь ручной проверки |
+| `POST` | `/api/assessment/attempts/{id}/start` | Запускает таймер готового теста; `{token}` |
+| `POST` | `/api/assessment/attempts/{id}/answer` | Фиксирует `{token, questionId, optionId}` либо `{token, questionId, answerText}` |
+| `GET` | `/api/assessment/results/{id}` | Собственный результат после отправки, включая статус ручной проверки |
+| `GET` | `/api/moderation/assessments`, `/api/moderation/assessments/{id}` | Очередь и приватные материалы для назначенного модератора |
+| `POST` | `/api/moderation/assessments/{id}/decision` | Оценка критериев всех открытых задач либо отзыв попытки; версия и `X-Platform-Identity` |
 | `POST` | `/api/assessment/attempts/{id}/integrity` | Принимает `{token, event: {id, kind}}` только от владельца активной попытки; сохраняет событие контроля без изменения балла |
 | `GET`, `PUT` | `/api/platform/state` | Читает или сохраняет состояние с `baseRevision`; существующие снимки анкет неизменны |
 | `DELETE` | `/api/platform/state` | Возвращает `403`; для удаления данных используется удаление аккаунта |
@@ -69,6 +74,8 @@ npm run dev
 | `PATCH` | `/api/applications/{id}` | Решение работодателя по своему входящему отклику |
 
 Ошибки имеют форму `{ "error": "сообщение" }`. Интерфейс отправляет cookie через `credentials: 'same-origin'` и не читает токены из JavaScript.
+
+Новый сценарий, лимиты генерации, сроки и оценка 50/50 описаны в [mixed-assessment.md](../docs/mixed-assessment.md).
 
 Контроль теста описан в [assessment_integrity.md](../docs/assessment_integrity.md). Создание и восстановление попытки возвращают `integrity` с `departures`, `blockedCopies` и `lastEventAt`. Клиентское событие не удостоверяет списывание и не влияет на категорию; журнал не доступен работодателю.
 

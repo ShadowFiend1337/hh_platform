@@ -51,8 +51,8 @@ export function CandidateHistory({ state }: { state: PlatformState }) {
       {view === 'tests' ? tests.slice(0, counts.tests).map(item => <button type="button" className="history-item history-entry" key={item.id}
         data-result-id={item.id} onClick={() => setSelection({ kind: 'test', id: item.id })}>
         <span className="history-entry-text"><strong>{specializationLabels[item.specialization]} · {gradeLabels[item.grade]}</strong>
-          <time dateTime={item.date}>{dateLabel(item.date)}</time><span>{item.passed ? 'Пройден' : 'Не пройден'}</span></span>
-        <span className={'history-score ' + (item.passed ? 'passed' : 'failed')}>{item.score}/100</span>
+          <time dateTime={item.date}>{dateLabel(item.date)}</time><span>{item.status==='pending-review'?'На проверке':item.status==='invalidated'?'Отозвано':item.passed ? 'Пройден' : 'Не пройден'}</span></span>
+        <span className={'history-score ' + (item.passed ? 'passed' : 'failed')}>{['pending-review','invalidated'].includes(item.status || '')?'—':`${item.score}/100`}</span>
       </button>) : surveys.slice(0, counts.surveys).map(item => <button type="button" className="history-item history-entry" key={item.id}
         data-survey-id={item.id} onClick={() => setSelection({ kind: 'survey', id: item.id })}>
         <span className="history-entry-text"><strong>{specializationLabels[item.specialization]} · {gradeLabels[item.desiredGrade]}</strong>
@@ -69,9 +69,10 @@ export function CandidateHistory({ state }: { state: PlatformState }) {
           <h3>{specializationLabels[result.specialization]} · {gradeLabels[result.grade]}</h3>
           <dl className="history-details">
             <div><dt>Дата</dt><dd><time dateTime={result.date}>{dateLabel(result.date)}</time></dd></div>
-            <div><dt>Результат</dt><dd>{result.score}/100 · {result.passed ? 'Пройден' : 'Не пройден'}</dd></div>
+            <div><dt>Результат</dt><dd>{result.status==='pending-review'?'На проверке':result.status==='invalidated'?'Отозвано':`${result.score}/100 · ${result.passed?'Пройден':'Не пройден'}`}</dd></div>
             <div><dt>Версия программы</dt><dd>{result.bankVersion || 'Не указана в старой записи'}</dd></div>
           </dl>
+          {result.review?.comment && <p>{result.review.comment}</p>}
           {result.competencies?.length ? <section><h4>Компетенции</h4><dl className="history-details history-competencies">
             {result.competencies.map(item => <div key={item.topic}><dt>{item.topic}</dt><dd>{item.score}/100 · {item.correct} из {item.total}</dd></div>)}
           </dl></section> : null}

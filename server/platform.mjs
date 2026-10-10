@@ -232,7 +232,7 @@ function candidateDecisions(input) {
 function publicResult(value) {
   const result = { id: value.id, date: value.date, specialization: value.specialization, grade: value.grade,
     score: value.score, passed: value.passed, surveyId: value.surveyId || null };
-  for (const key of ['bankVersion', 'competencies', 'vacancySkills', 'questionCount', 'timeouts', 'nextGradeAvailable', 'annulled', 'integrity']) if (value[key] !== undefined) result[key] = value[key];
+  for (const key of ['bankVersion', 'competencies', 'vacancySkills', 'questionCount', 'timeouts', 'nextGradeAvailable', 'annulled', 'integrity', 'status', 'closedScore', 'openScore', 'closedCorrect', 'closedCount', 'openCount', 'review']) if (value[key] !== undefined) result[key] = value[key];
   return result;
 }
 function sameConfirmation(a, b) {
@@ -240,7 +240,7 @@ function sameConfirmation(a, b) {
     && a.date === b.date && (!a.surveyId || a.surveyId === b.surveyId);
 }
 function confirmedBy(row, owner) {
-  return row?.owner === owner && row.result?.passed === true && row.result.score >= threshold
+  return !['pending-review','invalidated'].includes(row?.result?.status) && row?.owner === owner && row.result?.passed === true && row.result.score >= threshold
     && row.result.id === row.id && row.attempt?.id === row.id
     && row.result.specialization === row.attempt.specialization && row.result.grade === row.attempt.grade
     && row.result.surveyId === row.attempt.surveyId;
@@ -323,6 +323,36 @@ export class PlatformService {
   }
   history(owner) {
     return this.assessments.completed(owner).filter(row => row.owner === owner && row.result).map(row => publicResult(row.result));
+  }
+  /** A reviewed pass must reach the profile even when the candidate has closed the test page. */
+  applyReviewedAssessment(owner, attemptId, { withinTransaction = false } = {}) {
+    const apply = () => {
+      const row = this.assessments.get(attemptId);
+      if (row?.result?.status !== 'completed' || !confirmedBy(row, owner)) return false;
+      const account = this.store.db.prepare('SELECT * FROM platform_accounts WHERE owner=?').get(owner);
+      if (!account || this.accountForOwner?.(owner)?.role !== 'candidate') return false;
+      const person = JSON.parse(account.profile), result = row.result;
+      const surveys = this.store.db.prepare('SELECT payload FROM platform_surveys WHERE owner=?').all(owner).map(s=>JSON.parse(s.payload));
+      const current = surveys.find(s=>s.id === result.surveyId && s.date === person.surveyCompletedAt);
+      if (!current || person.specialization !== result.specialization || person.desiredGrade !== result.grade) return false;
+      const previous = person._proofId ? this.assessments.get(person._proofId) : null;
+      const oldProof = confirmedBy(previous, owner) && sameConfirmation(person.confirmed, previous.result) ? previous
+        : this.assessments.completed(owner).find(r=>confirmedBy(r,owner)&&sameConfirmation(person.confirmed,r.result));
+      const changed = oldProof && (oldProof.result.grade !== result.grade || oldProof.result.specialization !== result.specialization);
+      const changedAt = oldProof ? person.gradeChangedAt || oldProof.result.date : result.date;
+      const fastTrack = changed && oldProof.result.score >= confidentThreshold && oldProof.result.specialization === result.specialization
+        && nextGrade(oldProof.result.grade) === result.grade;
+      if (changed && !fastTrack && this.now() < Date.parse(changedAt) + 90 * 86400000) return false;
+      person.confirmed = fromProof(row); person._proofId = row.id;
+      person.gradeChangedAt = changed || !oldProof ? new Date(this.now()).toISOString() : changedAt;
+      const timestamp = new Date(this.now()).toISOString();
+      this.store.db.prepare('UPDATE platform_accounts SET profile=?,revision=revision+1,updated_at=? WHERE owner=?')
+        .run(JSON.stringify(person),timestamp,owner);
+      const publication = this.publication(owner,person,surveys,row);
+      this.store.upsert({...publication.person,id:account.public_id},owner,publication.eligible);
+      return true;
+    };
+    return withinTransaction ? apply() : this.store.transaction(apply);
   }
   invitations(owner, id) {
     return this.store.db.prepare('SELECT * FROM platform_invitations WHERE sender=? OR candidate_id=? ORDER BY created_at,id').all(owner, id)
