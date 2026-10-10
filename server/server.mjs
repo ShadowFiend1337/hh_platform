@@ -9,7 +9,9 @@ import { annulledResult, createAttempt, digest, emptyProgress, evaluate, integri
 import { programs } from './bank.mjs';
 import { ItemBank } from './item-bank.mjs';
 import { ItemGenerationQueue } from './item-generator.mjs';
-import { createLlmClient } from './llm.mjs';
+import { createLlmClient, LlmError } from './llm.mjs';
+import { anchorPassport, generateAnchoredVariant, AnchoredGenerationError } from './anchored-generator.mjs';
+import { AnchoredVariantStore } from './anchored-variant-store.mjs';
 import { createAssistant } from './assistant.mjs';
 import { applyProxyFromEnv } from './proxy.mjs';
 import { FspIdService, FSP_ID_PROVIDER } from './fsp-id.mjs';
@@ -38,6 +40,8 @@ const mime = {
 export function createAssessmentServer({ dbPath = resolve(root, 'server/data/assessment.sqlite'), now = Date.now, webOrigin = process.env.WEB_ORIGIN, secureCookie = process.env.COOKIE_SECURE === '1', distPath = resolve(root, 'frontend/dist'), authEnv = process.env, authMailer, authCodeTtlMinutes, authSessionDays, integrationOptions = {}, llm: llmOverride } = {}) {
   const store = openStore(dbPath);
   const bank = new ItemBank(store.db, { programs, now });
+  const variants = new AnchoredVariantStore(store.db, { now });
+  let variantGenerationRunning = false;
   let llm;
   try { llm = llmOverride || createLlmClient({ env: authEnv }); }
   catch (error) { console.error('OpenRouter:', error.message); llm = createLlmClient({ env: {} }); }
@@ -494,6 +498,51 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
           bank.recordResponses(evaluated.responses, evaluated.result.score);
           return send(response, 200, evaluated.result);
         }
+        if (url.pathname.startsWith('/api/review-bank/variants')) {
+          if (!identity.account?.canModerate) throw new RequestError(403, 'Авторские варианты доступны модератору.');
+          if (request.method === 'GET' && url.pathname === '/api/review-bank/variants') {
+            return send(response, 200, { items: variants.list({ anchorId: url.searchParams.get('anchorId') || undefined,
+              grade: url.searchParams.get('grade') || undefined }), generator: { configured: llm.configured, running: variantGenerationRunning,
+              mode: 'anchored', llmCallsPerVariant: 1, certificationEnabled: false } });
+          }
+          if (request.method === 'POST' && url.pathname === '/api/review-bank/variants/generate') {
+            const input = await body(request, 1024);
+            if (Object.keys(input).length !== 1 || typeof input.anchorId !== 'string') throw new RequestError(400, 'Укажите только anchorId из нового банка.');
+            try { anchorPassport(input.anchorId); } catch { throw new RequestError(400, 'Неизвестный кейс нового банка.'); }
+            if (!llm.configured) throw new RequestError(503, 'Добавьте OPENROUTER_API_KEY в серверный .env.');
+            if (variantGenerationRunning) throw new RequestError(409, 'Генератор занят.');
+            limit('anchored-generate:' + session, 10, 3600000);
+            variantGenerationRunning = true;
+            const controller = new AbortController();
+            const disconnect = () => { if (!response.writableEnded) controller.abort(); };
+            response.once('close', disconnect);
+            try {
+              const result = await generateAnchoredVariant({ llm, anchorId: input.anchorId,
+                existingScenarios: variants.scenarios(input.anchorId), now, signal: controller.signal });
+              if (!result.accepted) { variants.log(input.anchorId, 'rejected-structure', result.reasons); return send(response, 422, result); }
+              return send(response, 201, variants.save(result.candidate));
+            } catch (error) {
+              if (error instanceof LlmError || error instanceof AnchoredGenerationError) {
+                variants.log(input.anchorId, 'failed', [error.code]);
+                throw new RequestError(503, error.message);
+              }
+              throw error;
+            } finally { response.off('close', disconnect); variantGenerationRunning = false; }
+          }
+          const variantRoute = /^\/api\/review-bank\/variants\/(variant-[a-f0-9-]{36})(\/review)?$/.exec(url.pathname);
+          if (variantRoute && request.method === 'GET' && !variantRoute[2]) {
+            const item = variants.get(variantRoute[1]);
+            if (!item) throw new RequestError(404, 'Вариант не найден.');
+            return send(response, 200, item);
+          }
+          if (variantRoute?.[2] && request.method === 'POST') {
+            const input = await body(request, 8192);
+            if (Object.keys(input).some(key => !['decision', 'checks', 'rationale'].includes(key))) throw new RequestError(400, 'Укажите только decision, checks и rationale.');
+            try { return send(response, 200, variants.review(variantRoute[1], input, 'expert:' + identity.account.login)); }
+            catch { throw new RequestError(400, 'Нужны решение, независимая проверка всех критериев и обоснование; вариант с начатым пилотом заблокирован.'); }
+          }
+          throw new RequestError(404, 'Страница не найдена.');
+        }
         if (url.pathname.startsWith('/api/item-bank/')) {
           if (!identity.account?.canModerate) throw new RequestError(403, 'Банк заданий доступен модератору.');
           if (request.method === 'GET' && url.pathname === '/api/item-bank/items') {
@@ -545,7 +594,7 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
   server.requestTimeout = 15000;
   server.headersTimeout = 10000;
   server.on('close', () => { integrations.close(); auth.close(); directory.close(); store.close(); });
-  return { server, store, directory, platform, marketplace, auth, fsp, integrations, bank, llm, generation };
+  return { server, store, directory, platform, marketplace, auth, fsp, integrations, bank, llm, generation, variants };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

@@ -67,12 +67,15 @@ export function createLlmClient({ env = process.env, fetchImpl = globalThis.fetc
   const usage = { requests: 0, failures: 0, promptTokens: 0, completionTokens: 0 };
 
   async function chat({ messages, model = chatModel, fallback = model === chatModel ? fallbackModel : null,
-    maxTokens = 600, temperature = 0.3, json = false, signal: external, timeoutMs: callTimeout = timeoutMs } = {}) {
+    maxTokens = 600, temperature = 0.3, json = false, retries = maxRetries,
+    signal: external, timeoutMs: callTimeout = timeoutMs } = {}) {
     if (!key) throw new LlmError('configuration', 'Ключ OpenRouter не настроен.');
     if (!Array.isArray(messages) || !messages.length) throw new LlmError('input', 'Пустой запрос к модели.');
+    if (!Number.isInteger(retries) || retries < 0 || retries > 2) throw new LlmError('input', 'Некорректное число повторов.');
     const controller = new AbortController();
     const abort = () => controller.abort();
     external?.addEventListener('abort', abort, { once: true });
+    if (external?.aborted) abort();
     const timer = setTimeout(abort, callTimeout);
     const models = [model, ...(fallback && fallback !== model ? [fallback] : [])];
     const body = JSON.stringify({
@@ -83,7 +86,8 @@ export function createLlmClient({ env = process.env, fetchImpl = globalThis.fetc
       ...(json ? { response_format: { type: 'json_object' } } : {}),
     });
     try {
-      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      for (let attempt = 0; attempt <= retries; attempt++) {
+        if (controller.signal.aborted) throw new LlmError('timeout', 'Запрос к модели отменён.');
         usage.requests++;
         let response;
         try {
@@ -96,14 +100,14 @@ export function createLlmClient({ env = process.env, fetchImpl = globalThis.fetc
         } catch {
           usage.failures++;
           if (controller.signal.aborted) throw new LlmError('timeout', 'Время ожидания модели истекло.');
-          if (attempt < maxRetries) { await wait(400 * (attempt + 1), controller.signal); continue; }
+          if (attempt < retries) { await wait(400 * (attempt + 1), controller.signal); continue; }
           throw new LlmError('unavailable', 'Модель недоступна.');
         }
         if (!response.ok) {
           usage.failures++;
           // Error bodies may echo the request; never log or return them.
           await response.body?.cancel?.().catch(() => {});
-          if (retryStatuses.has(response.status) && attempt < maxRetries) { await wait(600 * (attempt + 1), controller.signal); continue; }
+          if (retryStatuses.has(response.status) && attempt < retries) { await wait(600 * (attempt + 1), controller.signal); continue; }
           throw new LlmError(response.status === 401 || response.status === 403 ? 'configuration' : 'unavailable',
             response.status === 401 ? 'Ключ OpenRouter отклонён.' : response.status === 402 ? 'На балансе OpenRouter недостаточно средств.' : 'Модель недоступна.',
             { status: response.status });
@@ -116,7 +120,7 @@ export function createLlmClient({ env = process.env, fetchImpl = globalThis.fetc
         try { envelope = JSON.parse(raw); } catch { throw new LlmError('invalid_response', 'Некорректный ответ модели.'); }
         if (envelope?.error) {
           usage.failures++;
-          if (attempt < maxRetries) { await wait(600 * (attempt + 1), controller.signal); continue; }
+          if (attempt < retries) { await wait(600 * (attempt + 1), controller.signal); continue; }
           throw new LlmError('unavailable', 'Модель недоступна.');
         }
         const content = envelope?.choices?.[0]?.message?.content;
