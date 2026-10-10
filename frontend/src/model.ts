@@ -29,6 +29,8 @@ export interface TestResult {
   /** Set for a confident pass: the next grade's test is open without the 90-day wait. */
   nextGradeAvailable?: Grade;
   annulled?: boolean;
+  /** The decision used the clarifying block (18 items). */
+  clarified?: boolean;
   integrity?: { departures: number; blockedCopies: number; blockedActions?: number; fullscreenExits?: number };
 }
 

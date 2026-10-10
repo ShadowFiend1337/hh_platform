@@ -178,3 +178,52 @@ test('integrity survives reopening SQLite and cascades with its owner data', t =
     assert.deepEqual(store.integrity(attempt.id), { departures: 0, blockedCopies: 0, blockedActions: 0, fullscreenExits: 0, lastEventAt: null });
   } finally { store.close(); }
 });
+
+test('a borderline result receives a clarifying block of fresh items; a clear result does not', async t => {
+  const f = await fixture(t);
+  const answerAll = async (attempt, path, correctCount) => {
+    let response, index = 0;
+    for (;;) {
+      const row = f.store.get(attempt.id);
+      const position = Object.keys(row.progress?.answers || {}).length;
+      const question = row.attempt.questions[position];
+      if (!question) break;
+      const wrong = question.options.find(option => option.id !== question.correctOptionId).id;
+      response = await f.candidate(path + '/answer', 'POST', { token: attempt.token, questionId: question.id, optionId: index++ < correctCount ? question.correctOptionId : wrong });
+      assert.equal(response.status, 200);
+      if (response.data.complete) break;
+    }
+    return response;
+  };
+  // 8 of 12 correct (67) is borderline: six more items arrive, from the same families, none repeated.
+  let extendedSeen = false;
+  let index = 0;
+  for (;;) {
+    const row = f.store.get(f.attempt.id);
+    const position = Object.keys(row.progress?.answers || {}).length;
+    const question = row.attempt.questions[position];
+    if (!question) break;
+    const wrong = question.options.find(option => option.id !== question.correctOptionId).id;
+    const response = await f.candidate(f.path + '/answer', 'POST', { token: f.attempt.token, questionId: question.id,
+      optionId: index < 8 || index >= 12 ? question.correctOptionId : wrong });
+    index++;
+    assert.equal(response.status, 200);
+    if (response.data.extended) {
+      extendedSeen = true;
+      assert.equal(response.data.questionCount, 18); assert.equal(response.data.complete, false);
+      assert.equal(response.data.extension.added, 6);
+      assert(!JSON.stringify(response.data).includes('correctOptionId'));
+    }
+    if (response.data.complete) break;
+  }
+  assert(extendedSeen, 'The borderline attempt was extended');
+  const extended = f.store.get(f.attempt.id).attempt;
+  assert.equal(new Set(extended.questions.map(question => question.variantId)).size, 18, 'Clarifying items are fresh');
+  const result = await f.candidate(f.path + '/submit', 'POST', { token: f.attempt.token });
+  assert.equal(result.data.questionCount, 18); assert.equal(result.data.clarified, true);
+  assert.equal(result.data.score, 78, '14 of 18 correct'); assert.equal(result.data.passed, true);
+
+  const second = await f.candidate('/api/assessment/attempts', 'POST', { survey: { ...survey(), desiredGrade: 'Middle' } });
+  const done = await answerAll(second.data, `/api/assessment/attempts/${second.data.id}`, 11);
+  assert.equal(done.data.complete, true); assert.equal(done.data.extended, false, 'A clear result (92) is not extended');
+});

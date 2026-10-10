@@ -56,6 +56,9 @@ export interface AssessmentAttempt {
   answeredIds?: string[];
   currentDeadline?: string | null;
   complete?: boolean;
+  /** Borderline results get a clarifying block appended after the first 12 items. */
+  extension?: { added: number; from: number };
+  extended?: boolean;
 }
 
 export interface AssessmentIntegrity {

@@ -36,6 +36,7 @@
     "activate:search-model": "node scripts/ml.mjs activate",
     "test:search-quality": "node ml/search-regression.mjs --run --strict",
     "validate:assessment": "node server/validate.mjs",
+    "validate:assessment-model": "node scripts/validate-assessment.mjs",
     "bank:stats": "node --use-env-proxy scripts/item-bank.mjs stats",
     "bank:generate": "node --use-env-proxy scripts/item-bank.mjs generate",
     "bank:list": "node --use-env-proxy scripts/item-bank.mjs list",

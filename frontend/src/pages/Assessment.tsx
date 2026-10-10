@@ -315,6 +315,7 @@ export function Assessment({ state, update, notify, onProfile, onSurvey, onActiv
         <p className="muted">{specializationNames[result.specialization]} · {gradeLabels[result.grade]}</p>
         {result.annulled && <p className="result-note">Зафиксировано {result.integrity?.departures ?? maxStrikes} ухода со страницы теста. Повтор на этот грейд — через {program?.retryDays ?? 7} дн.{state.profile.confirmed ? '' : ', тест на грейд ниже доступен сразу'}.</p>}
         {result.competencies?.length ? <dl className="competency-results">{result.competencies.map(item => <div key={item.topic}><dt>{item.topic}</dt><dd>{item.score}/100</dd></div>)}</dl> : null}
+        {result.clarified && <p className="field-help">Решение принято по {result.questionCount} вопросам: первые 12 дали пограничный результат, и тест добавил уточняющий блок.</p>}
         {!!result.timeouts && !result.annulled && <p className="field-help">Без ответа или после лимита времени: {result.timeouts}.</p>}
         {result.nextGradeAvailable && <div className="next-grade-offer"><ArrowUpRight size={18} /><span>Уверенный результат: тест на {gradeLabels[result.nextGradeAvailable]} доступен без ожидания.</span><button className="text-button" onClick={onSurvey}>Выбрать грейд</button></div>}
         {!result.passed && !result.annulled && state.profile.confirmed && <p className="result-note">Ваша категория {specializationNames[state.profile.confirmed.specialization]} · {gradeLabels[state.profile.confirmed.grade]} сохранена.</p>}
@@ -330,6 +331,7 @@ export function Assessment({ state, update, notify, onProfile, onSurvey, onActiv
           </div>
         </div>
         <div className="exam-progress" role="progressbar" aria-label="Прогресс теста" aria-valuemin={0} aria-valuemax={total} aria-valuenow={position + 1}><span style={{ width: ((position + 1) / Math.max(total, 1) * 100) + '%' }} /></div>
+        {session.extension && position >= session.extension.from && <div className="exam-clarify" role="status"><Layers size={16} /><span>Результат пограничный — ещё {session.extension.added} вопросов уточнят решение. Порог прежний: 70 из 100 по всем вопросам.</span></div>}
         {position === 0 && session.vacancy && <div className="vacancy-summary">
           {session.vacancy.matchedSkills.length ? <div className="tags" aria-label="Навыки из вакансии">{session.vacancy.matchedSkills.map(skill => <span key={skill}>{skill}</span>)}</div> : <p className="field-help">Совпадений для этого варианта нет. Используется стандартная программа.</p>}
           {session.vacancy.unmatchedSkills.length > 0 && <p className="field-help">Без проверки: {session.vacancy.unmatchedSkills.join(', ')}.</p>}
@@ -381,6 +383,7 @@ export function Assessment({ state, update, notify, onProfile, onSurvey, onActiv
                 <li><Maximize2 size={16} /><span>Тест идёт в полноэкранном режиме{fullscreenSupported() ? '' : ' (в этом браузере недоступен — следите за вкладкой)'}.</span></li>
                 <li><EyeOff size={16} /><span>Переход на другую вкладку, в другое окно или выход из полноэкранного режима — нарушение. После {program.maxDepartures}-го попытка аннулируется.</span></li>
                 <li><Timer size={16} /><span>На каждый вопрос — {Math.round(program.questionSeconds / 60)} минуты. Вопросы показываются по одному, вернуться к прошлому нельзя.</span></li>
+                <li><Layers size={16} /><span>Если результат окажется пограничным (55–74), тест добавит 6 уточняющих вопросов — так решение надёжнее.</span></li>
                 <li><Ban size={16} /><span>Копирование, вставка, печать, снимки экрана и инструменты разработчика отключены.</span></li>
                 <li><Fingerprint size={16} /><span>Вопросы помечены водяным знаком вашей попытки.</span></li>
               </ul>

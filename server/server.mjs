@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { resolve, relative, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openStore } from './store.mjs';
-import { annulledResult, createAttempt, digest, emptyProgress, evaluate, integrityKinds, maxDepartures, programInfo, publicAttempt,
+import { annulledResult, createAttempt, digest, emptyProgress, evaluate, extendBorderline, integrityKinds, maxDepartures, programInfo, provisionalScore, publicAttempt,
   recordAnswer, RequestError, retakeLock, retryDays, validateSurvey } from './assessment.mjs';
 import { programs } from './bank.mjs';
 import { ItemBank } from './item-bank.mjs';
@@ -467,8 +467,20 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
             recorded = recordAnswer(row.attempt, row.progress, input, now());
             if (recorded.changed && !store.saveProgress(row.id, recorded.progress, row.progress)) throw new RequestError(409, 'Ответ уже обрабатывается. Повторите.');
           }
-          const complete = Object.keys(recorded.progress.answers).length === row.attempt.questions.length;
-          return send(response, 200, { ...publicAttempt(row.attempt, recorded.progress), complete,
+          let attempt = row.attempt, progress = recorded.progress;
+          let complete = Object.keys(progress.answers).length === attempt.questions.length;
+          let extended = false;
+          if (complete) {
+            const longer = extendBorderline(attempt, provisionalScore(attempt, progress), { bank, recent: store.recent(session, attempt.specialization, attempt.grade).filter(item => item.id !== attempt.id), now: now() });
+            if (longer) {
+              progress = { ...progress, revealedAt: { ...progress.revealedAt, [longer.questions[attempt.questions.length].id]: new Date(now()).toISOString() } };
+              if (store.extend(row.id, longer, progress)) {
+                bank.recordExposure(longer.questions.slice(attempt.questions.length).map(question => question.variantId));
+                attempt = longer; complete = false; extended = true;
+              }
+            }
+          }
+          return send(response, 200, { ...publicAttempt(attempt, progress), complete, extended,
             serverNow: new Date(now()).toISOString(), integrity: store.integrity(row.id), status: 'active' });
         }
         const match = /^\/api\/assessment\/attempts\/([a-f0-9-]{36})(\/submit)?$/.exec(url.pathname);

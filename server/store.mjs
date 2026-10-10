@@ -65,6 +65,11 @@ export function openStore(path) {
     countSince(owner, date) {
       return db.prepare('SELECT COUNT(*) AS count FROM attempts WHERE owner = ? AND created_at >= ?').get(owner, date).count;
     },
+    /** Replaces the private attempt payload (clarifying block) together with its progress. */
+    extend(id, attempt, progress) {
+      return db.prepare('UPDATE attempts SET payload = ?, expires_at = ?, progress = ? WHERE id = ? AND result IS NULL')
+        .run(JSON.stringify(attempt), attempt.expiresAt, JSON.stringify(progress), id).changes === 1;
+    },
     saveProgress(id, progress, expected) {
       return db.prepare('UPDATE attempts SET progress = ? WHERE id = ? AND result IS NULL AND COALESCE(progress, \'\') = ?')
         .run(JSON.stringify(progress), id, expected ? JSON.stringify(expected) : '').changes === 1;

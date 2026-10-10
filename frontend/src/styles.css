@@ -812,3 +812,6 @@ fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
 .hiring-needs .hiring-needs-list { margin-top: 0; }
 .hiring-needs .hiring-need-select[aria-pressed="true"] { background: transparent; color: inherit; }
 .hiring-needs .hiring-need-select { font-size: 13px; border-radius: 12px; }
+
+.exam-clarify { display: flex; align-items: flex-start; gap: 9px; margin: -12px 0 22px; padding: 11px 14px; border-radius: 8px; background: #eef5ff; color: #00429a; font-size: 13px; line-height: 1.5; }
+.exam-clarify svg { margin-top: 2px; flex-shrink: 0; }

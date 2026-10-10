@@ -25,9 +25,10 @@ export async function startExam(page) {
  * question index. Unknown (pilot) questions take the first option.
  */
 export async function answerExam(page, key, { correct = true } = {}) {
-  const total = Number(await page.locator('.exam-progress').getAttribute('aria-valuemax'));
-  for (let index = 0; index < total; index++) {
+  // The total can grow when a borderline result receives a clarifying block.
+  for (let index = 0; ; index++) {
     await page.locator(`.exam-progress[aria-valuenow="${index + 1}"]`).waitFor();
+    const total = Number(await page.locator('.exam-progress').getAttribute('aria-valuemax'));
     const choices = page.locator('.answer-option');
     const texts = (await choices.locator('span').allTextContents()).map(text => text.trim());
     const expected = key?.get((await page.locator('.question-text').textContent()).trim());
@@ -36,6 +37,12 @@ export async function answerExam(page, key, { correct = true } = {}) {
     assert.ok(chosen >= 0, 'Expected an answer option for this program');
     await choices.nth(chosen).click();
     await page.getByRole('button', { name: index === total - 1 ? 'Завершить тест' : 'Ответить', exact: true }).click();
+    if (index === total - 1) {
+      const next = page.locator(`.exam-progress[aria-valuenow="${index + 2}"]`);
+      const result = page.locator('.assessment-result');
+      await Promise.race([next.waitFor(), result.waitFor()]);
+      if (await result.count()) break;
+    }
   }
   await page.locator('.assessment-result').waitFor();
 }

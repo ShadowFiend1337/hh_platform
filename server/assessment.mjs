@@ -12,6 +12,12 @@ export const expiresInMinutes = 30;
 /** Two scored items from every family: 3 topics x 2 difficulty slots x 2 = 12. */
 export const itemsPerFamily = 2;
 export const questionSeconds = 120;
+/**
+ * Borderline results get a clarifying block: one more fresh item from every family
+ * (6 items) when the first 12 scored items give 55-74. The decision then uses all
+ * 18 items with the same threshold, which raises retest agreement (docs/assessment_validation_results.md).
+ */
+export const borderline = Object.freeze({ from: 55, to: 75, perFamily: 1, extraMinutes: 13 });
 /** Network and rendering grace for the per-question limit. */
 export const answerGraceMs = 8000;
 /** Departures from the test (tab switch, window blur, leaving full screen) before annulment. */
@@ -130,6 +136,37 @@ export function createAttempt(surveyInput, vacancyDescription = '', recent = [],
   };
 }
 
+/** Share of correct scored answers among the locked ones, 0-100. */
+export function provisionalScore(attempt, progress) {
+  const scored = attempt.questions.filter(question => !question.pilot);
+  const correct = scored.filter(question => {
+    const answer = progress?.answers?.[question.id];
+    return answer && !answer.late && answer.optionId === question.correctOptionId;
+  }).length;
+  return Math.round(correct / scored.length * 100);
+}
+
+/**
+ * Returns the attempt with a clarifying block appended, or null when the result is
+ * not borderline or the attempt was already extended. Items come from the same
+ * families, excluding everything this owner has seen.
+ */
+export function extendBorderline(attempt, score, { bank = null, recent = [], now = Date.now() } = {}) {
+  if (attempt.extension || attempt.delivery !== 'sequential' || score < borderline.from || score >= borderline.to) return null;
+  const program = getProgram(attempt.specialization, attempt.grade);
+  const seen = new Set([...attempt.questions, ...recent.flatMap(item => item.questions)].map(question => question.variantId));
+  const families = [...new Set(attempt.questions.filter(question => !question.pilot).map(question => question.familyId))]
+    .map(id => program.families.find(family => family.id === id)).filter(Boolean);
+  const extra = shuffled(families.flatMap(family => {
+    const fresh = bank ? bank.pick(family, borderline.perFamily, { seen }) : seedPick(family, borderline.perFamily, seen, () => 0);
+    return fresh.filter(item => !seen.has(item.id)).map(item => materialize(item, { topic: family.topic, familyId: family.id, difficulty: family.difficulty }));
+  }));
+  if (!extra.length) return null;
+  return { ...attempt, questions: [...attempt.questions, ...extra],
+    expiresAt: new Date(Math.max(Date.parse(attempt.expiresAt), now) + borderline.extraMinutes * 60000).toISOString(),
+    extension: { reason: 'borderline', provisionalScore: score, added: extra.length, at: new Date(now).toISOString() } };
+}
+
 export function emptyProgress(attempt) {
   return { answers: {}, revealedAt: { [attempt.questions[0].id]: attempt.createdAt } };
 }
@@ -151,6 +188,7 @@ export function publicAttempt(attempt, progress = null) {
   const current = sequential ? attempt.questions[position] : null;
   return { id, bankVersion, specialization, grade, surveyId, createdAt, expiresAt, blueprint, vacancy,
     delivery: sequential ? 'sequential' : 'all', questionCount: attempt.questions.length,
+    ...(attempt.extension ? { extension: { added: attempt.extension.added, from: attempt.questions.length - attempt.extension.added } } : {}),
     questions: visible.map(({ id, topic, text, options }) => ({ id, topic, text, options })),
     ...(sequential ? {
       position, questionSeconds: attempt.questionSeconds || questionSeconds,
@@ -217,6 +255,7 @@ function scoreAttempt(attempt, selection, now, integrity) {
     surveyId: attempt.surveyId, score, passed, bankVersion: attempt.bankVersion, competencies,
     vacancySkills: attempt.vacancy?.matchedSkills || [], questionCount: scored.length, timeouts,
     ...(passed && score >= confidentThreshold && higher ? { nextGradeAvailable: higher } : {}),
+    ...(attempt.extension ? { clarified: true } : {}),
     ...(integrity ? { integrity } : {}),
   } };
 }
