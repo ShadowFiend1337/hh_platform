@@ -64,7 +64,9 @@ export function CompanyOffers({ company, syncStatus = 'saved', notify }: {
     try {
       const offer = editing.original ? await updateVacancy(editing.original.id, input) : await createVacancy(input);
       setOffers(previous => [offer, ...previous.filter(item => item.id !== offer.id)]);
-      setEditing(null); notify(editing.original ? 'Предложение обновлено' : 'Предложение опубликовано');
+      setEditing(null);
+      const done = editing.original ? 'Предложение обновлено' : 'Предложение опубликовано';
+      notify(offer.risk ? done + '. Проверьте: ' + offer.risk.signals.map(signal => signal.message).join(' ') : done);
     } catch (cause) { setError(messageOf(cause)); }
     finally { setBusy(false); }
   }

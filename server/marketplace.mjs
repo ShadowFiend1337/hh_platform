@@ -5,6 +5,7 @@ import { MAX_STACK_SKILLS } from '../shared/resume-limits.ts';
 import { RequestError } from './assessment.mjs';
 import { publicCandidate } from './directory-store.mjs';
 import { accountsShareRealm, isLocalFixtureAccount } from './local-fixtures.mjs';
+import { assessOfferRisk, blockedMessage } from './offer-risk.mjs';
 
 const fail = message => { throw new RequestError(400, message); };
 const ownCandidateId = 'candidate-anna';
@@ -30,6 +31,10 @@ function validateVacancy(input) {
     || result.salaryFrom > result.salaryTo) fail('Укажите корректный зарплатный диапазон в рублях.');
   if (value.stack !== undefined && (!Array.isArray(value.stack) || value.stack.length > MAX_STACK_SKILLS)) fail('Проверьте список навыков вакансии.');
   result.stack = [...new Set((value.stack || []).map(skill => text(skill, 80, true)))];
+  // Fraud patterns block publication; softer signals are returned to the employer.
+  const risk = assessOfferRisk(result);
+  if (risk.level === 'block') throw new RequestError(400, blockedMessage(risk), { risk });
+  result.risk = risk;
   return result;
 }
 
@@ -274,7 +279,7 @@ export class MarketplaceService {
         .run(vacancyId, companyId, value.title, value.description, value.specialization, value.grade, value.city, value.format,
           value.salaryFrom, value.salaryTo, 'open', date, date);
       this.skills(vacancyId, value.stack);
-      return this.vacancyDTO(this.row(vacancyId));
+      return { ...this.vacancyDTO(this.row(vacancyId)), ...(value.risk.level === 'warn' ? { risk: value.risk } : {}) };
     });
   }
   skills(vacancyId, stack) {
@@ -300,7 +305,7 @@ export class MarketplaceService {
           value.city, value.format, value.salaryFrom, value.salaryTo, date, row.id);
         this.skills(row.id, value.stack);
       }
-      return this.vacancyDTO(this.row(row.id));
+      return { ...this.vacancyDTO(this.row(row.id)), ...(value?.risk.level === 'warn' ? { risk: value.risk } : {}) };
     });
   }
   applicationDTO(row, owner) {

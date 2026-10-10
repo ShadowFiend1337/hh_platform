@@ -30,6 +30,7 @@
 | [fsp_id.md](fsp_id.md) | Вход через ФСП ID: OpenID Connect + PKCE, тестовый стенд Keycloak, импорт достижений, подключение боевого Keycloak |
 | [search_match.md](search_match.md) | Процент совпадения в подборке: сигналы, базовые веса, их обоснование по ТЗ и пересчёт под запрос |
 | [employer_tasks.md](employer_tasks.md) | Регулярные задания от работодателя, ИИ-разбор ответа и отметка свежести профиля |
+| [employer_protection.md](employer_protection.md) | Защита от фиктивных вакансий и недобросовестных работодателей: что работает и следующий этап |
 | [api/platform.openapi.json](api/platform.openapi.json) | Полный OpenAPI основного API (Swagger UI — `/api/docs`) |
 | [details.md](details.md) | Подробный прежний обзор: статус модулей, запуск модели поиска, ограничения и история проверок |
 | [dynamic_bank.md](dynamic_bank.md) | Динамический банк: авторские семейства, генерация открытой Qwen, проверка DeepSeek, пилотные задания, калибровка и контроль экспозиции |

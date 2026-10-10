@@ -139,7 +139,9 @@ const schemas = {
     city: string(), format: string(), stack: array(string()), salaryFrom: integer('', { minimum: 1 }), salaryTo: integer('', { maximum: 10000000 }) },
   ['title', 'description', 'specialization', 'grade', 'city', 'format', 'salaryFrom', 'salaryTo']),
   Vacancy: { allOf: [ref('VacancyInput'), object({ id: string(), companyId: string(), company: string(), currency: string('', { const: 'RUB' }),
-    status: string('', { enum: ['open', 'closed'] }), date: string(), synthetic: boolean() }, ['id', 'companyId', 'status'])] },
+    status: string('', { enum: ['open', 'closed'] }), date: string(), synthetic: boolean(),
+    risk: object({ level: string('', { const: 'warn' }), signals: array(object({ code: string(), severity: string(), message: string() })) }, [],
+      { description: 'Только в ответе публикующему: предупреждения проверки на мошеннические шаблоны (docs/employer_protection.md)' }) }, ['id', 'companyId', 'status'])] },
   VacancyPatch: { oneOf: [ref('VacancyInput'), object({ status: string('', { const: 'closed' }) }, ['status'])] },
   Company: object({ id: string(), name: string(), industry: string(), website: string(), contact: string(), description: string(),
     synthetic: boolean('Демокомпания'), vacancies: array(ref('Vacancy')) }, ['id', 'name']),
@@ -264,7 +266,8 @@ const paths = {
   '/api/vacancies': {
     get: op({ tag: 'Компании и вакансии', summary: 'Открытые вакансии или вакансии своей компании', role: 'any', params: [query('own', '`1` — вакансии своей компании (работодатель)')],
       response: object({ items: array(ref('Vacancy')) }, ['items']) }),
-    post: op({ tag: 'Компании и вакансии', summary: 'Опубликовать вакансию', role: 'employer', ok: 201, body: ref('VacancyInput'), response: ref('Vacancy'), codes: [400, 409] }) },
+    post: op({ tag: 'Компании и вакансии', summary: 'Опубликовать вакансию', role: 'employer', ok: 201, body: ref('VacancyInput'), response: ref('Vacancy'), codes: [400, 409],
+      description: 'Текст проверяется на мошеннические шаблоны: требование оплаты или личных данных кандидата → 400 с `risk`; мягкие признаки возвращаются в `risk` ответа.' }) },
   '/api/vacancies/{id}': {
     get: op({ tag: 'Компании и вакансии', summary: 'Вакансия', role: 'any', params: [path('id', 'Вакансия')], response: ref('Vacancy'), codes: [404] }),
     patch: op({ tag: 'Компании и вакансии', summary: 'Изменить или закрыть вакансию', role: 'employer', params: [path('id', 'Вакансия')], body: ref('VacancyPatch'), response: ref('Vacancy'), codes: [400, 404] }) },

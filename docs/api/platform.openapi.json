@@ -1643,7 +1643,7 @@
           "Компании и вакансии"
         ],
         "summary": "Опубликовать вакансию",
-        "description": "Доступ: Работодатель.",
+        "description": "Текст проверяется на мошеннические шаблоны: требование оплаты или личных данных кандидата → 400 с `risk`; мягкие признаки возвращаются в `risk` ответа.\n\nДоступ: Работодатель.",
         "security": [
           {
             "accountSession": []
@@ -10320,6 +10320,33 @@
               },
               "synthetic": {
                 "type": "boolean"
+              },
+              "risk": {
+                "type": "object",
+                "properties": {
+                  "level": {
+                    "type": "string",
+                    "const": "warn"
+                  },
+                  "signals": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "severity": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                },
+                "description": "Только в ответе публикующему: предупреждения проверки на мошеннические шаблоны (docs/employer_protection.md)"
               }
             },
             "required": [

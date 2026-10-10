@@ -20,6 +20,8 @@ export interface Vacancy extends VacancyInput {
   status: 'open' | 'closed';
   date: string;
   synthetic: boolean;
+  /** Fraud-pattern warnings, returned to the publishing employer only. */
+  risk?: { level: 'warn'; signals: { code: string; severity: 'warn'; message: string }[] };
 }
 
 export interface CompanyDirectoryItem {

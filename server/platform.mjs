@@ -9,6 +9,7 @@ import { isDemoCatalogProfile } from './demo-catalog.mjs';
 import { confidentThreshold, nextGrade, RequestError, threshold } from './assessment.mjs';
 import { syncMarketplaceCompany } from './marketplace.mjs';
 import { accountsShareRealm, isLocalFixtureAccount } from './local-fixtures.mjs';
+import { assessOfferRisk, blockedMessage, OFFER_RISK_POLICY } from './offer-risk.mjs';
 import { randomBytes } from 'node:crypto';
 import { PRIVACY_POLICY_VERSION } from '../shared/privacy.ts';
 
@@ -501,6 +502,13 @@ export class PlatformService {
             || !candidate.eligible || !candidate.visible || !candidate.consent) throw new RequestError(404, 'Кандидат недоступен для приглашения.');
           if (item.status !== 'sent') throw new RequestError(403, 'Работодатель может только отправить приглашение.');
           if (!employer.name) fail('Укажите название компании.');
+          const risk = assessOfferRisk({ title: item.title, description: item.description, salaryFrom: item.salaryFrom, salaryTo: item.salaryTo,
+            grade: candidate.grade || undefined });
+          if (risk.level === 'block') throw new RequestError(400, blockedMessage(risk), { risk });
+          // Mass invitations are a spam pattern; a real search sends a few targeted offers a day.
+          const recent = this.store.db.prepare('SELECT COUNT(*) AS n FROM platform_invitations WHERE sender=? AND created_at>?')
+            .get(owner, new Date(this.now() - 86400000).toISOString()).n;
+          if (recent >= OFFER_RISK_POLICY.invitationsPerDay) throw new RequestError(429, `Допустимо до ${OFFER_RISK_POLICY.invitationsPerDay} новых приглашений в сутки.`);
           const payload = { ...item, candidateId: target, companyId: companyId(owner), company: employer.name, date: timestamp };
           this.store.db.prepare('INSERT INTO platform_invitations VALUES(?,?,?,?,?,?)').run(item.id, owner, target, 'sent', timestamp, JSON.stringify(payload));
           if (candidate.owner && candidate.owner !== owner) changedOwners.add(candidate.owner);
