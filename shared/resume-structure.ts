@@ -16,6 +16,13 @@ export const MAX_WORK_EXPERIENCES = 30;
 export const MAX_PET_PROJECTS = 30;
 export const MAX_RESUME_ITEMS = 50;
 
+/** OCR may mix visually similar Latin/Cyrillic letters in this short section label. */
+export function normalizePetProjectHeading(line: string): string {
+  const heading = line.trim();
+  return heading.length <= 40 && /^[pр][eе][tт][ \t]*(?:[-—–][ \t]*)?(?:проект(?:ы)?|projects?)[ \t]*:?[ \t]*$/iu.test(heading)
+    ? 'Pet-проекты' : line;
+}
+
 const text = (value: unknown, limit: number) => typeof value === 'string' ? value.trim().slice(0, limit) : '';
 const record = (value: unknown): Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 
@@ -167,7 +174,7 @@ interface ResumeSectionInput {
 /** Earlier imports stored pet projects below a heading in workHistory. Separate them once. */
 function legacyHistory(value: unknown): { history: string; projects: PetProject[] } {
   const lines = text(value, resumeSectionLimits.workHistory).split(/\r?\n/u);
-  const heading = lines.findIndex(line => /^(?:pet[- ]?проект(?:ы)?|пет[- ]?проект(?:ы)?|личные проекты|учебные проекты|pet projects?|personal projects|side projects)\s*:?[ \t]*$/iu.test(line.trim()));
+  const heading = lines.findIndex(line => /^(?:pet[- ]?проект(?:ы)?|пет[- ]?проект(?:ы)?|личные проекты|учебные проекты|pet projects?|personal projects|side projects)\s*:?[ \t]*$/iu.test(normalizePetProjectHeading(line).trim()));
   if (heading < 0) return { history: lines.join('\n'), projects: [] };
   const projects: PetProject[] = [];
   let entry: PetProject = { name: '', description: '', stack: [] };

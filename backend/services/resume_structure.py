@@ -8,12 +8,20 @@ from backend.services.common import ApiError
 MAX_SOFT_SKILLS = 30
 
 
+def _is_pet_project_heading(line: str) -> bool:
+    heading = line.strip()
+    # Normalize only an explicit short OCR label, never words inside prose or descriptions.
+    if len(heading) <= 40 and re.fullmatch(r"[pр][eе][tт][ \t]*(?:[-—–][ \t]*)?(?:проект(?:ы)?|projects?)[ \t]*:?[ \t]*", heading, re.I):
+        heading = "Pet-проекты"
+    return bool(re.fullmatch(r"(?:pet[- ]?проект(?:ы)?|пет[- ]?проект(?:ы)?|личные проекты|учебные проекты|pet projects?|personal projects|side projects)\s*:?[ \t]*", heading, re.I))
+
+
 def _legacy_work_history(source: Any) -> str:
     if not isinstance(source, str):
         return ""
     history = source.strip()[:20000]
     lines = history.split("\n")
-    heading = next((index for index, line in enumerate(lines) if re.match(r"^(?:pet[- ]?проект(?:ы)?|пет[- ]?проект(?:ы)?|личные проекты|учебные проекты|pet projects?|personal projects|side projects)\s*:?[ \t]*$", line.strip(), re.I)), None)
+    heading = next((index for index, line in enumerate(lines) if _is_pet_project_heading(line)), None)
     return "\n".join(lines[:heading]).strip() if heading is not None else history
 
 
@@ -147,7 +155,7 @@ def resume_sections(value: dict[str, Any]) -> dict[str, Any]:
             legacy[target].append(line)
     legacy_history = safe_text(value.get("workHistory"), 20000)
     lines = legacy_history.split("\n")
-    heading = next((index for index, line in enumerate(lines) if re.match(r"^(?:pet[- ]?проект(?:ы)?|пет[- ]?проект(?:ы)?|личные проекты|учебные проекты|pet projects?|personal projects|side projects)\s*:?[ \t]*$", line.strip(), re.I)), None)
+    heading = next((index for index, line in enumerate(lines) if _is_pet_project_heading(line)), None)
     legacy_projects: list[dict[str, Any]] = []
     if heading is not None:
         legacy_history = "\n".join(lines[:heading]).strip()

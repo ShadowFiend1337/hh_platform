@@ -946,3 +946,48 @@ test('unchanged maximum-budget legacy history round-trips without generated sepa
   assert.notEqual(workHistoryText(edited, history), history);
   assert.ok(workHistoryText(resumeSections({ workExperiences: edited }).workExperiences).length <= 20_000, 'edited data follows the existing structured budget');
 });
+
+test('OCR visual Pet-heading aliases separate complete projects from employment in a real recognized resume', () => {
+  for (const heading of ['Рет-проекты', 'Peт-проекты', 'Рeт-проекты', 'Реt-проекты', 'Pет-проекты', 'Рet-проекты', 'pеt-проекты:', 'Рет — проекты']) {
+    const fields = parseResumeText(`Опыт работы
+Компания: Example Studio
+Период: Январь 2024 — Декабрь 2025
+Задачи: Разработал интерфейсы каталога
+${heading}
+Название: Планировщик
+Описание: Приложение для планирования встреч
+Стек: React, TypeScript
+Достижения
+• Победитель хакатона 2025
+Интересы
+• Алгоритмы`, { asOf: fixedAsOf });
+    assert.deepEqual(fields.workExperiences, [{ period: 'Январь 2024 — Декабрь 2025', company: 'Example Studio', tasks: 'Разработал интерфейсы каталога' }], heading);
+    assert.deepEqual(fields.petProjects, [{ name: 'Планировщик', description: 'Приложение для планирования встреч', stack: ['React', 'TypeScript'] }], heading);
+    assert.deepEqual(fields.achievementItems, ['Победитель хакатона 2025']);
+    assert.deepEqual(fields.interests, ['Алгоритмы']);
+    assert.doesNotMatch(fields.workHistory, /Планировщик|Приложение|React|TypeScript|проекты/iu);
+  }
+});
+
+test('legacy work migration recognizes the same standalone OCR Pet-heading aliases', () => {
+  const work = 'Работа в Example Studio\nРазработал интерфейсы каталога';
+  for (const heading of ['Рет-проекты', 'Peт-проекты', 'Рeт-проекты', 'Реt-проекты:']) {
+    const source = `${work}\n${heading}\nНазвание: Планировщик\nОписание: Приложение для планирования встреч\nСтек: React, TypeScript`;
+    const fields = resumeSections({ workHistory: source });
+    assert.deepEqual(fields.workExperiences, [{ period: '', company: '', tasks: work }], heading);
+    assert.deepEqual(fields.petProjects, [{ name: 'Планировщик', description: 'Приложение для планирования встреч', stack: ['React', 'TypeScript'] }], heading);
+    assert.equal(workHistoryText(fields.workExperiences, source), work);
+  }
+});
+
+test('OCR Pet-heading tolerance leaves prose and inline descriptions inside their original employment section', () => {
+  for (const prose of ['Разрабатывал Рет-проекты в учебной команде', 'Рет-проекты помогают изучать технологии', 'Рет-проекты: разработал несколько приложений']) {
+    const source = `Компания: Example Studio\nПериод: Январь 2024 — Декабрь 2025\nЗадачи: Разработал интерфейсы каталога\n${prose}`;
+    const fields = parseResumeText(`Опыт работы\n${source}`, { asOf: fixedAsOf });
+    assert.equal(fields.petProjects, undefined, prose);
+    assert.equal(fields.workExperiences[0].tasks, `Разработал интерфейсы каталога\n${prose}`, prose);
+    const migrated = resumeSections({ workHistory: source });
+    assert.deepEqual(migrated.petProjects, [], prose);
+    assert.equal(migrated.workExperiences[0].tasks, source, prose);
+  }
+});

@@ -1,7 +1,7 @@
 import { detectIndustry, detectSpecialization, normalizeProfessionalRole, normalizeStackSkills, competenceOptions, softSkillOptions, type Specialization } from '../../shared/catalog.ts';
 import { MAX_STACK_SKILLS, MAX_SOFT_SKILLS, resumeTextLimits, resumeSectionLimits } from '../../shared/resume-limits.ts';
 import { detectGrade, type Grade } from '../../shared/grading.ts';
-import { resumeListItems, resumeSections, type WorkExperience, type PetProject } from '../../shared/resume-structure.ts';
+import { normalizePetProjectHeading, resumeListItems, resumeSections, type WorkExperience, type PetProject } from '../../shared/resume-structure.ts';
 
 /** Fields are suggestions from explicit resume text; category and consent are never inferred. */
 export interface ResumeFields {
@@ -81,7 +81,10 @@ function employmentPeriodAt(lines: string[], index: number): { match: RegExpExec
   }
   return { match, lineCount };
 }
-const headerFrom = (line: string) => sectionPatterns.map(([kind, pattern]) => ({ kind, match: pattern.exec(line) })).find(item => item.match);
+const headerFrom = (line: string) => {
+  const heading = normalizePetProjectHeading(line);
+  return sectionPatterns.map(([kind, pattern]) => ({ kind, match: pattern.exec(heading) })).find(item => item.match);
+};
 const employerLine = /^(?:ООО|АО|ПАО|ЗАО|ИП|ОАО|компания|работодатель|company|employer)(?:\s|:|$)|(?:компания|company|ltd\.?|llc)\s*$/iu;
 const employmentRoleLine = (line: string) => line.length <= 100 && roleWords.test(line)
   && !/[.!?]$/u.test(line) && !/^(?:создал|разработал|запустил|улучшил|сократил|built|created|developed|launched)\s/iu.test(line);

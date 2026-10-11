@@ -34,6 +34,23 @@ class ResumeStructureTest(unittest.TestCase):
         self.assertEqual(result["workExperiences"], [{"company": "", "period": "", "tasks": "Работа в лаборатории"}])
         self.assertEqual(result["petProjects"], [{"name": "Телеметрия", "description": "Датчики", "stack": ["Python", "ESP32"]}])
 
+    def test_ocr_pet_heading_migrates_only_standalone_visual_aliases(self):
+        history = "Работа в Example Studio\nРазработал интерфейсы каталога"
+        project = "Название: Планировщик\nОписание: Приложение для планирования встреч\nСтек: React, TypeScript"
+        for heading in ("Рет-проекты", "Peт-проекты", "Рeт-проекты", "Реt-проекты:"):
+            with self.subTest(heading=heading):
+                source = history + "\n" + heading + "\n" + project
+                migrated = resume_sections({"workHistory": source})
+                self.assertEqual(migrated["workExperiences"], [{"period": "", "company": "", "tasks": history}])
+                self.assertEqual(migrated["petProjects"], [{"name": "Планировщик", "description": "Приложение для планирования встреч", "stack": ["React", "TypeScript"]}])
+                self.assertEqual(validate_resume_fields({"workHistory": source, **migrated})["workHistory"], history)
+        for prose in ("Разрабатывал Рет-проекты в учебной команде", "Рет-проекты помогают изучать технологии", "Рет-проекты: разработал несколько приложений"):
+            with self.subTest(prose=prose):
+                source = history + "\n" + prose
+                migrated = resume_sections({"workHistory": source})
+                self.assertEqual(migrated["petProjects"], [])
+                self.assertEqual(migrated["workExperiences"][0]["tasks"], source)
+
     def test_malformed_and_over_budget(self):
         for item in [{"workExperiences": [{}]}, {"petProjects": [{"name": "x", "description": "", "stack": [3]}]},
                      {"interests": ["x" * 4001]}, {"achievementItems": ["x" * 3000, "y" * 2000]},
