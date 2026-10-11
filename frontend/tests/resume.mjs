@@ -195,6 +195,24 @@ async function assertNoAutomaticConsent() {
   assert.equal(state.profile.confirmed, null, 'Resume cannot confer a verified grade');
   assert.equal(state.surveys.length, 0, 'Import cannot silently complete the questionnaire');
 }
+async function workHistory() {
+  return page.getByRole('region', { name: 'Опыт работы', exact: true }).locator('.resume-entry').evaluateAll(entries => entries.map(entry => [
+    entry.querySelector('input[name^="workCompany"]').value,
+    entry.querySelector('input[name^="workPeriod"]').value,
+    entry.querySelector('textarea[name^="workTasks"]').value,
+  ].filter(Boolean).join('\n')).filter(Boolean).join('\n\n'));
+}
+async function setWorkHistory(text) {
+  const section = page.getByRole('region', { name: 'Опыт работы', exact: true });
+  while (await section.getByRole('button', { name: /^Удалить место работы/ }).count()) await section.getByRole('button', { name: /^Удалить место работы/ }).first().click();
+  const blocks = text.split('\n\n');
+  for (const [index, block] of blocks.entries()) {
+    assert.ok(block.length <= 4000, 'Each structured task field must fit its field budget');
+    await section.getByRole('button', { name: 'Добавить место работы', exact: true }).click();
+    await section.getByLabel(`Задачи ${index + 1}`, { exact: true }).fill(block);
+  }
+}
+
 async function mobileAudit(target = page) {
   await target.setViewportSize({ width: 320, height: 750 });
   assert.equal(await target.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, 'Page overflows at 320px');
@@ -211,7 +229,7 @@ try {
   await attach({ name: 'synthetic-resume.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', buffer: docxBuffer });
   assert.equal(await page.locator('[name="name"]').inputValue(), 'Иван Соколов');
   assert.equal(await page.locator('[name="email"]').inputValue(), 'ivan.test@example.com');
-  assert.match(await page.locator('[name="stack"]').inputValue(), /React/);
+  assert.equal(await page.locator('.competency-field').first().getByRole('checkbox', { name: 'React', exact: true }).isChecked(), true);
   assert.equal(await page.locator('[name="specialization"]').inputValue(), 'Frontend');
   assert.equal(await page.getByLabel('Коммуникация', { exact: true }).isChecked(), true);
   assert.equal(await page.getByLabel('Работа в команде', { exact: true }).isChecked(), true);
@@ -223,7 +241,7 @@ try {
 
   await page.locator('[name="name"]').fill('Ручная правка');
   const filledDraft = await page.locator('.onboarding-form').evaluate(form => [...new FormData(form).entries()]);
-  await page.getByRole('button', { name: 'Удалить резюме', exact: true }).click();
+  await page.getByRole('button', { name: 'Убрать файл', exact: true }).click();
   assert.equal(await page.locator('.resume-file-name').count(), 0);
   assert.equal(await page.locator('.resume-import [role="status"]').textContent(), '');
   assert.equal(await page.getByRole('button', { name: 'Добавить резюме', exact: true }).isVisible(), true);
@@ -257,13 +275,13 @@ try {
   await resetForm();
   await attach({ name: 'native.pdf', mimeType: 'application/pdf', buffer: nativePdf(['Ivan Sokolov', 'Frontend developer Middle', 'ivan.native@example.com', 'Skills: React, TypeScript, JavaScript, CSS', 'Experience: 3 years', 'Education', 'Example university 2020']) });
   assert.equal(await page.locator('[name="email"]').inputValue(), 'ivan.native@example.com');
-  assert.match(await page.locator('[name="stack"]').inputValue(), /React/);
+  assert.equal(await page.locator('.competency-field').first().getByRole('checkbox', { name: 'React', exact: true }).isChecked(), true);
   await assertNoAutomaticConsent();
 
   await resetForm();
   await attach({ name: 'scanned.pdf', mimeType: 'application/pdf', buffer: scannedPdf(await imageResume('image/jpeg')) });
   assert.equal(await page.locator('[name="email"]').inputValue(), 'ivan.test@example.com', 'Image-only PDF must use actual OCR fallback');
-  assert.match(await page.locator('[name="stack"]').inputValue(), /React/);
+  assert.equal(await page.locator('.competency-field').first().getByRole('checkbox', { name: 'React', exact: true }).isChecked(), true);
   await assertNoAutomaticConsent();
 
   // Every page is raster-only: actual OCR must retain all jobs across page
@@ -274,8 +292,8 @@ try {
   const multipageScan = { name: 'multi-job-scan.pdf', mimeType: 'application/pdf', buffer: resumePdf(experienceImages) };
   assertCompleteExperience(await inspectDocument(multipageScan), 'ocr');
   await attach(multipageScan);
-  for (const company of ['North Company', 'Vector Company', 'Start Company']) assert.match(await page.locator('[name="workHistory"]').inputValue(), new RegExp(company));
-  assert.equal(await page.locator('[name="workHistory"]').isVisible(), true, 'Imported work history must be visible in the main questionnaire');
+  for (const company of ['North Company', 'Vector Company', 'Start Company']) assert.match(await workHistory(), new RegExp(company));
+  assert.equal(await page.getByRole('region', { name: 'Опыт работы', exact: true }).isVisible(), true, 'Imported work history must be visible in the main questionnaire');
   await assertNoAutomaticConsent();
 
   const datedLines = experiencePages[0].map(line => line.replace('Опыт работы: 6 лет', 'Опыт работы'));
@@ -331,8 +349,8 @@ try {
   assert.ok(oversizedResult.truncatedFields.includes('workHistory'));
   assert.equal(oversizedResult.fields.workHistory.length, 20000);
   await attach(oversizedResume);
-  assert.match(await page.locator('.resume-import [role="status"]').textContent(), /Сокращены длинные поля: Места работы и проекты/);
-  const boundedHistory = await page.locator('[name="workHistory"]').inputValue();
+  assert.match(await page.locator('.resume-import [role="status"]').textContent(), /Сокращены длинные поля: Опыт работы/);
+  const boundedHistory = await workHistory();
   assert.ok(boundedHistory.length <= 20000 && boundedHistory.length > 19000);
   assert.ok(boundedHistory.startsWith('Long Synthetic Company'));
   await assertNoAutomaticConsent();
@@ -346,7 +364,7 @@ try {
   });
   assert.equal(await page.locator('[name="name"]').inputValue(), 'Правка во время OCR', 'OCR must preserve edits made while reading');
   assert.equal(await page.locator('[name="email"]').inputValue(), 'ivan.test@example.com', 'Image text must be recognized by actual OCR');
-  assert.match(await page.locator('[name="stack"]').inputValue(), /React/);
+  assert.equal(await page.locator('.competency-field').first().getByRole('checkbox', { name: 'React', exact: true }).isChecked(), true);
   await assertNoAutomaticConsent();
 
   await page.getByLabel('Файл резюме').setInputFiles({ name: 'cancel-scan.png', mimeType: 'image/png', buffer: png });
@@ -358,15 +376,17 @@ try {
   assert.equal(await page.getByRole('button', { name: 'К тесту', exact: true }).isEnabled(), true);
 
   await page.locator('[name="name"]').fill('Иван Соколов');
-  await page.locator('[name="industry"]').selectOption('ИТ');
-  await page.locator('[name="professionalRole"]').fill('Разработчик');
+  await page.locator('[name="professionalRole"]').selectOption('Frontend-разработчик');
   await page.locator('[name="specialization"]').selectOption('Frontend');
   await page.locator('[name="desiredGrade"]').selectOption('Middle');
   await page.locator('[name="experience"]').fill('3 года');
-  await page.locator('[name="careerAchievements"]').fill('Ускорил интерфейс на 30 процентов');
-  const longHistory = ['Тестовая компания, разработка интерфейсов', ...Array.from({ length: 130 }, (_, index) => `Проект ${index + 1}: разработал страницу каталога, написал тесты и улучшил доступность интерфейса.`)].join('\n');
+  const achievementsSection = page.getByRole('region', { name: 'Достижения', exact: true });
+  while (await achievementsSection.getByRole('button', { name: /^Удалить достижение/ }).count()) await achievementsSection.getByRole('button', { name: /^Удалить достижение/ }).first().click();
+  await achievementsSection.getByLabel('Добавить достижение', { exact: true }).fill('Ускорил интерфейс на 30 процентов');
+  await achievementsSection.getByRole('button', { name: 'Добавить', exact: true }).click();
+  const longHistory = Array.from({ length: 4 }, (_, block) => ['Тестовая компания, разработка интерфейсов', ...Array.from({ length: 30 }, (_, index) => `Проект ${block * 30 + index + 1}: разработал страницу каталога, написал тесты и улучшил доступность интерфейса.`)].join('\n')).join('\n\n');
   assert.ok(longHistory.length > 4000, 'Fixture must exceed the old truncation limit');
-  await page.locator('[name="workHistory"]').fill(longHistory);
+  await setWorkHistory(longHistory);
   await page.getByText('Подробнее о себе', { exact: true }).click();
   for (const [name, value] of Object.entries({ education: 'Тестовый университет', languages: 'Английский B2', phone: '+79990001122', portfolio: 'https://github.com/ivan-test' })) await page.locator(`[name="${name}"]`).fill(value);
   await page.locator('[name="format"]').selectOption('Гибрид');
@@ -410,10 +430,10 @@ try {
   await answerExam(page, answerKey('Frontend', 'Middle'));
   await page.getByRole('button', { name: 'К профилю', exact: true }).click();
   await page.getByRole('heading', { name: 'Мой профиль', exact: true }).waitFor();
-  assert.equal(await page.locator('[name="workHistory"]').inputValue(), longHistory);
+  assert.equal(await workHistory(), longHistory);
   assert.equal(await page.locator('[name="softSkills"]:visible').count(), 5, 'Common self-reported skills can be edited in the profile');
   const editedHistory = longHistory + '\nПоследний проект: обновил систему уведомлений.';
-  await page.locator('[name="workHistory"]').fill(editedHistory);
+  await setWorkHistory(editedHistory);
   await page.getByRole('button', { name: 'Сохранить изменения', exact: true }).click();
   await page.getByText('Профиль сохранён', { exact: true }).waitFor();
   await waitForSaved();

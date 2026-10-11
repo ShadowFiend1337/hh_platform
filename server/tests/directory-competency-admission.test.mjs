@@ -58,7 +58,7 @@ test('an explicit profession and skill filter cannot authorize the narrative DEV
   assert.deepEqual(result.warnings, []);
   assert.deepEqual(result.effectiveFilters.stack, ['C++']);
   assert.equal(result.effectiveFilters.specialization, 'Embedded');
-  assert.equal(result.model.profileEvidencePolicy, 'professional-sections-with-strict-sparse-competencies-v2');
+  assert.equal(result.model.profileEvidencePolicy, 'structured-professional-sections-with-strict-sparse-competencies-v3');
   assert.deepEqual(encoder.info.reranker, stage, 'Neither explicit scope nor content policy changes the frozen calibration');
 });
 

@@ -1,3 +1,4 @@
+import { fillResumeStack } from './helpers/resume-form.mjs';
 import { PRIVACY_POLICY_VERSION } from '../../shared/privacy.ts';
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
@@ -139,11 +140,10 @@ try {
   });
   await page.goto(base + '/app?role=candidate&tab=onboarding');
   await page.getByRole('heading', { name: 'Анкета', exact: true }).waitFor();
-  await page.locator('.onboarding-form [name="industry"]').selectOption('ИТ');
-  await page.locator('.onboarding-form [name="professionalRole"]').fill('ML-инженер');
+  await page.locator('.onboarding-form [name="professionalRole"]').selectOption('Специалист по машинному обучению');
   await page.locator('.onboarding-form [name="specialization"]').selectOption('ML');
   await page.locator('.onboarding-form [name="desiredGrade"]').selectOption('Junior');
-  await page.locator('.onboarding-form [name="stack"]').fill('Python, PyTorch');
+  await fillResumeStack(page, ['Python', 'PyTorch']);
   await page.locator('.onboarding-form [name="experience"]').fill('1 год');
   await page.getByLabel('Согласен на обработку персональных данных', { exact: true }).check();
   await page.getByRole('button', { name: 'К тесту', exact: true }).click();

@@ -192,7 +192,7 @@ test('optional soft skill selection retains the array contract and rejects malfo
   const missing = survey(); delete missing.softSkills;
   rejectsStatus(() => validateSurvey(missing), 400);
   for (const softSkills of [undefined, null, 'Коммуникация', {}, [''], [' '.repeat(3)], [1],
-    ['Повтор', 'Повтор'], ['x'.repeat(81)], Array.from({ length: 11 }, (_, index) => `Навык ${index}`)]) {
+    ['Повтор', 'Повтор'], ['x'.repeat(81)], Array.from({ length: 31 }, (_, index) => `Навык ${index}`)]) {
     rejectsStatus(() => validateSurvey({ ...survey(), softSkills }), 400);
   }
   rejectsStatus(() => validateSurvey({ ...survey(), stack: [], softSkills: [] }), 400);

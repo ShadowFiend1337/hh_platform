@@ -57,6 +57,7 @@ try {
       stack: ['TypeScript', 'SQL'], softSkills: ['Коммуникация'], experience: '3 года',
       workHistory: ('Тестовая компания: разрабатывал системы хранения, проектировал API и проверял конкурентные операции.\n').repeat(95)
         + 'Последняя строка истории: все проекты сохранены.', portfolio: 'https://example.com/private-portfolio/' + 'project'.repeat(120) };
+    delete person.workExperiences;
     return { hidden: [...await createProfilePdf(person, false, font)], allowed: [...await createProfilePdf(person, true, font)] };
   });
   for (const [permission, bytes] of Object.entries(samples)) {

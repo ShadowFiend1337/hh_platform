@@ -1,3 +1,4 @@
+import { fillResumeStack } from './helpers/resume-form.mjs';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { chromium } from 'playwright';
@@ -259,11 +260,10 @@ try {
   await race.locator('.onboarding-form').waitFor();
   await race.getByLabel('Имя и фамилия', { exact: true }).fill('Синтетический кандидат');
   await race.getByLabel('Email', { exact: true }).fill('demo@example.com');
-  await race.getByRole('combobox', { name: 'Отрасль', exact: true }).selectOption('ИТ');
-  await race.getByLabel('Роль в команде', { exact: true }).fill('Инженер');
+  await race.getByLabel('Роль в команде', { exact: true }).selectOption('Инженер встраиваемых систем и электроники');
   await race.getByRole('combobox', { name: 'Специализация', exact: true }).selectOption('Embedded');
   await race.getByRole('combobox', { name: 'Предполагаемый грейд', exact: true }).selectOption('Middle');
-  await race.getByLabel('Стек', { exact: true }).fill('C, STM32');
+  await fillResumeStack(race, ['C', 'STM32']);
   await race.getByLabel('Общий стаж', { exact: true }).fill('3 года 4 месяца');
   await race.getByLabel('Желаемая зарплата от, ₽/мес.', { exact: true }).fill('200000');
   await race.getByLabel('Желаемая зарплата до, ₽/мес.', { exact: true }).fill('150000');

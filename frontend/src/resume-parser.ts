@@ -1,7 +1,7 @@
-import { detectIndustry, detectSpecialization, normalizeProfessionalRole, softSkillOptions, type Specialization } from '../../shared/catalog.ts';
-import { MAX_STACK_SKILLS, resumeTextLimits } from '../../shared/resume-limits.ts';
+import { detectIndustry, detectSpecialization, normalizeProfessionalRole, normalizeStackSkills, competenceOptions, softSkillOptions, type Specialization } from '../../shared/catalog.ts';
+import { MAX_STACK_SKILLS, MAX_SOFT_SKILLS, resumeTextLimits, resumeSectionLimits } from '../../shared/resume-limits.ts';
 import { detectGrade, type Grade } from '../../shared/grading.ts';
-import { resumeListItems, resumeSections, type WorkExperience, type PetProject } from '../../shared/resume-structure.ts';
+import { normalizePetProjectHeading, resumeListItems, resumeSections, type WorkExperience, type PetProject } from '../../shared/resume-structure.ts';
 
 /** Fields are suggestions from explicit resume text; category and consent are never inferred. */
 export interface ResumeFields {
@@ -46,7 +46,7 @@ const sectionPatterns: Array<[SectionKind, RegExp]> = [
   ['portfolio', /^(?:портфолио(?: и ссылки)?|ссылки на проекты|portfolio|links)(?:\s*[:—–-]\s*|\s*$)(.*)$/iu],
   ['role', /^(?:желаемая должность(?: и зарплата)?|должность|роль(?: в команде)?|desired position|job title|position|role|цель|objective)(?:\s*[:—–-]\s*|\s*$)(.*)$/iu],
   ['softSkills', /^(?:софт[- ]?скиллы(?:[ ·]+самооценка)?|soft skills)(?:\s*[:—–-]\s*|\s*$)(.*)$/iu],
-  ['skills', /^(?:технические навыки|ключевые навыки|профессиональные навыки|technical skills|навыки|skills|стек|технологии)(?:\s*[:—–-]\s*|\s+(?=[A-ZА-Я])|\s*$)(.*)$/iu],
+  ['skills', /^(?:технические навыки|ключевые навыки|профессиональные навыки|technical skills|навыки|skills|стек|технологии|stack|technologies|tools)(?:\s*[:—–-]\s*|\s+(?=[A-ZА-Я])|\s*$)(.*)$/iu],
   ['other', /^(?:о себе|обо мне|контакты|summary|about(?: me)?|contacts?|references|специализации|занятость|график работы)(?:\s*[:—–-]\s*|\s*$)(.*)$/iu],
 ];
 
@@ -81,13 +81,19 @@ function employmentPeriodAt(lines: string[], index: number): { match: RegExpExec
   }
   return { match, lineCount };
 }
-const headerFrom = (line: string) => sectionPatterns.map(([kind, pattern]) => ({ kind, match: pattern.exec(line) })).find(item => item.match);
+const headerFrom = (line: string) => {
+  const heading = normalizePetProjectHeading(line);
+  return sectionPatterns.map(([kind, pattern]) => ({ kind, match: pattern.exec(heading) })).find(item => item.match);
+};
 const employerLine = /^(?:ООО|АО|ПАО|ЗАО|ИП|ОАО|компания|работодатель|company|employer)(?:\s|:|$)|(?:компания|company|ltd\.?|llc)\s*$/iu;
 const employmentRoleLine = (line: string) => line.length <= 100 && roleWords.test(line)
   && !/[.!?]$/u.test(line) && !/^(?:создал|разработал|запустил|улучшил|сократил|built|created|developed|launched)\s/iu.test(line);
 const actionLine = /^(?:разрабатыва[лт]|разработал|разработала|созда[лв]|создала|запусти[лт]|запустила|реализова[лт]|реализовала|участвова[лт]|участвовала|поддержива[лт]|поддерживала|работа[лт]|работала|улучши[лт]|улучшила|сократи[лт]|сократила|автоматизир|написа[лт]|написала|занимал|обязанност|задачи|результаты|описание|responsibilities|tasks|developed|built|created|launched|maintained|worked|implemented|improved|wrote|achieved)(?:\p{L}*\s|\s|:|$)/iu;
+const companyName = (line: string) => line.replace(/^(?:компания|работодатель|company|employer)\s*[:—–-]\s*/iu, '').trim();
 function companyCandidate(line: string): boolean {
-  if (!line || line.length > 200 || headerFrom(line) || employmentRoleLine(line) || actionLine.test(line)) return false;
+  if (!line || line.length > resumeSectionLimits.workCompany || headerFrom(line)) return false;
+  if (/^(?:компания|работодатель|company|employer)\s*[:—–-]\s*\S/iu.test(line)) return true;
+  if (employmentRoleLine(line) || actionLine.test(line)) return false;
   if (/^(?:[•*·▪●–—-]|\d)|https?:\/\/|\d{4}|[:!?]|(?:лет|год[а]?|месяц[а-я]*)$|\.$/iu.test(line)) return false;
   return employerLine.test(line) || /^[\p{L}\p{N}][\p{L}\p{N}\s&.,()'"«»/_+-]{0,199}$/u.test(line) && line.split(/\s/u).length <= 8;
 }
@@ -99,8 +105,8 @@ function sections(lines: string[]): Partial<Record<SectionKind, string[]>> {
   let collectingAchievements = false;
   for (const [index, line] of lines.entries()) {
     const header = headerFrom(line);
-    if (current === 'projects' && header?.kind === 'skills' && /^(?:стек|технологии|stack|technologies)(?:\s*[:—–-]|\s*$)/iu.test(line)) {
-      result.projects?.push(line);
+    if ((current === 'projects' || current === 'experience') && header?.kind === 'skills' && /^(?:стек|технологии|stack|technologies)(?:\s*[:—–-]|\s*$)/iu.test(line)) {
+      result[current]?.push(line);
       continue;
     }
     if (current === 'experience' && header?.kind === 'achievements') {
@@ -146,13 +152,14 @@ function sections(lines: string[]): Partial<Record<SectionKind, string[]>> {
   return result;
 }
 
+const tasksText = (rows: string[]) => rows.map(row => row.replace(/^(?:задачи|обязанности|responsibilities|tasks)\s*[:—–-]\s*/iu, '')).filter(Boolean).join('\n');
 function workExperiencesFromRows(rows: string[]): WorkExperience[] {
   const markers: Array<{ index: number; lineCount: number; period: string; prefix: string; suffix: string; start: number; companyIndex: number }> = [];
   for (let index = 0; index < rows.length; index++) {
     const found = employmentPeriodAt(rows, index);
     if (!found) continue;
     const joined = rows.slice(index, index + found.lineCount).join(' ');
-    const prefix = joined.slice(0, found.match.index).replace(/^[•*·]\s*/u, '').trim();
+    const prefix = joined.slice(0, found.match.index).replace(/^[•*·]\s*/u, '').replace(/^(?:период(?: работы)?|даты(?: работы)?|period|dates)\s*:\s*/iu, '').trim();
     const suffix = joined.slice(found.match.index + found.match[0].length).trim();
     const previous = markers.at(-1);
     const lowerBound = previous ? previous.index + previous.lineCount : -1;
@@ -176,23 +183,23 @@ function workExperiencesFromRows(rows: string[]): WorkExperience[] {
   };
   if (!markers.length) {
     // Without explicit dates or labels, preserve the text for correction instead of guessing a company.
-    if (rows.length) append({ period: '', company: '', tasks: rows.join('\n') });
+    if (rows.length) append({ period: '', company: '', tasks: tasksText(rows) });
     return result;
   }
-  if (markers[0].start > 0) append({ period: '', company: '', tasks: rows.slice(0, markers[0].start).join('\n') });
+  if (markers[0].start > 0) append({ period: '', company: '', tasks: tasksText(rows.slice(0, markers[0].start)) });
   for (const [index, marker] of markers.entries()) {
     const end = markers[index + 1]?.start ?? rows.length;
     const details = rows.slice(marker.start, end);
     const dateOffset = marker.index - marker.start;
     details.splice(dateOffset, marker.lineCount, ...[marker.prefix, marker.suffix].filter(Boolean));
     let company = '';
-    if (marker.companyIndex >= 0) company = details.shift() || '';
+    if (marker.companyIndex >= 0) company = companyName(details.shift() || '');
     else if (marker.prefix && companyCandidate(marker.prefix)) {
       const prefixIndex = details.indexOf(marker.prefix);
-      company = marker.prefix;
+      company = companyName(marker.prefix);
       if (prefixIndex >= 0) details.splice(prefixIndex, 1);
-    } else if (!marker.prefix && details[0] && companyCandidate(details[0])) company = details.shift() || '';
-    append({ period: marker.period, company, tasks: details.join('\n') });
+    } else if (!marker.prefix && details[0] && companyCandidate(details[0])) company = companyName(details.shift() || '');
+    append({ period: marker.period, company, tasks: tasksText(details) });
   }
   return result;
 }
@@ -201,10 +208,9 @@ function projectStack(lines: string[]): string[] {
   const source = lines.join('\n');
   const explicit = lines.flatMap(line => /^(?:стек|технологии|stack|technologies)\s*[:—–-]\s*(.*)$/iu.exec(line)?.[1]?.split(/[,;|•]/u) || [])
     .map(skill => skill.replace(/^[•*·▪●–—-]\s*/u, '').trim()).filter(skill => skill && skill.length <= 80 && !/^(?:не|нет|без|no|not)\s/iu.test(skill));
-  const known = stackPatterns.filter(([skill, expression]) => notNegated(skill === 'C' ? explicit.join(', ') : source, expression)).map(([skill]) => skill);
+  const known = stackPatterns.filter(([skill, expression]) => notNegated(explicitOnlySkills.has(skill) ? explicit.join(', ') : source, expression)).map(([skill]) => skill);
   const result = [...known];
-  for (const skill of explicit) if (!stackPatterns.some(([, expression]) => expression.test(skill)) && !result.some(item => item.toLocaleLowerCase() === skill.toLocaleLowerCase())) result.push(skill);
-  return result;
+  return normalizeStackSkills([...result, ...explicit]);
 }
 
 function petProjectsFromRows(rows: string[]): PetProject[] {
@@ -224,7 +230,9 @@ function petProjectsFromRows(rows: string[]): PetProject[] {
     const stackLabel = /^(?:стек|технологии|stack|technologies)(?:\s*[:—–-]\s*(.*)|\s*$)/iu.exec(row);
     const isStack = Boolean(stackLabel);
     const labeledDescription = /^(?:описание(?: проекта)?|description)\s*[:—–-]\s*(.*)$/iu.exec(row);
-    const title = labeledName?.[1] || markedName?.[1];
+    const inline = /^(?:[•*·▪●]\s*|\d+[.)]\s*)?([^—–:]{1,100}?)\s+[—–-]\s+(.+)$/u.exec(row);
+    const inlineTitle = inline && inline[1].split(/\s/u).length <= 5 && !actionLine.test(inline[1]) && !employmentPeriod.test(row) ? inline[1] : undefined;
+    const title = labeledName?.[1] || inlineTitle || markedName?.[1];
     const toolLine = row.replace(/^[•*·▪●–—-]\s*/u, '').trim();
     const tools = toolLine.split(/[,;|•]/u).map(tool => tool.trim()).filter(Boolean);
     const markedTool = /^[•*·▪●–—-]\s*/u.test(row);
@@ -234,7 +242,7 @@ function petProjectsFromRows(rows: string[]): PetProject[] {
         const match = expression.exec(tool);
         return match?.index === 0 && match[0].length === tool.length;
       })));
-    if (collectingStack && !title && !labeledDescription && !isStack && explicitTools) {
+    if (collectingStack && !labeledName && !markedName && !labeledDescription && !isStack && explicitTools) {
       source.push(`Стек: ${toolLine}`); pendingStack = false; continue;
     }
     pendingStack = false;
@@ -242,7 +250,9 @@ function petProjectsFromRows(rows: string[]): PetProject[] {
     const isolatedTitle = !isStack && !labeledDescription && !actionLine.test(row) && !/[.!?:;]$/u.test(row)
       && row.length <= 100 && row.split(/\s/u).length <= 5 && !employmentPeriod.test(row) && !/^https?:\/\//iu.test(row);
     if (title || isolatedTitle && (!name && !description.length || source.some(line => /^(?:стек|технологии|stack|technologies)\s*[:—–-]/iu.test(line)))) {
-      flush(); name = (title || row).trim(); source.push(row); continue;
+      flush(); name = (title || row).replace(/^[•*·▪●]\s*/u, '').trim();
+      if (inlineTitle && !labeledName) description.push(inline![2]);
+      source.push(row); continue;
     }
     source.push(row);
     collectingStack = isStack;
@@ -327,8 +337,8 @@ function experienceFromPeriods(history: string[], asOf: Date, onWarning?: (messa
   return `${yearOnly ? `До ${duration}` : duration}${skippedPeriods ? ' (по корректным датам)' : ''}`;
 }
 
-const stackPatterns: Array<[string, RegExp]> = [
-  ['React', /\breact(?:\.js|js)?\b/i], ['TypeScript', /\btypescript\b/i], ['JavaScript', /\bjavascript\b/i],
+const originalStackPatterns: Array<[string, RegExp]> = [
+  ['React', /\breact(?:\.js|js)?\b(?!\s+native)/i], ['TypeScript', /\btypescript\b/i], ['JavaScript', /\bjavascript\b/i],
   ['CSS', /\bcss\b/i], ['HTML', /\bhtml(?:5)?\b/i], ['Vue', /\bvue(?:\.js|js)?\b/i], ['Angular', /\bangular\b/i],
   ['Next.js', /\bnext(?:\.js|js)\b/i], ['Python', /\bpython\b/i], ['FastAPI', /\bfastapi\b/i], ['Django', /\bdjango\b/i],
   ['Node.js', /\bnode(?:\.js|js)\b/i], ['Java', /\bjava\b/i], ['C#', /(?<![\p{L}\p{N}])c#(?![\p{L}\p{N}])/iu],
@@ -349,6 +359,16 @@ const stackPatterns: Array<[string, RegExp]> = [
   ['C', /(?<![\p{L}\p{N}])C(?![\p{L}\p{N}+#])/u], ['STM32', /\bstm32\b/i], ['FreeRTOS', /\bfreertos\b/i],
   ['UART', /\buart\b/i], ['SPI', /\bspi\b/i], ['I2C', /\bi2c\b/i], ['KiCad', /\bkicad\b/i], ['PCB', /\bpcb\b/i],
   ['Осциллограф', /осциллограф|oscilloscope/iu],
+];
+// Extended catalog entries share the same boundaries as the original recognizers.
+// Common words and single letters only count when explicitly listed as technologies.
+const explicitOnlySkills = new Set(['C', 'Go', 'R', 'Less', 'CAN', 'Spring']);
+const escapePattern = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+const stackPatterns: Array<[string, RegExp]> = [
+  ...originalStackPatterns,
+  ...competenceOptions.filter(skill => !originalStackPatterns.some(([label]) => label === skill)).map((skill): [string, RegExp] => [
+    skill, new RegExp(`(?<![\\p{L}\\p{N}_])${escapePattern(skill)}(?![\\p{L}\\p{N}_])`, 'iu'),
+  ]),
 ];
 const softSkillPatterns: Array<[string, RegExp]> = [
   ['Коммуникация', /коммуникация|коммуникабельность|communication skills/iu],
@@ -477,16 +497,16 @@ export function parseResumeText(raw: string, options: ResumeParseOptions = {}): 
   if (industry) fields.industry = detectIndustry(industry);
 
   const rawProjects = petProjectsFromRows(parts.projects || []);
-  const explicitSkillRows = [...(parts.skills || []), ...(parts.projects || []).flatMap(line => /^(?:стек|технологии|stack|technologies)\s*[:—–-]\s*(.*)$/iu.exec(line)?.[1] || [])];
-  const knownStack = stackPatterns.filter(([skill, expression]) => notNegated(skill === 'C' ? explicitSkillRows.join('\n') : text, expression)).map(([skill]) => skill);
-  const explicitSkills = explicitSkillRows.flatMap(line => line.replace(/^[•*·-]\s*/u, '').split(/[,;|•]/u))
-    .map(skill => skill.trim()).filter(skill => skill.length > 1 && skill.length <= 50
+  const explicitSkillRows = [...(parts.skills || []), ...[...(parts.projects || []), ...(parts.experience || [])].flatMap(line => /^(?:стек|технологии|stack|technologies)\s*[:—–-]\s*(.*)$/iu.exec(line)?.[1] || [])];
+  const knownStack = stackPatterns.filter(([skill, expression]) => notNegated(explicitOnlySkills.has(skill) ? explicitSkillRows.join('\n') : text, expression)).map(([skill]) => skill);
+  const explicitSkills = normalizeStackSkills(explicitSkillRows.flatMap(line => line.replace(/^[•*·-]\s*/u, '').split(/[,;|•]/u)))
+    .filter(skill => skill.length >= 1 && skill.length <= resumeSectionLimits.projectSkill
       && skill.split(/\s+/u).length <= 3 && /^[.\p{L}\p{N}][\p{L}\p{N}\s.+#/_-]*$/u.test(skill)
       && !/^(?:не|нет|без|no|not)\s/iu.test(skill)
       && !/^(?:есть|имею|умею|владею|работал[аи]?|использую|опыт|i |worked |used |experienced )/iu.test(skill)
-      && !stackPatterns.some(([, expression]) => expression.test(skill))
+      && !competenceOptions.includes(skill)
       && !softSkillPatterns.some(([, expression]) => expression.test(skill)));
-  const allStack = Array.from(new Map([...knownStack, ...explicitSkills, ...rawProjects.flatMap(project => project.stack)].map(skill => [skill.toLocaleLowerCase(), skill])).values());
+  const allStack = normalizeStackSkills([...knownStack, ...explicitSkillRows.flatMap(line => line.split(/[,;|•]/u)).filter(skill => competenceOptions.includes(normalizeStackSkills([skill])[0] || '')), ...explicitSkills, ...rawProjects.flatMap(project => project.stack)]);
   const stack: string[] = [];
   for (const skill of allStack) {
     if (stack.length === MAX_STACK_SKILLS || [...stack, skill].join(', ').length > resumeTextLimits.stack) {
@@ -496,7 +516,8 @@ export function parseResumeText(raw: string, options: ResumeParseOptions = {}): 
   }
   if (stack.length) fields.stack = stack;
   const softSkills = softSkillOptions.filter(skill => softSkillPatterns.some(([label, expression]) => label === skill && notNegated(text, expression)));
-  if (softSkills.length) fields.softSkills = softSkills;
+  if (softSkills.length > MAX_SOFT_SKILLS) options.onTruncate?.('softSkills');
+  if (softSkills.length) fields.softSkills = softSkills.slice(0, MAX_SOFT_SKILLS);
   const totalExperienceLabel = /^(?:общий (?:опыт(?: работы)?|стаж)|стаж(?: работы)?|total (?:work )?experience)\s*[:—–-]\s*(.+)$/iu;
   const explicitTotal = directLabel(lines, totalExperienceLabel);
   const experienceHeaders = lines.flatMap((line, index) => {
@@ -513,12 +534,8 @@ export function parseResumeText(raw: string, options: ResumeParseOptions = {}): 
     if (computedExperience) fields.experience = boundedField('experience', computedExperience);
   }
   const history = historyRows.join('\n').trim();
-  const projects = sectionText('projects');
-  // The current saved profile uses one text field for employment and projects.
-  // Keep project text there as well as in the editable import structure; dates
-  // from that section must never contribute to employment duration.
-  const combinedHistory = [history, projects ? `Pet-проекты\n${projects}` : ''].filter(Boolean).join('\n\n');
-  if (combinedHistory) fields.workHistory = boundedField('workHistory', combinedHistory);
+  // Each saved section has its own projection: projects never become employment.
+  if (history) fields.workHistory = boundedField('workHistory', history);
   const structuredHistory = workExperiencesFromRows(history.slice(0, resumeTextLimits.workHistory).split('\n').filter(Boolean));
   const achievements = sectionText('achievements');
   if (achievements) fields.careerAchievements = boundedField('careerAchievements', achievements);
@@ -535,10 +552,9 @@ export function parseResumeText(raw: string, options: ResumeParseOptions = {}): 
   if (structured.achievementItems.length) fields.achievementItems = structured.achievementItems;
   if (structured.interests.length) fields.interests = structured.interests;
   if (JSON.stringify(structuredHistory) !== JSON.stringify(structured.workExperiences)) options.onTruncate?.('workExperiences');
-  if (rawAchievementItems.length > 50) options.onTruncate?.('achievementItems');
-  if (rawInterests.join('\n').length > 4000 || rawInterests.length > 50) options.onTruncate?.('interests');
-  if (rawProjects.length > 30 || rawProjects.some(project => project.name.length > 200 || project.description.length > 4000)
-    || rawProjects.map(project => `${project.name}\n${project.description}\n${project.stack.join(', ')}`).join('\n\n').length > 20_000) options.onTruncate?.('petProjects');
+  if (JSON.stringify(rawAchievementItems) !== JSON.stringify(structured.achievementItems)) options.onTruncate?.('achievementItems');
+  if (rawInterests.join('\n').length > resumeSectionLimits.interests || rawInterests.length > 50) options.onTruncate?.('interests');
+  if (JSON.stringify(rawProjects) !== JSON.stringify(structured.petProjects)) options.onTruncate?.('petProjects');
   const education = sectionText('education');
   if (education) fields.education = boundedField('education', education);
   const languageRows = lines.filter(line => /(?:русский|английский|немецкий|французский|испанский|english|russian|german|french|spanish).*(?:родной|native|[ABC][12]|intermediate|advanced|начальн|свободн)|\b(?:RU|EN)\s+(?:родной|native|[ABC][12])/iu.test(line));

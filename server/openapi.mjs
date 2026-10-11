@@ -36,6 +36,15 @@ function op({ tag, summary, description, role, body, params = [], ok = 200, resp
 const redirect = (summary, description, params = []) => ({ tags: ['ФСП ID'], summary, description, security: [],
   ...(params.length ? { parameters: params } : {}), responses: { 302: { description: 'Перенаправление', headers: { Location: { schema: string() } } } } });
 
+const resumeSectionProperties = {
+  workExperiences: array(ref('WorkExperience'), { maxItems: 30, description: 'Редактируемые места работы; общий текст до 20 000 символов' }),
+  petProjects: array(ref('PetProject'), { maxItems: 30, description: 'Личные проекты; общий текст до 20 000 символов' }),
+  achievementItems: array(string('', { maxLength: 4000 }), { maxItems: 50, description: 'Достижения из резюме, до 4000 символов суммарно. Подтверждение ФСП хранится отдельно' }),
+  interests: array(string('', { maxLength: 4000 }), { maxItems: 50, description: 'Интересы и дополнительные сведения, до 4000 символов суммарно' }),
+  workHistory: string('Текстовая проекция опыта для совместимости со старыми профилями', { maxLength: 20000 }),
+  careerAchievements: string('Текстовая проекция достижений из резюме', { maxLength: 4000 }),
+};
+
 const schemas = {
   Health: object({ status: string('', { const: 'ok' }) }, ['status']),
   Account: object({ id: string('Идентификатор аккаунта'), login: string(), email: string('', { format: 'email' }),
@@ -65,11 +74,16 @@ const schemas = {
   OidcUserinfo: object({ sub: string(), name: string(), email: string(), fsp_id: string(), city: string(),
     fsp_achievements: array(object({ title: string(), result: string(), year: integer() })) }, [], { additionalProperties: true }),
 
-  Survey: object({ id: string(), date: string('', { format: 'date-time' }), industry: string(), professionalRole: string(),
+  WorkExperience: object({ period: string('Период работы в исходном виде', { maxLength: 100 }), company: string('Компания', { maxLength: 200 }),
+    tasks: string('Задачи и обязанности', { maxLength: 4000 }) }),
+  PetProject: object({ name: string('Название проекта', { maxLength: 200 }), description: string('Описание проекта', { maxLength: 4000 }),
+    stack: array(string('', { maxLength: 80 }), { maxItems: 100 }) }),
+  Survey: object({ id: string(), date: string('', { format: 'date-time' }), industry: string('В новой анкете ИТ; старые значения принимаются для совместимости'), professionalRole: string(),
     specialization: string('Одна из 14 специализаций, например `Frontend`'), desiredGrade: string('', { enum: ['Intern', 'Junior', 'Middle', 'Senior', 'Lead'] }),
-    experience: string(), stack: array(string(), { minItems: 1 }), softSkills: array(string(), { maxItems: 10 }) },
+    experience: string(), stack: array(string(), { minItems: 1, maxItems: 100 }), softSkills: array(string(), { maxItems: 30 }),
+    ...resumeSectionProperties, education: string(), portfolio: string(), languages: string(), format: string() },
   ['id', 'date', 'industry', 'professionalRole', 'specialization', 'desiredGrade', 'experience', 'stack', 'softSkills']),
-  PlatformState: object({ version: integer(), profile: object({}, [], { additionalProperties: true, description: 'Профиль соискателя: контакты, опыт, стек, согласие, публикация, подтверждённая категория' }),
+  PlatformState: object({ version: integer(), profile: object({ ...resumeSectionProperties }, [], { additionalProperties: true, description: 'Профиль соискателя: контакты, опыт, стек, согласие, публикация, подтверждённая категория' }),
     company: object({}, [], { additionalProperties: true }), invitations: array(ref('Invitation')), history: array(ref('AssessmentResult')),
     surveys: array(ref('Survey')), savedSearches: array(object({}, [], { additionalProperties: true })),
     hiringNeeds: array(ref('HiringNeed')), candidateDecisions: array(object({ candidateId: string(), decision: string('', { enum: ['liked', 'passed'] }) })) },
@@ -83,6 +97,7 @@ const schemas = {
   HiringNeed: object({ id: string(), title: string(), team: string(), tasks: string('Задачи — текст смыслового поиска'),
     filters: object({}, [], { additionalProperties: true }) }, ['id', 'title', 'tasks']),
   Candidate: object({ id: string(), name: string(), specialization: string(), desiredGrade: string(), city: string(), format: string(),
+    ...resumeSectionProperties,
     experience: string(), stack: array(string()), bio: string(), confirmed: nullable(object({ specialization: string(), grade: string(), score: integer(), date: string() })),
     achievements: array(object({}, [], { additionalProperties: true })), synthetic: boolean('Вымышленный или учебный профиль'), demoProfile: boolean() },
   ['id', 'name'], { additionalProperties: true }),
@@ -140,7 +155,7 @@ const schemas = {
     selectedCategory: nullable(object({ specialization: string(), grade: string() })), total: integer(), offset: integer(), limit: integer(), query: string(),
     interpreted: object({}, [], { additionalProperties: true }), effectiveFilters: object({}, [], { additionalProperties: true }),
     model: object({}, [], { additionalProperties: true, description: 'Версия энкодера и политик ранжирования' }), warnings: array(string()) }, ['items', 'total']),
-  Contacts: object({ email: string(), phone: string() }, ['email', 'phone']),
+  Contacts: object({ email: string(), phone: string(), portfolio: string({ format: 'uri' }) }, ['email', 'phone']),
 
   VacancyInput: object({ title: string('', { maxLength: 120 }), description: string('', { maxLength: 3000 }), specialization: string(), grade: string(),
     city: string(), format: string(), stack: array(string()), salaryFrom: integer('', { minimum: 1 }), salaryTo: integer('', { maximum: 10000000 }) },

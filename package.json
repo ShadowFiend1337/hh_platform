@@ -18,6 +18,8 @@
     "test:browser": "npm --prefix frontend run test:browser",
     "test:assessment": "npm --prefix frontend run test:assessment",
     "test:resume": "npm --prefix frontend run test:resume",
+    "test:resume-form": "node frontend/tests/resume-form.mjs",
+    "test:resume-unit": "node --test frontend/tests/resume-parser.test.mjs frontend/tests/catalog.test.mjs frontend/tests/resume-form.test.mjs frontend/tests/candidate-navigation.test.mjs frontend/tests/profile-pdf.test.mjs",
     "test:directions": "npm --prefix frontend run test:directions",
     "test:grades": "npm --prefix frontend run test:grades",
     "test:search": "npm --prefix frontend run test:search",

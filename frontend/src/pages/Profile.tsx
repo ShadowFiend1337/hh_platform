@@ -1,11 +1,13 @@
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { BadgeCheck, Eye, FileText, Medal, UserRound } from 'lucide-react';
-import { gradeLabels, gradeOptions, industryOptions, isGrade, isSpecialization, professionalRoleOptions, specializationOptions, specializationLabels, type Grade, type PlatformState, type Specialization } from '../model';
+import { gradeLabels, gradeOptions, professionalRoleOptions, specializationOptions, specializationLabels, type PlatformState } from '../model';
 import { FormHeader } from './Company';
-import { MAX_STACK_SKILLS, resumeTextLimits } from '../../../shared/resume-limits';
+import { resumeTextLimits } from '../../../shared/resume-limits';
 import { employmentTypes } from '../../../shared/search.ts';
 import { deriveExperienceMonths, deriveLanguageCodes } from '../candidate-preferences';
 import { SoftSkillsField } from '../components/SoftSkillsField';
+import { ResumeSectionsFields, ResumeUpload, StackField } from '../components/ResumeProfileFields';
+import { createResumeDraft, mergeResumeImport, resumeDraftError, resumeDraftValues, workFormats, type ResumeDraft } from '../resume-form';
 import { CandidateHistory } from '../components/CandidateHistory';
 import { FspLink } from '../components/FspLink';
 import { IntegrationPanel } from '../components/IntegrationPanel';
@@ -13,7 +15,7 @@ import { ReadinessPanel } from '../components/ReadinessPanel';
 
 // Where each unfinished readiness item is edited in the profile form.
 const readinessFields: Record<string, string> = {
-  stack: '[name="stack"]', story: '[name="workHistory"]', contacts: '[name="phone"]',
+  stack: '.competency-field', story: '.resume-section[aria-label="Опыт работы"]', contacts: '[name="phone"]',
   published: '.profile-publication', fsp: '.profile-fsp', terms: '[name="salaryFrom"]',
 };
 
@@ -33,58 +35,33 @@ export function Profile({ state, update, notify, onTest, onSurvey, onPreview, on
   const [consent, setConsent] = useState(state.profile.consent);
   const [visible, setVisible] = useState(state.profile.visible);
   const [error, setError] = useState('');
-  const [experienceText, setExperienceText] = useState(state.profile.experience);
-  const [softSkills, setSoftSkills] = useState(state.profile.softSkills || []);
+  const [draft, setDraft] = useState(() => createResumeDraft(state.profile));
+  const [reading, setReading] = useState(false);
+  const edited = useRef(new Set<keyof ResumeDraft>());
   const profile = state.profile;
+  function change<K extends keyof ResumeDraft>(field: K, value: ResumeDraft[K]) {
+    edited.current.add(field);
+    setDraft(previous => ({ ...previous, [field]: value })); setError('');
+  }
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const fields = new FormData(event.currentTarget);
-    const name = String(fields.get('name')).trim();
-    const stack = [...new Set(String(fields.get('stack')).split(',').map(skill => skill.trim()).filter(Boolean))];
-    const industry = String(fields.get('industry') || '').trim();
-    const professionalRole = String(fields.get('professionalRole') || '').trim();
-    const specialization = String(fields.get('specialization')) as Specialization;
-    const desiredGrade = String(fields.get('desiredGrade')) as Grade;
-    const experience = String(fields.get('experience')).trim();
-    const salaryFromText = String(fields.get('salaryFrom') || '').trim(), salaryToText = String(fields.get('salaryTo') || '').trim();
-    const salaryFrom = salaryFromText === '' ? null : Number(salaryFromText), salaryTo = salaryToText === '' ? null : Number(salaryToText);
-    const employmentType = String(fields.get('employmentType') || '');
-    const languages = String(fields.get('languages') || '').trim();
-    if ([salaryFrom, salaryTo].some(value => value !== null && (!Number.isInteger(value) || value < 0 || value > 10_000_000))) {
-      setError('Укажите зарплату от 0 до 10 000 000 ₽ в месяц, целым числом.'); return;
+    if ([...event.currentTarget.querySelectorAll<HTMLTextAreaElement>('.chip-editor textarea')].some(field => field.value.trim())) {
+      setError('Завершите редактирование достижений и интересов: нажмите «Добавить» или «Готово» в соответствующем разделе.'); return;
     }
-    if (salaryFrom !== null && salaryTo !== null && salaryFrom > salaryTo) {
-      setError('Нижняя граница желаемой зарплаты больше верхней. Проверьте диапазон.'); return;
-    }
-    if (employmentType && !employmentTypes.includes(employmentType)) { setError('Выберите занятость из списка.'); return; }
-    if (!name || !stack.length) { setError('Заполните имя и стек.'); return; }
-    if (!industryOptions.includes(industry)) { setError('Выберите отрасль.'); return; }
-    if (!isSpecialization(specialization)) { setError('Выберите специализацию.'); return; }
-    if (!isGrade(desiredGrade)) { setError('Выберите предполагаемый грейд.'); return; }
-    if (!professionalRole || professionalRole.length > 100) { setError('Укажите роль в команде: не более 100 символов.'); return; }
-    if (stack.length > MAX_STACK_SKILLS || stack.some(skill => skill.length > 80)) { setError(`Укажите до ${MAX_STACK_SKILLS} навыков, не более 80 символов каждый.`); return; }
+    const validation = resumeDraftError(draft);
+    if (validation) { setError(validation); return; }
+    const values = resumeDraftValues(draft);
     update(previous => {
-      const professionalChanged = specialization !== previous.profile.specialization
-        || desiredGrade !== previous.profile.desiredGrade
-        || industry !== previous.profile.industry
-        || professionalRole !== previous.profile.professionalRole
-        || experience !== previous.profile.experience
-        || !sameValues(stack, previous.profile.stack)
-        || !sameValues(softSkills, previous.profile.softSkills || []);
+      const professionalChanged = values.specialization !== previous.profile.specialization
+        || values.desiredGrade !== previous.profile.desiredGrade
+        || values.professionalRole !== previous.profile.professionalRole
+        || values.experience !== previous.profile.experience
+        || !sameValues(values.stack, previous.profile.stack)
+        || !sameValues(values.softSkills, previous.profile.softSkills || []);
       return { ...previous, profile: {
-        ...previous.profile, name, stack, specialization, desiredGrade, industry, professionalRole, softSkills, experience,
+        ...previous.profile, ...values,
         surveyCompletedAt: professionalChanged ? null : previous.profile.surveyCompletedAt,
-        city: String(fields.get('city')).trim(),
-        format: String(fields.get('format')),
-        email: String(fields.get('email')).trim(),
-        phone: String(fields.get('phone')).trim(),
-        bio: String(fields.get('bio')).trim(),
-        careerAchievements: String(fields.get('careerAchievements') || '').trim(),
-        education: String(fields.get('education') || '').trim(),
-        workHistory: String(fields.get('workHistory') || '').trim(),
-        portfolio: String(fields.get('portfolio') || '').trim(),
-        languages, languageCodes: deriveLanguageCodes(languages), experienceMonths: deriveExperienceMonths(experience),
-        salaryFrom, salaryTo, employmentType,
+        languageCodes: deriveLanguageCodes(values.languages), experienceMonths: deriveExperienceMonths(values.experience),
         fspId: fspId.trim(), achievements: fspId.trim() === previous.profile.fspId ? previous.profile.achievements : [],
         consent, visible: visible && consent,
       } };
@@ -95,30 +72,30 @@ export function Profile({ state, update, notify, onTest, onSurvey, onPreview, on
     <div className="page-heading"><h1>Мой профиль</h1><button className="button secondary compact" onClick={onPreview}><Eye size={16} />Предпросмотр</button></div>
     <div className="profile-layout">
       <form className="panel profile-form" onSubmit={submit} onChange={() => setError('')}>
+        <ResumeUpload draft={draft} onReadingChange={setReading} onImportStart={() => edited.current.clear()} onImported={(imported, original) => setDraft(previous => mergeResumeImport(previous, original, imported, edited.current))} />
         <FormHeader title="Личные данные" Icon={UserRound} />
-        <div className="form-grid"><label className="field"><span>Имя и фамилия</span><input name="name" required maxLength={100} defaultValue={profile.name} /></label><label className="field"><span>Город</span><input name="city" maxLength={100} defaultValue={profile.city} placeholder="Необязательно" /></label></div>
-        <div className="form-grid"><label className="field"><span>Email</span><input name="email" type="email" required defaultValue={profile.email} /></label><label className="field"><span>Телефон</span><input name="phone" type="tel" maxLength={30} defaultValue={profile.phone} placeholder="+7" /></label></div>
+        <div className="form-grid"><label className="field"><span>Имя и фамилия</span><input name="name" required maxLength={100} value={draft.name} onChange={event => change('name', event.target.value)} /></label><label className="field"><span>Город</span><input name="city" maxLength={100} value={draft.city} onChange={event => change('city', event.target.value)} placeholder="Необязательно" /></label></div>
+        <div className="form-grid"><label className="field"><span>Email</span><input name="email" type="email" required value={draft.email} onChange={event => change('email', event.target.value)} /></label><label className="field"><span>Телефон</span><input name="phone" type="tel" maxLength={30} value={draft.phone} onChange={event => change('phone', event.target.value)} placeholder="+7" /></label></div>
         <div className="section-divider" />
         <FormHeader title="Навыки" Icon={FileText} />
-        <div className="form-grid"><label className="field"><span>Специализация</span><select name="specialization" defaultValue={profile.specialization}>{specializationOptions.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}</select></label><label className="field"><span>Предполагаемый грейд</span><select name="desiredGrade" defaultValue={profile.desiredGrade}>{gradeOptions.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}</select></label></div>
-        <div className="form-grid"><label className="field"><span>Отрасль</span><select name="industry" required defaultValue={profile.industry || ''}><option value="">Выберите отрасль</option>{industryOptions.map(industry => <option key={industry}>{industry}</option>)}</select></label><label className="field"><span>Роль в команде</span><input name="professionalRole" list="profile-team-roles" required maxLength={100} defaultValue={profile.professionalRole} placeholder="Например, разработчик интерфейсов" /><datalist id="profile-team-roles">{professionalRoleOptions.map(role => <option key={role} value={role} />)}</datalist></label></div>
-        <div className="form-grid"><label className="field"><span>Общий стаж</span><input name="experience" required maxLength={100} value={experienceText} onChange={event => setExperienceText(event.target.value)} aria-describedby={experienceText.trim() && deriveExperienceMonths(experienceText) === null ? 'profile-experience-help' : undefined} /></label><label className="field"><span>Формат работы</span><select name="format" defaultValue={profile.format}><option>Удалённо</option><option>Гибрид</option><option>Офис</option></select></label></div>
-        {experienceText.trim() && deriveExperienceMonths(experienceText) === null && <p className="field-help" id="profile-experience-help">Для подбора по стажу укажите точную продолжительность, например «3 года 4 месяца». Приблизительный стаж останется в профиле.</p>}
-        <label className="field"><span>Стек</span><input name="stack" required maxLength={resumeTextLimits.stack} defaultValue={profile.stack.join(', ')} placeholder="React, TypeScript, CSS" /></label>
-        <SoftSkillsField value={softSkills} onChange={setSoftSkills} />
-        <label className="field"><span>Места работы и проекты</span><textarea name="workHistory" rows={6} maxLength={resumeTextLimits.workHistory} defaultValue={profile.workHistory || ''} /></label>
-        <label className="field"><span>О себе</span><textarea name="bio" rows={4} maxLength={3000} defaultValue={profile.bio} /></label>
-        <label className="field"><span>Достижения</span><textarea name="careerAchievements" rows={3} maxLength={resumeTextLimits.careerAchievements} defaultValue={profile.careerAchievements || ''} placeholder="Результаты проектов, награды, соревнования" /></label>
+        <div className="form-grid"><label className="field"><span>Специализация</span><select name="specialization" value={draft.specialization} onChange={event => change('specialization', event.target.value)}>{specializationOptions.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}</select></label><label className="field"><span>Предполагаемый грейд</span><select name="desiredGrade" value={draft.desiredGrade} onChange={event => change('desiredGrade', event.target.value)}>{gradeOptions.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}</select></label></div>
+        <label className="field"><span>Роль в команде</span><select name="professionalRole" required value={draft.professionalRole} onChange={event => change('professionalRole', event.target.value)}><option value="">Выберите роль</option>{professionalRoleOptions.map(role => <option key={role}>{role}</option>)}</select></label>
+        <div className="form-grid"><label className="field"><span>Общий стаж</span><input name="experience" required maxLength={100} value={draft.experience} onChange={event => change('experience', event.target.value)} aria-describedby={draft.experience.trim() && deriveExperienceMonths(draft.experience) === null ? 'profile-experience-help' : undefined} /></label><label className="field"><span>Формат работы</span><select name="format" value={draft.format} onChange={event => change('format', event.target.value)}><option value="">Выберите</option>{workFormats.map(format => <option key={format}>{format}</option>)}</select></label></div>
+        {draft.experience.trim() && deriveExperienceMonths(draft.experience) === null && <p className="field-help" id="profile-experience-help">Для подбора по стажу укажите точную продолжительность, например «3 года 4 месяца». Приблизительный стаж останется в профиле.</p>}
+        <StackField value={draft.stack} onChange={value => change('stack', value)} />
+        <SoftSkillsField value={draft.softSkills} onChange={value => change('softSkills', value)} />
+        <ResumeSectionsFields draft={draft} onChange={change} onInteracting={field => edited.current.add(field)} />
+        <label className="field"><span>О себе</span><textarea name="bio" rows={4} maxLength={3000} value={draft.bio} onChange={event => change('bio', event.target.value)} /></label>
         <details className="onboarding-details"><summary>Подробнее о себе</summary>
-          <label className="field"><span>Образование</span><textarea name="education" rows={2} maxLength={resumeTextLimits.education} defaultValue={profile.education || ''} /></label>
-          <div className="form-grid"><label className="field"><span>Языки</span><input name="languages" maxLength={500} defaultValue={profile.languages || ''} /></label><label className="field"><span>Портфолио</span><input name="portfolio" maxLength={1000} defaultValue={profile.portfolio || ''} placeholder="GitHub или ссылка на проекты" /></label></div>
+          <label className="field"><span>Образование</span><textarea name="education" rows={2} maxLength={resumeTextLimits.education} value={draft.education} onChange={event => change('education', event.target.value)} /></label>
+          <div className="form-grid"><label className="field"><span>Языки</span><input name="languages" maxLength={500} value={draft.languages} onChange={event => change('languages', event.target.value)} /></label><label className="field"><span>Портфолио</span><input name="portfolio" maxLength={1000} value={draft.portfolio} onChange={event => change('portfolio', event.target.value)} placeholder="GitHub или ссылка на проекты" /></label></div>
         </details>
         <fieldset className="salary-fields"><legend>Условия работы <span className="field-caption">Необязательно</span></legend>
           <div className="form-grid">
-            <label className="field"><span>Желаемая зарплата от, ₽/мес.</span><input name="salaryFrom" type="number" min="0" max="10000000" step="1" defaultValue={profile.salaryFrom ?? ''} placeholder="Не указана" /></label>
-            <label className="field"><span>Желаемая зарплата до, ₽/мес.</span><input name="salaryTo" type="number" min="0" max="10000000" step="1" defaultValue={profile.salaryTo ?? ''} placeholder="Необязательно" /></label>
+            <label className="field"><span>Желаемая зарплата от, ₽/мес.</span><input name="salaryFrom" type="number" min="0" max="10000000" step="1" value={draft.salaryFrom} onChange={event => change('salaryFrom', event.target.value)} placeholder="Не указана" /></label>
+            <label className="field"><span>Желаемая зарплата до, ₽/мес.</span><input name="salaryTo" type="number" min="0" max="10000000" step="1" value={draft.salaryTo} onChange={event => change('salaryTo', event.target.value)} placeholder="Необязательно" /></label>
           </div>
-          <label className="field"><span>Занятость</span><select name="employmentType" defaultValue={profile.employmentType || ''}><option value="">Не указана</option>{employmentTypes.map(value => <option key={value}>{value}</option>)}</select></label>
+          <label className="field"><span>Занятость</span><select name="employmentType" value={draft.employmentType} onChange={event => change('employmentType', event.target.value)}><option value="">Не указана</option>{employmentTypes.map(value => <option key={value}>{value}</option>)}</select></label>
         </fieldset>
         <div className="section-divider" />
         <div className="profile-fsp"><FormHeader title="ФСП" Icon={Medal} /></div>
@@ -130,7 +107,7 @@ export function Profile({ state, update, notify, onTest, onSurvey, onPreview, on
         <label className="checkbox-field"><input type="checkbox" checked={consent} onChange={event => { setConsent(event.target.checked); if (!event.target.checked) setVisible(false); }} /><span>Согласен на обработку персональных данных</span></label>
         <a className="privacy-policy-link" href="/privacy" target="_blank" rel="noopener noreferrer">Политика конфиденциальности</a>
         {error && <p className="form-error" role="alert">{error}</p>}
-        <div className="form-actions"><button type="submit" className="button primary">Сохранить изменения</button></div>
+        <div className="form-actions"><button type="submit" className="button primary" disabled={reading}>Сохранить изменения</button></div>
       </form>
       <aside className="profile-sidebar">
         <ReadinessPanel state={state} onAction={(action, key) => {

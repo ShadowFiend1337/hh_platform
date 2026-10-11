@@ -1,0 +1,7 @@
+.resume-summary-entry { margin-top: 12px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 12px; min-width: 0; }
+.resume-summary-entry h5 { font-size: 14px; font-weight: 600; margin: 0 0 6px; overflow-wrap: anywhere; }
+.resume-summary-period { color: var(--muted); font-size: 12px; margin-bottom: 8px; }
+.resume-summary-entry .tags { margin-top: 10px; }
+.resume-summary .tags { display: flex; flex-wrap: wrap; gap: 8px; }
+.resume-summary .tag { border-radius: 999px; white-space: pre-wrap; overflow-wrap: anywhere; max-width: 100%; padding: 7px 12px; }
+.resume-summary .field-caption { display: inline; margin-left: 6px; font-weight: 400; }

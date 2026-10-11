@@ -67,8 +67,11 @@ npm run dev
 
 - Swagger UI: `/api/docs`, документ — [docs/api/platform.openapi.json](docs/api/platform.openapi.json). Тест сверяет его с маршрутами сервера.
 - `npm run test:server` — серверные тесты; `npm run test:browser:all` — все браузерные сценарии подряд, каждый на своём временном сервисе (выборочно: `npm run test:browser:all -- tasks resume`).
+- `npm run test:resume-unit` — парсер, каталоги, перенос ручных правок, история и PDF; `npm run test:resume-form` — сквозной браузерный сценарий анкеты (требуется Playwright Chromium).
 - `npm run validate:assessment-model` и `npm run measure:modes`, затем `npm run charts` — пересобрать графики.
 
 ## Документация
+
+[Анкета и зависимости по ТЗ](docs/resume_tz_audit.md) · [проверки импорта и их ограничения](docs/resume_validation.md).
 
 [Навигация](docs/README.md) · [архитектура](docs/architecture.md) · [статус по ТЗ](docs/case_status.md) · [динамический банк](docs/dynamic_bank.md) · [прокторинг](docs/assessment_integrity.md) · [правила попыток](docs/assessment_policy.md) · [открытые задачи](docs/open_tasks.md) · [процент совпадения](docs/search_match.md) · [задания](docs/employer_tasks.md) · [LLM](docs/llm_usage.md) · [ФСП ID](docs/fsp_id.md) · [защита от мошенничества](docs/employer_protection.md) · [подробности реализации](docs/details.md)

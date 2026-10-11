@@ -9,6 +9,7 @@ import { PlatformService } from '../platform.mjs';
 import { openStore } from '../store.mjs';
 import { createAttempt, evaluate } from '../assessment.mjs';
 import { defaultSearchFilters } from '../../shared/search.ts';
+import { createInitialState } from '../../frontend/src/model.ts';
 
 const time = Date.parse('2026-10-06T09:00:00.000Z');
 const date = new Date(time).toISOString();
@@ -278,12 +279,15 @@ test('new invitations use the sender account and server time and require an avai
 test('only the recipient can view or answer an invitation; contacts require its accepted answer', t => {
   const { platform, assessments } = fixture(t);
   const proof = completed(assessments, ownerB);
-  platform.save(ownerB, candidateState(proof, { email: 'recipient@example.com' }), 0);
+  const person = candidateState(proof, { email: 'recipient@example.com' });
+  person.profile.portfolio = 'https://example.com/private-portfolio';
+  platform.save(ownerB, person, 0);
   const employer = initial(); employer.invitations = [invitation(idB)];
   platform.save(ownerA, employer, 0);
   const forged = platform.read(ownerA).state; forged.invitations[0].status = 'accepted';
   assert.throws(() => platform.save(ownerA, forged, 1), errorStatus(403));
   assert.throws(() => platform.contacts(ownerA, idB), errorStatus(403));
+  assert.equal(platform.read(ownerA).directoryPeople.find(item => item.id === idB).portfolio, '');
   let recipient = platform.read(ownerB);
   assert.equal(recipient.state.invitations[0].candidateId, 'candidate-anna');
   recipient.state.invitations[0].status = 'viewed';
@@ -292,7 +296,7 @@ test('only the recipient can view or answer an invitation; contacts require its 
   recipient.state.invitations[0].status = 'accepted';
   recipient = platform.save(ownerB, recipient.state, recipient.revision);
   assert.equal(platform.read(ownerA).state.invitations[0].status, 'accepted');
-  assert.deepEqual(platform.contacts(ownerA, idB), { email: 'recipient@example.com', phone: '+7 000 000-00-00' });
+  assert.deepEqual(platform.contacts(ownerA, idB), { email: 'recipient@example.com', phone: '+7 000 000-00-00', portfolio: person.profile.portfolio });
   assert.throws(() => platform.contacts(ownerC, idB), errorStatus(403));
   const tampered = platform.read(ownerA); tampered.state.invitations[0].salaryFrom = 1;
   assert.throws(() => platform.save(ownerA, tampered.state, tampered.revision), errorStatus(403));
@@ -496,4 +500,98 @@ test('deleting an employer removes only its decisions and keeps the candidate an
   assert(store.get(idB));
   assert.deepEqual(platform.read(ownerC).state.candidateDecisions, [{ candidateId: idB, decision: 'liked', date }]);
   assert.equal(store.db.prepare('SELECT COUNT(*) AS n FROM platform_candidate_decisions WHERE owner=?').get(ownerA).n, 0);
+});
+
+
+test('resume blocks survive save, history snapshots and candidate projections without granting proof', t => {
+  const { platform, store, assessments } = fixture(t);
+  const proof = completed(assessments, ownerA);
+  const state = candidateState(proof);
+  const fields = { workExperiences: [{ period: '2024-01 — 2025-02', company: 'Лаборатория', tasks: 'API и очереди' }],
+    petProjects: [{ name: 'Телеметрия', description: 'MQTT и датчики', stack: ['ESP32', 'Python'] }],
+    achievementItems: ['Призёр хакатона'], interests: ['Робототехника'] };
+  Object.assign(state.profile, fields, { careerAchievements: 'Устаревшее', workHistory: 'Устаревшее' });
+  Object.assign(state.surveys[0], structuredClone(fields));
+  const saved = platform.save(ownerA, state, 0);
+  for (const key of Object.keys(fields)) {
+    assert.deepEqual(saved.state.profile[key], fields[key]);
+    assert.deepEqual(saved.state.surveys[0][key], fields[key]);
+    assert.deepEqual(JSON.parse(store.forOwner(ownerA).public_payload)[key], fields[key]);
+  }
+  assert.equal(saved.state.profile.workHistory, 'Лаборатория\n2024-01 — 2025-02\nAPI и очереди');
+  assert.equal(saved.state.profile.careerAchievements, 'Призёр хакатона');
+  assert.deepEqual(saved.state.profile.achievements, []);
+  const changed = structuredClone(saved.state);
+  changed.profile.petProjects[0].description = 'Новое описание';
+  const next = platform.save(ownerA, changed, saved.revision);
+  assert.equal(next.state.profile.petProjects[0].description, 'Новое описание');
+  assert.equal(next.state.surveys[0].petProjects[0].description, 'MQTT и датчики');
+  const rewritten = structuredClone(next.state); rewritten.surveys[0].interests.push('Изменённая история');
+  assert.throws(() => platform.save(ownerA, rewritten, next.revision), errorStatus(403));
+});
+
+test('new resume arrays cannot bypass candidate-only access or the consent requirement', t => {
+  const { platform } = fixture(t);
+  for (const key of ['petProjects', 'interests', 'achievementItems']) {
+    const input = initial();
+    input.profile[key] = key === 'petProjects' ? [{ name: 'Личный проект', description: '', stack: [] }] : ['Личная информация'];
+    assert.throws(() => platform.save(ownerA, input, 0), errorStatus(400));
+    assert.throws(() => platform.save(ownerA, input, 0, 'employer'), errorStatus(403));
+  }
+});
+
+test('initial-state legacy overrides migrate while explicit empty sections still mean deletion', t => {
+  const { platform } = fixture(t);
+  const state = createInitialState();
+  Object.assign(state.profile, { consent: true, workHistory: 'Legacy employment description',
+    careerAchievements: 'Достижения\n• Победитель хакатона\nИнтересы\n• Разработка игр' });
+  assert.equal(Object.hasOwn(state.profile, 'workExperiences'), false, 'Factory defaults cannot override later legacy fixture data');
+  const saved = platform.save(ownerA, state, 0);
+  assert.equal(saved.state.profile.workHistory, 'Legacy employment description');
+  assert.deepEqual(saved.state.profile.workExperiences, [{ period: '', company: '', tasks: 'Legacy employment description' }]);
+  assert.deepEqual(saved.state.profile.achievementItems, ['Победитель хакатона']);
+  assert.deepEqual(saved.state.profile.interests, ['Разработка игр']);
+  Object.assign(saved.state.profile, { workExperiences: [], achievementItems: [], interests: [] });
+  const cleared = platform.save(ownerA, saved.state, saved.revision);
+  assert.equal(cleared.state.profile.workHistory, '');
+  assert.equal(cleared.state.profile.careerAchievements, '');
+  assert.deepEqual(cleared.state.profile.workExperiences, []);
+  assert.deepEqual(cleared.state.profile.achievementItems, []);
+});
+
+test('core-only assessment input never replaces the richer saved resume questionnaire', t => {
+  const { platform, assessments } = fixture(t);
+  const state = createInitialState();
+  const core = { id: 'core-only-resume-test', date, industry: 'ИТ', professionalRole: 'Frontend-разработчик',
+    specialization: 'Frontend', desiredGrade: 'Junior', experience: '1 год', stack: ['React'], softSkills: [] };
+  const richSurvey = { ...core, workExperiences: [{ company: 'Лаборатория', period: '2024-01 — 2025-02', tasks: 'Формы на React' }],
+    petProjects: [{ name: 'Редактор', description: 'Компоненты', stack: ['React'] }],
+    achievementItems: ['Призёр'], interests: ['Робототехника'] };
+  Object.assign(state.profile, richSurvey, { name: 'Кандидат', email: 'resume@example.invalid', consent: true, visible: true, surveyCompletedAt: date });
+  state.surveys = [richSurvey];
+  const before = platform.save(ownerA, state, 0);
+  const attempt = createAttempt(core); assessments.insert(attempt, ownerA, 'private-token');
+  const graded = evaluate(attempt, attempt.questions.map(question => ({ questionId: question.id, optionId: question.correctOptionId })), time + 1000);
+  assessments.complete(attempt.id, graded.answerDigest, graded.result);
+  assert.equal(Object.hasOwn(attempt.survey, 'petProjects'), false, 'The test receives the core contract only');
+  const after = structuredClone(before.state);
+  after.history = [graded.result];
+  after.profile.confirmed = { specialization: graded.result.specialization, grade: graded.result.grade, score: graded.result.score,
+    date: graded.result.date, surveyId: core.id };
+  const saved = platform.save(ownerA, after, before.revision);
+  for (const key of ['workExperiences', 'petProjects', 'achievementItems', 'interests']) {
+    assert.deepEqual(saved.state.surveys[0][key], richSurvey[key]);
+  }
+});
+
+test('maximum legacy history can be read and saved repeatedly without truncation', t => {
+  const { platform, assessments } = fixture(t);
+  const state = candidateState(completed(assessments, ownerA));
+  state.profile.workHistory = 'x'.repeat(19992) + 'ХВОСТ123';
+  let saved = platform.save(ownerA, state, 0);
+  for (let index = 0; index < 3; index++) {
+    assert.equal(saved.state.profile.workHistory, state.profile.workHistory);
+    assert.equal(saved.state.profile.workExperiences.map(entry => entry.tasks).join(''), state.profile.workHistory);
+    saved = platform.save(ownerA, saved.state, saved.revision);
+  }
 });

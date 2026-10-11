@@ -19,6 +19,7 @@ import { readinessFor } from './components/ReadinessPanel';
 import { Landing } from './pages/Landing';
 import { Auth, type AuthMode } from './pages/Auth';
 import { readCandidateContacts, syncCacheKey, usePlatformPersistence } from './platform-api';
+import { resolveCandidatePage } from './candidate-navigation';
 import {
   currentSurvey, emptyFilters, ownCandidateId, readState, saveState, storageKey,
   type AccountRole, type Candidate, type Page, type Role,
@@ -128,15 +129,12 @@ function Workspace({ authAccount: initialAccount }: { authAccount: AuthAccount |
   const candidates = [...new Map([...knownPeople, ...persistence.people, state.profile].map(person => [person.id, person])).values()]
     .map(person => {
       if (person.id === ownCandidateId) return person;
-      if (person.demoProfile || !persistence.contactCandidateIds.includes(person.id)) return { ...person, email: '', phone: '' };
+      if (person.demoProfile || !persistence.contactCandidateIds.includes(person.id)) return { ...person, email: '', phone: '', portfolio: '' };
       const known = knownPeople.find(item => item.id === person.id);
-      return { ...person, email: known?.email || '', phone: known?.phone || '' };
+      return { ...person, email: known?.email || '', phone: known?.phone || '', portfolio: known?.portfolio || '' };
     });
   const surveyComplete = Boolean(currentSurvey(state));
-  const provenCategory = state.profile.confirmed && state.history.some(result => result.passed
-    && result.specialization === state.profile.confirmed?.specialization && result.grade === state.profile.confirmed.grade
-    && result.date === state.profile.confirmed.date && result.score === state.profile.confirmed.score);
-  const candidatePage = !surveyComplete ? 'onboarding' : !provenCategory && route.page !== 'onboarding' && route.page !== 'invitations' ? 'assessment' : route.page;
+  const candidatePage = resolveCandidatePage(route.page, surveyComplete, state.profile.confirmed, state.history);
   const page = route.role === 'candidate' ? candidatePage : route.page;
   const candidateStarted = surveyComplete;
   const contactsAllowed = (id: string) => persistence.contactCandidateIds.includes(id) && !candidates.some(person => person.id === id && person.demoProfile);
@@ -210,11 +208,11 @@ function Workspace({ authAccount: initialAccount }: { authAccount: AuthAccount |
     const ids = persistence.contactCandidateIds;
     const revokedIds = previousContactIds.current.filter(id => !ids.includes(id));
     previousContactIds.current = ids;
-    setKnownPeople(previous => previous.map(person => ids.includes(person.id) ? person : { ...person, email: '', phone: '' }));
+    setKnownPeople(previous => previous.map(person => ids.includes(person.id) ? person : { ...person, email: '', phone: '', portfolio: '' }));
     setDialog(previous => {
       if (!previous || ids.includes(previous.person.id)) return previous;
-      return revokedIds.includes(previous.person.id) || previous.person.email || previous.person.phone
-        ? null : { ...previous, person: { ...previous.person, email: '', phone: '' } };
+      return revokedIds.includes(previous.person.id) || previous.person.email || previous.person.phone || previous.person.portfolio
+        ? null : { ...previous, person: { ...previous.person, email: '', phone: '', portfolio: '' } };
     });
     for (const id of ids) {
       const person = candidates.find(item => item.id === id);
@@ -229,8 +227,8 @@ function Workspace({ authAccount: initialAccount }: { authAccount: AuthAccount |
   }, [authAccount, route.role, persistence.ready, persistence.revision, persistence.contactCandidateIds]);
 
   function forgetContacts(id: string) {
-    setKnownPeople(previous => previous.map(item => item.id === id ? { ...item, email: '', phone: '' } : item));
-    setDialog(previous => previous?.person.id === id ? { ...previous, person: { ...previous.person, email: '', phone: '' } } : previous);
+    setKnownPeople(previous => previous.map(item => item.id === id ? { ...item, email: '', phone: '', portfolio: '' } : item));
+    setDialog(previous => previous?.person.id === id ? { ...previous, person: { ...previous.person, email: '', phone: '', portfolio: '' } } : previous);
   }
 
   function navigate(requestedRole: Role, requestedPage: Page, hash = '') {
