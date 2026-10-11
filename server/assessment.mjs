@@ -3,7 +3,7 @@ import { bankVersion, programs } from './bank.mjs';
 import { analyzeVacancy, vacancyExamples } from './vacancies.mjs';
 import { industryOptions } from '../shared/catalog.ts';
 import { gradeOptions } from '../shared/grading.ts';
-import { MAX_STACK_SKILLS } from '../shared/resume-limits.ts';
+import { MAX_STACK_SKILLS, MAX_SOFT_SKILLS } from '../shared/resume-limits.ts';
 
 export const threshold = 70;
 /** A confident result unlocks the next grade's test without the 90-day wait. */
@@ -67,7 +67,7 @@ export function validateSurvey(survey) {
   const list = (value, max, min = 1) => Array.isArray(value) && value.length >= min && value.length <= max && value.every(item => text(item, 80)) && new Set(value).size === value.length;
   if (!survey || !text(survey.id, 100) || !text(survey.date, 40) || !Number.isFinite(Date.parse(survey.date))
     || !text(survey.industry, 100) || !industryOptions.includes(survey.industry) || !text(survey.professionalRole, 100) || !text(survey.experience, 100)
-    || !list(survey.stack, MAX_STACK_SKILLS) || !list(survey.softSkills, 10, 0)) throw new RequestError(400, 'Сначала заполните анкету.');
+    || !list(survey.stack, MAX_STACK_SKILLS) || !list(survey.softSkills, MAX_SOFT_SKILLS, 0)) throw new RequestError(400, 'Сначала заполните анкету.');
   getProgram(survey.specialization, survey.desiredGrade);
   return { id: survey.id, date: survey.date, industry: survey.industry, professionalRole: survey.professionalRole,
     specialization: survey.specialization, desiredGrade: survey.desiredGrade, experience: survey.experience,

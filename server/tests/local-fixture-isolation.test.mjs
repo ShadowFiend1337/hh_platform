@@ -186,7 +186,13 @@ test('registered local accounts stay in an explicitly marked realm despite old r
   assert.equal(f.service.directory.store.forOwner(localCandidate.owner()).synthetic, 1);
   assert.equal((await localEmployer('/api/directory/' + localPerson.id + '/contacts')).data.email, 'changed@example.invalid');
   assert.equal((await realEmployer('/api/directory/' + localPerson.id + '/contacts')).status, 404);
-  const applied = await localCandidate('/api/vacancies/' + localVacancy.id + '/applications', 'POST', {});
+  // Preparation now seeds an application and follow-up tasks for the first vacancy.
+  const seededApplications = (await localCandidate('/api/applications?role=candidate')).data.items;
+  assert.ok(seededApplications.some(item => item.synthetic && item.companyId === ownRealm[0].id
+    && ownRealm[0].vacancies.some(vacancy => vacancy.id === item.vacancyId)), 'The legitimate seeded application remains accessible independent of vacancy display order');
+  const unusedVacancy = ownRealm[0].vacancies.find(item => !seededApplications.some(application => application.vacancyId === item.id));
+  assert.ok(unusedVacancy, 'A second fixture vacancy is available for a fresh application');
+  const applied = await localCandidate('/api/vacancies/' + unusedVacancy.id + '/applications', 'POST', {});
   assert.equal(applied.status, 201); assert.equal(applied.data.synthetic, true); assert.equal(applied.data.vacancy.synthetic, true);
   assert.equal(applied.data.candidate.synthetic, true);
   const incoming = await localEmployer('/api/applications?role=employer');

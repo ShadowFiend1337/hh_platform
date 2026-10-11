@@ -4,6 +4,7 @@ import { DirectoryStore, publicCandidate } from '../directory-store.mjs';
 import { PlatformService } from '../platform.mjs';
 import { openStore } from '../store.mjs';
 import { createInitialState } from '../../frontend/src/model.ts';
+import { MAX_SOFT_SKILLS } from '../../shared/resume-limits.ts';
 
 const owner = 'a'.repeat(64);
 function fixture(t) {
@@ -36,7 +37,7 @@ test('A profile consisting only of self-assessment still requires consent', t =>
 test('Malformed self-assessment is rejected atomically and contact-like entries are scrubbed publicly', t => {
   const platform = fixture(t), state = createInitialState();
   state.profile.consent = true;
-  for (const value of [['a'.repeat(81)], [{ verified: true }], Array(11).fill('Лидерство')]) {
+  for (const value of [['a'.repeat(81)], [{ verified: true }], Array(MAX_SOFT_SKILLS + 1).fill('Лидерство')]) {
     state.profile.softSkills = value;
     assert.throws(() => platform.save(owner, state, 0), error => error.status === 400);
     assert.equal(platform.read(owner).state, null);

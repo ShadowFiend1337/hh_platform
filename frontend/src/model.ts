@@ -3,6 +3,8 @@ import { resumeTextLimits } from '../../shared/resume-limits.ts';
 import type { Grade } from '../../shared/grading.ts';
 import { defaultSearchFilters, type SearchFilters } from '../../shared/search.ts';
 import { normalizeHiringNeeds, type HiringNeed } from '../../shared/hiring-needs.ts';
+import { resumeSections, type ResumeSections } from '../../shared/resume-structure.ts';
+export type { WorkExperience, PetProject, ResumeSections } from '../../shared/resume-structure.ts';
 export type { HiringNeed } from '../../shared/hiring-needs.ts';
 export { gradeOptions, gradeLabels, isGrade } from '../../shared/grading.ts';
 export type { Grade } from '../../shared/grading.ts';
@@ -43,7 +45,7 @@ export interface TestResult {
   review?: { decidedAt: string; note: string; marks?: { questionId: string; score: number; comment: string }[] };
 }
 
-export interface CandidateSurvey {
+export interface CandidateSurvey extends Partial<ResumeSections> {
   id: string;
   date: string;
   industry: string;
@@ -61,7 +63,7 @@ export interface CandidateSurvey {
   format?: string;
 }
 
-export interface Candidate {
+export interface Candidate extends Partial<ResumeSections> {
   id: string;
   name: string;
   specialization: Specialization;
@@ -207,6 +209,7 @@ export function readState(): PlatformState {
         && stored.history.some((item: TestResult) => item.id === 'test-initial' && item.date === stored.profile.confirmed.date);
       const profile: Candidate = {
         ...stored.profile,
+        ...resumeSections(stored.profile),
         careerAchievements: typeof stored.profile.careerAchievements === 'string' ? stored.profile.careerAchievements.slice(0, resumeTextLimits.careerAchievements) : '',
         education: typeof stored.profile.education === 'string' ? stored.profile.education.slice(0, resumeTextLimits.education) : '',
         workHistory: typeof stored.profile.workHistory === 'string' ? stored.profile.workHistory.slice(0, resumeTextLimits.workHistory) : '',

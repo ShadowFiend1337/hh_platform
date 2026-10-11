@@ -48,6 +48,9 @@ test('local account setup prepares both cabinets on a fresh database and preserv
   assert(proposal.every(item => item.company === 'Тестовая компания'));
   assert.equal(employerState.state.hiringNeeds.length, 2, 'The test employer starts with two hiring needs');
   assert.equal(candidateState.state.profile.stack.length >= 3, true);
+  assert.match(candidateState.state.profile.workHistory, /Учебная продуктовая команда/u);
+  assert.ok(candidateState.state.profile.workExperiences.some(entry => /личный кабинет клиента/u.test(entry.tasks)), 'Legacy fixture experience is migrated to editable blocks');
+  assert.deepEqual(candidateState.state.profile.achievementItems, ['Финалист командного хакатона по продуктовому программированию.']);
 
   candidateState.state.profile.bio = 'Изменённый тестовый профиль';
   candidateState.state.invitations[0].status = 'accepted';

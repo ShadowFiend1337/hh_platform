@@ -5,10 +5,11 @@ import { dirname } from 'node:path';
 import { createHash } from 'node:crypto';
 import { positiveProfessionalContent } from './search-evidence.mjs';
 import { rankingFspEvidence } from './search-ranking.mjs';
+import { resumeSections, workHistoryText, careerAchievementsText, petProjectsText } from '../shared/resume-structure.ts';
 
 export const textHash = text => createHash('sha256').update(text).digest('hex');
-export const PROFILE_INDEX_POLICY = 'positive-profile-sections-max-v3';
-export const PROFILE_EVIDENCE_POLICY = 'professional-sections-with-strict-sparse-competencies-v2';
+export const PROFILE_INDEX_POLICY = 'positive-structured-profile-sections-max-v4';
+export const PROFILE_EVIDENCE_POLICY = 'structured-professional-sections-with-strict-sparse-competencies-v3';
 const MAX_SEGMENTS = 8;
 const MAX_SEGMENT_CHARACTERS = 4000;
 const MAX_PROFILE_CHARACTERS = 12000;
@@ -33,12 +34,24 @@ function professionalContent(person, value, history = false) {
   return lines.filter(line => !syntheticMetadataLine.test(line.trimStart())).join('\n');
 }
 
+function resumeNarratives(person) {
+  const sections = resumeSections(person);
+  return {
+    // Stored projections are validated on save. Preserve the original legacy prose here:
+    // an editable migration can split a long word across blocks, including a denial.
+    workHistory: person.workHistory || workHistoryText(sections.workExperiences),
+    careerAchievements: Array.isArray(person.achievementItems) ? careerAchievementsText(sections.achievementItems) : person.careerAchievements,
+    petProjects: petProjectsText(sections.petProjects), interests: sections.interests.join('\n'),
+  };
+}
+
 function semanticSections(person, { includeIdentity = true } = {}) {
   const result = [], seen = new Set();
   let remaining = MAX_PROFILE_CHARACTERS;
   const identity = [person.professionalRole, (person.stack || []).join(', ')].filter(Boolean).join('\n');
-  const fields = [['bio', person.bio], ['workHistory', person.workHistory],
-    ['careerAchievements', person.careerAchievements], ['education', person.education]];
+  const resume = resumeNarratives(person);
+  const fields = [['bio', person.bio], ['workHistory', resume.workHistory], ['petProjects', resume.petProjects],
+    ['careerAchievements', resume.careerAchievements], ['education', person.education], ['interests', resume.interests]];
   if (includeIdentity) fields.push(['identity', identity]);
   for (const [field, value] of fields) {
     if (!value || !remaining || result.length >= MAX_SEGMENTS) continue;
@@ -70,15 +83,19 @@ export function semanticRerankingSections(person) {
 function hasOriginalNarrative(person) {
   // An explicit denial is still a narrative. Removing it from the embedding
   // must not turn a contradictory role/stack into the person's task evidence.
-  return ['bio', 'workHistory'].some(field => scrub(professionalContent(person, person[field], field === 'workHistory')).trim());
+  const resume = resumeNarratives(person);
+  return [['bio', person.bio], ['workHistory', resume.workHistory], ['petProjects', resume.petProjects]]
+    .some(([field, value]) => scrub(professionalContent(person, value, field === 'workHistory')).trim());
 }
 
 export function semanticEvidenceSections(person) {
   // The worker's passage budget must not cut off a denial predicate or hide
   // a later affirmative claim. These validated fields stay local to the
   // evidence check; they are never sent to the model without index bounds.
-  return ['bio', 'workHistory', 'careerAchievements', 'education']
-    .map(field => scrub(professionalContent(person, person[field], field === 'workHistory')).trim()).filter(Boolean);
+  const resume = resumeNarratives(person);
+  return [['bio', person.bio], ['workHistory', resume.workHistory], ['petProjects', resume.petProjects],
+    ['careerAchievements', resume.careerAchievements], ['education', person.education], ['interests', resume.interests]]
+    .map(([field, value]) => scrub(professionalContent(person, value, field === 'workHistory')).trim()).filter(Boolean);
 }
 
 export function semanticCompetencySections(person) {
@@ -107,12 +124,17 @@ export function publicCandidate(person, id = person.id) {
     'portfolio', 'languages', 'achievements', 'visible', 'consent', 'salaryFrom', 'salaryTo', 'experienceMonths',
     'employmentType', 'availableFrom', 'languageCodes', 'synthetic', 'fspEvidence'];
   const output = Object.fromEntries(allowed.filter(key => Object.hasOwn(person, key)).map(key => [key, person[key]]));
-  for (const key of ['name', 'professionalRole', 'experience', 'bio', 'careerAchievements', 'education', 'workHistory', 'languages']) {
+  const sections = resumeSections(person);
+  output.workExperiences = sections.workExperiences.map(entry => Object.fromEntries(Object.entries(entry).map(([key, value]) => [key, scrub(value)])));
+  output.petProjects = sections.petProjects.map(entry => ({ name: scrub(entry.name), description: scrub(entry.description), stack: entry.stack.map(scrub) }));
+  output.achievementItems = sections.achievementItems.map(scrub);
+  output.interests = sections.interests.map(scrub);
+  for (const key of ['name', 'professionalRole', 'experience', 'city', 'format', 'bio', 'careerAchievements', 'education', 'workHistory', 'languages']) {
     if (output[key]) output[key] = scrub(output[key]);
   }
   if (Array.isArray(output.stack)) output.stack = output.stack.map(scrub);
   output.softSkills = Array.isArray(output.softSkills) ? output.softSkills.map(scrub).filter(Boolean) : [];
-  return { ...output, id, email: '', phone: '', fspId: '' };
+  return { ...output, id, email: '', phone: '', portfolio: '', fspId: '' };
 }
 
 export function publicDirectoryCandidate(row, id = row.id) {
@@ -220,11 +242,11 @@ export class DirectoryStore {
       for (const person of seeds) this.upsert(person, null, true);
       // Older stored profiles used one concatenated text. Rebuild from their
       // scrubbed professional fields so reopening also adopts section indexing.
-      const update = this.db.prepare('UPDATE directory_candidates SET public_payload=?,document=?,document_hash=? WHERE id=?');
+      const update = this.db.prepare('UPDATE directory_candidates SET public_payload=?,document=?,document_hash=?,city=? WHERE id=?');
       for (const row of this.db.prepare('SELECT id,public_payload,document FROM directory_candidates').all()) {
         const person = publicCandidate(JSON.parse(row.public_payload), row.id);
         const payload = JSON.stringify(person), document = semanticDocument(person);
-        if (document !== row.document || payload !== row.public_payload) update.run(payload, document, textHash(document), row.id);
+        update.run(payload, document, textHash(document), person.city || '', row.id);
         this.replaceSkills(row.id, person.stack || []);
       }
     });
@@ -248,7 +270,7 @@ export class DirectoryStore {
       public_payload=excluded.public_payload, document=excluded.document, document_hash=excluded.document_hash`)
       .run(person.id, owner, Number(person.synthetic === true), Number(person.visible === true), Number(person.consent === true), Number(eligible),
         person.confirmed?.specialization || person.specialization || '', person.confirmed?.grade || '', person.confirmed?.score || 0,
-        person.city || '', person.industry || '', person.format || '', person.salaryFrom ?? null, person.salaryTo ?? null, person.experienceMonths ?? null,
+        payload.city || '', person.industry || '', person.format || '', person.salaryFrom ?? null, person.salaryTo ?? null, person.experienceMonths ?? null,
         person.employmentType || '', Number(Boolean(person.portfolio)), Number(Boolean(rankingFspEvidence(person))
           || person.synthetic !== true && Boolean(owner) && Boolean(this.integrationCount?.(owner))), JSON.stringify(payload), document, textHash(document));
     this.replaceSkills(person.id, payload.stack || []);

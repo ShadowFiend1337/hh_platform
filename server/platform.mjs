@@ -1,6 +1,8 @@
 import { industryOptions, isSpecialization } from '../shared/catalog.ts';
 import { isGrade } from '../shared/grading.ts';
-import { MAX_STACK_SKILLS, resumeTextLimits } from '../shared/resume-limits.ts';
+import { MAX_STACK_SKILLS, MAX_SOFT_SKILLS, resumeTextLimits } from '../shared/resume-limits.ts';
+import { resumeSections } from '../shared/resume-structure.ts';
+import { validateResumeFields } from './resume-fields.mjs';
 import { defaultSearchFilters, employmentTypes, languageOptions, normalizeSearchFilters } from '../shared/search.ts';
 import { HIRING_NEED_LIMITS, MAX_HIRING_NEEDS } from '../shared/hiring-needs.ts';
 import { publicCandidate, publicDirectoryCandidate } from './directory-store.mjs';
@@ -110,13 +112,12 @@ function profile(input, stored) {
     stack: strings(value.stack, MAX_STACK_SKILLS, 80, 'Стек'),
     industry: choice(value.industry, ['', ...industryOptions], 'Отрасль'),
     professionalRole: text(value.professionalRole, resumeTextLimits.professionalRole, 'Роль'),
-    softSkills: strings(value.softSkills, 10, 80, 'Софт-скиллы'), surveyCompletedAt: date(value.surveyCompletedAt, 'Дата анкеты'),
+    softSkills: strings(value.softSkills, MAX_SOFT_SKILLS, 80, 'Софт-скиллы'), surveyCompletedAt: date(value.surveyCompletedAt, 'Дата анкеты'),
     experience: text(value.experience, resumeTextLimits.experience, 'Стаж'),
     city: text(value.city, resumeTextLimits.city, 'Город'), format: choice(value.format, formats, 'Формат работы', 'Удалённо'),
     bio: text(value.bio, 4000, 'О себе'),
-    careerAchievements: text(value.careerAchievements, resumeTextLimits.careerAchievements, 'Достижения'),
     education: text(value.education, resumeTextLimits.education, 'Образование'),
-    workHistory: text(value.workHistory, resumeTextLimits.workHistory, 'История работы'),
+    ...validateResumeFields(value, fail),
     portfolio: url(value.portfolio, resumeTextLimits.portfolio, 'Портфолио'),
     languages: text(value.languages, resumeTextLimits.languages, 'Языки'),
     // A user may enter an external ID; only server-owned achievements count
@@ -143,7 +144,8 @@ function hasPrivateProfile(value) {
   if (!value) return false;
   return ['name', 'email', 'phone', 'city', 'bio', 'careerAchievements', 'education', 'workHistory', 'portfolio',
     'languages', 'industry', 'professionalRole', 'experience', 'employmentType', 'availableFrom'].some(key => Boolean(value[key]))
-    || Boolean(value.stack?.length || value.softSkills?.length || value.languageCodes?.length || value.confirmed || value.surveyCompletedAt)
+    || Boolean(value.stack?.length || value.softSkills?.length || value.languageCodes?.length || value.workExperiences?.length
+      || value.petProjects?.length || value.achievementItems?.length || value.interests?.length || value.confirmed || value.surveyCompletedAt)
     || value.salaryFrom !== null && value.salaryFrom !== undefined || value.salaryTo !== null && value.salaryTo !== undefined
     || value.experienceMonths !== null && value.experienceMonths !== undefined;
 }
@@ -160,15 +162,16 @@ function survey(input) {
   const id = text(value.id, 100, 'ID анкеты');
   const created = date(value.date, 'Дата анкеты');
   const result = { id, date: created,
-    industry: choice(value.industry, industryOptions, 'Отрасль анкеты'),
+    industry: choice(value.industry, industryOptions, 'Отрасль анкеты', 'ИТ'),
     professionalRole: text(value.professionalRole, 100, 'Роль в анкете'),
     specialization: category(value.specialization, isSpecialization, 'Специализация анкеты'),
     desiredGrade: category(value.desiredGrade, isGrade, 'Грейд анкеты'),
     stack: strings(value.stack, MAX_STACK_SKILLS, 80, 'Стек анкеты'),
-    experience: text(value.experience, 100, 'Стаж анкеты'), softSkills: strings(value.softSkills, 10, 80, 'Софт-скиллы'),
+    experience: text(value.experience, 100, 'Стаж анкеты'), softSkills: strings(value.softSkills, MAX_SOFT_SKILLS, 80, 'Софт-скиллы'),
   };
   if (!id || !created || !result.professionalRole || !result.stack.length || !result.experience) fail('Заполните обязательные поля анкеты.');
-  for (const key of ['careerAchievements', 'education', 'workHistory', 'languages']) result[key] = text(value[key], resumeTextLimits[key], key);
+  Object.assign(result, validateResumeFields(value, fail));
+  for (const key of ['education', 'languages']) result[key] = text(value[key], resumeTextLimits[key], key);
   result.portfolio = url(value.portfolio, resumeTextLimits.portfolio, 'Портфолио анкеты');
   result.format = choice(value.format, formats, 'Формат анкеты');
   return result;
@@ -344,6 +347,7 @@ export class PlatformService {
     if (!account) return { state: null, revision: 0, directoryPeople: [] };
     const invitations = this.invitations(owner, account.public_id);
     const privateProfile = JSON.parse(account.profile);
+    Object.assign(privateProfile, resumeSections(privateProfile));
     if (this.accountForOwner) privateProfile.synthetic = isLocalFixtureAccount(this.accountForOwner(owner));
     delete privateProfile._proofId;
     const state = { version: 2, profile: privateProfile, company: JSON.parse(account.company), invitations,
@@ -548,7 +552,7 @@ export class PlatformService {
     const applied = this.store.db.prepare(`SELECT 1 FROM marketplace_applications a JOIN marketplace_companies c ON c.id=a.company_id
       WHERE c.owner=? AND a.candidate_id=? LIMIT 1`).get(owner, target);
     if (candidate.owner !== owner && (!person.consent || !accepted && !applied)) throw new RequestError(403, 'Контакты доступны после отклика или принятия приглашения и при действующем согласии.');
-    return { email: person.email, phone: person.phone };
+    return { email: person.email, phone: person.phone, ...(person.portfolio ? { portfolio: person.portfolio } : {}) };
   }
   delete(owner, { withinTransaction = false, deleteAssessmentRecords = false } = {}) {
     ownerKey(owner);
