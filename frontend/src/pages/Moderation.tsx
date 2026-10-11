@@ -54,7 +54,7 @@ export function Moderation({ account }: { account: ModeratorAccount }) {
       <Brand onHome={() => open('tests')} />
       {account.canModerate && <nav className="main-nav" aria-label="Разделы модерации">{sections.map(item =>
         <a href={'#' + item} key={item} aria-current={section === item ? 'page' : undefined} onClick={event => { event.preventDefault(); open(item); }}>
-          {sectionLabels[item]}{item === 'tests' && pending > 0 && <span className="nav-count" title="Ждут проверки">{pending}<span className="sr-only"> ждут проверки</span></span>}</a>)}</nav>}
+          {sectionLabels[item]}{item === 'tests' && pending > 0 && <span className="nav-count" title="Ждут эксперта">{pending}<span className="sr-only"> ждут эксперта</span></span>}</a>)}</nav>}
       <div className="header-account">
         <span className="app-account-name" title={account.login}>{account.name || account.login}</span>
         {testAccount && <span className="role-static">Учебный аккаунт</span>}
@@ -66,7 +66,7 @@ export function Moderation({ account }: { account: ModeratorAccount }) {
       {signOutError && <div className="data-error" role="alert"><span>{signOutError}</span></div>}
       {!account.canModerate ? <div className="panel empty-state"><h1>Доступ к модерации приостановлен</h1>
         <p className="muted">Администратор отозвал права этого аккаунта. Кабинет откроется снова, когда доступ восстановят.</p></div>
-        : section === 'tests' ? <><h1>Проверка тестов</h1><p className="muted moderation-lead">Итоги тестов с ответами, ключами, рубриками и происхождением каждого задания. Открытые задачи оценивает модератор: итог — половина закрытой и половина открытой части, порог 70.{testAccount ? ' Тестовый модератор видит только тестовые аккаунты.' : ''}</p>
+        : section === 'tests' ? <><h1>Проверка тестов</h1><p className="muted moderation-lead">Итоги тестов с ответами, ключами, рубриками и происхождением каждого задания. Практические задачи сразу после теста оценивает ИИ по рубрике: итог — половина закрытой и половина практической части, порог 70, грейд подтверждается сразу. Эксперт может перепроверить оценку или аннулировать попытку; если ИИ не смог оценить практику, грейд определён закрытой частью и попытка ждёт эксперта.{testAccount ? ' Тестовый модератор видит только тестовые аккаунты.' : ''}</p>
           <AssessmentReviews accountId={account.id} onDecided={() => setQueueRevision(value => value + 1)} /></>
         : section === 'bank' ? <><h1>Банк заданий</h1><p className="muted moderation-lead">Сгенерированные задания проходят локальные проверки и независимый решатель, затем показываются как незачётные пилотные. В зачёт они попадают после вашего одобрения или статистической калибровки. Ключ виден только модератору.</p>
           <ItemBankModeration accountId={account.id} /></>

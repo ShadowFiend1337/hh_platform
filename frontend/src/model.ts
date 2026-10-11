@@ -36,15 +36,21 @@ export interface TestResult {
   /** The decision used the clarifying block (18 items). */
   clarified?: boolean;
   integrity?: { departures: number; blockedCopies: number; blockedActions?: number; fullscreenExits?: number };
-  /** Open answers wait for a moderator; the grade is not confirmed yet. */
+  /** Legacy: open answers wait for a moderator; the grade is not confirmed yet. */
   pending?: boolean;
   closedScore?: number;
   openScore?: number;
   openCount?: number;
   openAnswered?: number;
-  /** Cancelled by a moderator because of a defective task; no retake wait. */
+  /** Practice: scored by the model, waiting for an expert (the closed part decided) or rechecked by an expert. */
+  openStatus?: 'ai' | 'queued' | 'expert';
+  /** Time ran out during the practice; unanswered tasks scored zero. */
+  openTimedOut?: boolean;
+  reviewedByExpert?: boolean;
+  /** Cancelled by a moderator; never confirms a grade. */
   invalidated?: boolean;
-  review?: { decidedAt: string; note: string; marks?: { questionId: string; score: number; comment: string }[] };
+  review?: { decidedAt: string; note: string; marks?: { questionId: string; score: number; comment: string }[];
+    previousScore?: number; previousOpenScore?: number | null; previousStatus?: 'ai' | 'queued' };
 }
 
 export interface CandidateSurvey extends Partial<ResumeSections> {
@@ -301,4 +307,13 @@ export function dateLabel(value: string) {
 export function hasContactAccess(state: PlatformState, candidateId: string) {
   return state.invitations.some(invitation => invitation.candidateId === candidateId
     && invitation.companyId === state.company.id && invitation.status === 'accepted');
+}
+
+/** Short mark of how the practical part of a result was checked; empty for results without practice. */
+export function practiceMark(result: TestResult): string {
+  if (result.invalidated && (result.reviewedByExpert || result.review)) return 'Аннулировано экспертом';
+  if (result.reviewedByExpert) return 'Проверено экспертом';
+  if (result.openStatus === 'queued') return 'Практика ждёт эксперта';
+  if (result.openStatus === 'ai') return 'Практика оценена ИИ';
+  return '';
 }

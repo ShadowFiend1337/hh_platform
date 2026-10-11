@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Dialog } from './Dialog';
-import { dateLabel, gradeLabels, specializationLabels, type CandidateSurvey, type PlatformState, type TestResult } from '../model';
+import { dateLabel, gradeLabels, practiceMark, specializationLabels, type CandidateSurvey, type PlatformState, type TestResult } from '../model';
 import { resumeSections } from '../../../shared/resume-structure';
 import { ResumeSummary } from './ResumeSummary';
 import './CandidateHistory.css';
@@ -31,7 +31,7 @@ function SurveySnapshot({ survey }: { survey: CandidateSurvey }) {
   </div>;
 }
 
-const outcome = (result: TestResult) => result.pending ? 'На проверке' : result.invalidated ? 'Аннулирован экспертом'
+const outcome = (result: TestResult) => result.pending ? 'На проверке' : result.invalidated ? (result.openStatus ? 'Не засчитан' : 'Аннулирован экспертом')
   : result.annulled ? 'Аннулирован' : result.passed ? 'Пройден' : 'Не пройден';
 
 export function CandidateHistory({ state }: { state: PlatformState }) {
@@ -55,7 +55,8 @@ export function CandidateHistory({ state }: { state: PlatformState }) {
       {view === 'tests' ? tests.slice(0, counts.tests).map(item => <button type="button" className="history-item history-entry" key={item.id}
         data-result-id={item.id} onClick={() => setSelection({ kind: 'test', id: item.id })}>
         <span className="history-entry-text"><strong>{specializationLabels[item.specialization]} · {gradeLabels[item.grade]}</strong>
-          <time dateTime={item.date}>{dateLabel(item.date)}</time><span>{outcome(item)}</span></span>
+          <time dateTime={item.date}>{dateLabel(item.date)}</time><span>{outcome(item)}</span>
+          {item.openStatus && <span className={'history-mark history-mark-' + (item.invalidated ? 'invalidated' : item.reviewedByExpert ? 'expert' : item.openStatus)}>{practiceMark(item)}</span>}</span>
         <span className={'history-score ' + (item.passed ? 'passed' : item.pending ? 'pending' : 'failed')}>{item.pending ? item.closedScore : item.score}/100</span>
       </button>) : surveys.slice(0, counts.surveys).map(item => <button type="button" className="history-item history-entry" key={item.id}
         data-survey-id={item.id} onClick={() => setSelection({ kind: 'survey', id: item.id })}>
@@ -74,7 +75,8 @@ export function CandidateHistory({ state }: { state: PlatformState }) {
           <dl className="history-details">
             <div><dt>Дата</dt><dd><time dateTime={result.date}>{dateLabel(result.date)}</time></dd></div>
             <div><dt>Результат</dt><dd>{result.pending ? result.closedScore : result.score}/100 · {outcome(result)}</dd></div>
-            {result.closedScore !== undefined && !result.pending && <div><dt>Части</dt><dd>закрытая {result.closedScore}/100{result.openScore !== undefined ? ` · открытая ${result.openScore}/100` : ''}</dd></div>}
+            {result.closedScore !== undefined && !result.pending && <div><dt>Части</dt><dd>закрытая {result.closedScore}/100{result.openScore !== undefined ? ` · практика ${result.openScore}/100` : result.openStatus === 'queued' ? ' · практика ждёт эксперта' : ''}</dd></div>}
+            {result.openStatus && <div><dt>Проверка практики</dt><dd>{practiceMark(result)}{result.reviewedByExpert && result.review?.previousScore !== undefined ? ` · до перепроверки ${result.review.previousScore}/100` : ''}</dd></div>}
             <div><dt>Версия программы</dt><dd>{result.bankVersion || 'Не указана в старой записи'}</dd></div>
           </dl>
           {result.competencies?.length ? <section><h4>Компетенции</h4><dl className="history-details history-competencies">
@@ -82,6 +84,9 @@ export function CandidateHistory({ state }: { state: PlatformState }) {
           </dl></section> : null}
           {result.vacancySkills?.length ? <section><h4>Навыки вакансии</h4><div className="tags">{result.vacancySkills.map(skill => <span className="tag" key={skill}>{skill}</span>)}</div></section> : null}
           {result.pending && <p className="field-help">Закрытая часть пройдена; эксперт проверяет открытые задачи ({result.openCount}). Итог — половина закрытой и половина открытой части.</p>}
+          {result.openStatus === 'ai' && <p className="field-help">Практические задачи оценены ИИ по критериям рубрики; эксперт может перепроверить оценку.</p>}
+          {result.openStatus === 'queued' && <p className="field-help">Грейд определён по закрытой части; практические задачи ({result.openCount}) проверит эксперт.</p>}
+          {result.openTimedOut && <p className="field-help">Время истекло на практическом этапе: задачи без ответа оценены нулём.</p>}
           {result.review?.note && <section><h4>Комментарий эксперта</h4><p className="history-review-note">{result.review.note}</p></section>}
           {result.review?.marks?.some(mark => mark.comment) && <section><h4>Открытые задачи</h4><ul className="history-review-marks">
             {result.review.marks.map((mark, index) => <li key={mark.questionId}>Задача {index + 1}: {mark.score}/100{mark.comment ? ' — ' + mark.comment : ''}</li>)}</ul></section>}

@@ -201,6 +201,11 @@ export function Assessment({ state, update, notify, onProfile, onSurvey, onActiv
     const deadlineAt = deadline.deadline;
     const checkDeadline = () => {
       if (performance.now() < deadlineAt) return;
+      // Time ran out during the practice: the closed part is complete, so the attempt is graded.
+      if (session.openStage && (session.position ?? 0) >= session.openStage.from) {
+        if (autoGraded.current !== session.id && !actionController.current) { autoGraded.current = session.id; void finish(session); }
+        return;
+      }
       clearAssessmentGuard(session.id); leaveFullscreen();
       saveAssessment(null); setSession(null); setCodeDrafts({});
       setError('Время теста истекло. Начните новую попытку.');
@@ -327,8 +332,17 @@ export function Assessment({ state, update, notify, onProfile, onSurvey, onActiv
       : result ? <section className="panel assessment-result">
         <div className={'result-icon ' + (result.passed ? 'result-passed' : result.annulled ? 'result-annulled' : result.pending ? 'result-pending' : '')}>{result.passed ? <BadgeCheck size={34} /> : result.annulled ? <ShieldAlert size={32} /> : result.pending ? <Hourglass size={30} /> : <RotateCcw size={30} />}</div>
         {!result.annulled && <span className="result-score">{result.pending ? result.closedScore : result.score}<small>/100</small></span>}
-        <h2>{result.annulled ? 'Попытка аннулирована' : result.pending ? 'Ответы на проверке' : result.passed ? 'Грейд подтверждён' : 'Грейд не подтверждён'}</h2>
+        <h2>{result.annulled ? 'Попытка аннулирована' : result.invalidated ? 'Попытка аннулирована экспертом' : result.pending ? 'Ответы на проверке' : result.passed ? 'Грейд подтверждён' : 'Грейд не подтверждён'}</h2>
         <p className="muted">{specializationNames[result.specialization]} · {gradeLabels[result.grade]}</p>
+        {result.openStatus && !result.annulled && <dl className="competency-results result-parts">
+          <div><dt>Закрытая часть</dt><dd>{result.closedScore}/100</dd></div>
+          <div><dt>Практика</dt><dd>{result.openScore !== undefined ? result.openScore + '/100' : 'ждёт эксперта'}</dd></div>
+          <div><dt>Итог</dt><dd>{result.score}/100{result.openScore !== undefined ? ' · 50% + 50%' : ' · по закрытой части'}</dd></div>
+        </dl>}
+        {result.openStatus === 'ai' && !result.reviewedByExpert && <p className="result-note result-practice-note">Практические задачи оценены автоматически: ИИ проверил ответы по критериям рубрики. Итог — половина закрытой и половина практической части, порог 70. Эксперт может перепроверить оценку.</p>}
+        {result.openStatus === 'queued' && <p className="result-note result-practice-note">Грейд определён по закрытой части: автоматическая проверка практики сейчас недоступна, практические задачи ({result.openCount}) проверит эксперт. {result.passed ? 'Подтверждённый грейд сохраняется до решения эксперта.' : ''}</p>}
+        {result.reviewedByExpert && <p className="result-note result-practice-note">{result.invalidated ? 'Попытка аннулирована экспертом' : 'Проверено экспертом'}{result.review?.note ? ': ' + result.review.note : '.'}</p>}
+        {result.openTimedOut && <p className="field-help">Время теста истекло на практическом этапе: задачи без ответа оценены нулём.</p>}
         {result.pending && <p className="result-note">Закрытая часть пройдена. Эксперт проверит открытые задачи ({result.openCount}) по критериям; итог — половина закрытой и половина открытой части, порог 70. Результат появится в истории и профиле.</p>}
         {result.annulled && <p className="result-note">Зафиксировано {result.integrity?.departures ?? maxStrikes} ухода со страницы теста. Повтор на этот грейд — через {program?.retryDays ?? 7} дн.{state.profile.confirmed ? '' : ', тест на грейд ниже доступен сразу'}.</p>}
         {result.competencies?.length ? <dl className="competency-results">{result.competencies.map(item => <div key={item.topic}><dt>{item.topic}</dt><dd>{item.score}/100</dd></div>)}</dl> : null}
@@ -349,7 +363,7 @@ export function Assessment({ state, update, notify, onProfile, onSurvey, onActiv
         </div>
         <div className="exam-progress" role="progressbar" aria-label="Прогресс теста" aria-valuemin={0} aria-valuemax={total} aria-valuenow={position + 1}><span style={{ width: ((position + 1) / Math.max(total, 1) * 100) + '%' }} /></div>
         {session.extension && position >= session.extension.from && <div className="exam-clarify" role="status"><Layers size={16} /><span>Результат пограничный — ещё {session.extension.added} вопросов уточнят решение. Порог прежний: 70 из 100 по всем вопросам.</span></div>}
-        {session.openStage && position === session.openStage.from && <div className="exam-clarify exam-open-stage" role="status"><PenLine size={16} /><span>Закрытая часть пройдена. Осталось {session.openStage.added} практические задачи — их проверит эксперт по критериям.</span></div>}
+        {session.openStage && position === session.openStage.from && <div className="exam-clarify exam-open-stage" role="status"><PenLine size={16} /><span>Закрытая часть пройдена. Осталось {session.openStage.added} практические задачи — после ответа их сразу оценит ИИ по критериям, эксперт может перепроверить.</span></div>}
         {position === 0 && session.vacancy && <div className="vacancy-summary">
           {session.vacancy.matchedSkills.length ? <div className="tags" aria-label="Навыки из вакансии">{session.vacancy.matchedSkills.map(skill => <span key={skill}>{skill}</span>)}</div> : <p className="field-help">Совпадений для этого варианта нет. Используется стандартная программа.</p>}
           {session.vacancy.unmatchedSkills.length > 0 && <p className="field-help">Без проверки: {session.vacancy.unmatchedSkills.join(', ')}.</p>}
@@ -370,7 +384,7 @@ export function Assessment({ state, update, notify, onProfile, onSurvey, onActiv
                 <textarea value={openText} disabled={!!busy} rows={12} maxLength={12000} spellCheck={false}
                   className={current.answerFormat === 'code' || current.answerFormat === 'sql' ? 'monospace' : undefined}
                   onChange={event => setOpenText(event.target.value)} placeholder="Ход решения, код или запрос, проверка граничных случаев" /></label>
-              <p className="field-help">{openText.length} / 12 000 · оценивается экспертом по критериям; вставка из буфера отключена</p>
+              <p className="field-help">{openText.length} / 12 000 · оценивается по критериям рубрики; вставка из буфера отключена</p>
             </> : <><h2 className="question-text">{current.text}</h2>
             <fieldset className="answer-options" disabled={!!busy}><legend className="sr-only">Варианты ответа</legend>{current.options.map(option => <label key={option.id} className={'answer-option' + (selected === option.id ? ' selected' : '')}><input type="radio" name={current.id} checked={selected === option.id} onChange={() => setSelected(option.id)} /><span>{option.text}</span>{selected === option.id && <Check size={17} />}</label>)}</fieldset></>}
           </div>
@@ -385,7 +399,7 @@ export function Assessment({ state, update, notify, onProfile, onSurvey, onActiv
           </details>}
           <div className="exam-actions">
             <button className="text-button" disabled={!!busy} onClick={() => void answer(null)}>{isOpen ? 'Пропустить задачу' : 'Пропустить вопрос'}</button>
-            <button className="button primary" disabled={(isOpen ? !openText.trim() : !selected) || !!busy} onClick={() => void answer(isOpen ? openText : selected)}>{busy === 'submitting' ? 'Проверяем…' : busy === 'answering' ? 'Сохраняем…' : position === total - 1 ? 'Завершить тест' : 'Ответить'}</button>
+            <button className="button primary" disabled={(isOpen ? !openText.trim() : !selected) || !!busy} onClick={() => void answer(isOpen ? openText : selected)}>{busy === 'submitting' ? (session.openStage ? 'Проверяем практические задачи…' : 'Проверяем…') : busy === 'answering' ? 'Сохраняем…' : position === total - 1 ? 'Завершить тест' : 'Ответить'}</button>
           </div>
           <p className="exam-footnote">Ответ фиксируется сразу — вернуться к вопросу нельзя.</p>
         </>}
@@ -394,7 +408,8 @@ export function Assessment({ state, update, notify, onProfile, onSurvey, onActiv
         <ShieldCheck size={30} className="exam-submit-icon" />
         <h2>Все ответы сохранены</h2>
         <p className="muted">Ответы зафиксированы на сервере. Осталось получить результат проверки.</p>
-        <button className="button primary" disabled={!!busy} onClick={() => void finish(session)}>{busy === 'submitting' ? 'Проверяем…' : 'Получить результат'}</button>
+        {busy === 'submitting' && session.openStage && <p className="field-help" role="status">Проверяем практические задачи… ИИ оценивает ответы по рубрике, это может занять до минуты.</p>}
+        <button className="button primary" disabled={!!busy} onClick={() => void finish(session)}>{busy === 'submitting' ? (session.openStage ? 'Проверяем практические задачи…' : 'Проверяем…') : 'Получить результат'}</button>
       </section> : <div className="assessment-layout">
         <section className="panel assessment-setup"><div className="assessment-category"><strong>{specializationNames[specialization]} · {gradeLabels[grade]}</strong><button className="text-button" onClick={onSurvey}>Изменить анкету</button></div>
           {programBusy ? <p className="muted" role="status">Загружаем программу…</p> : programError ? <div className="assessment-error" role="alert"><span>{programError}</span><button className="text-button" onClick={() => setProgramVersion(value => value + 1)}>Повторить</button></div> : program && <>

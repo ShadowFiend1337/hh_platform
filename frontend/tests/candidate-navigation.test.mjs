@@ -48,3 +48,9 @@ test('a claimed confirmed category still needs its matching successful historica
   assert.equal(resolveCandidatePage('profile', true, confirmed, [result({ passed: true, score: 84 })]), 'assessment');
   assert.equal(resolveCandidatePage('profile', true, confirmed, [result({ passed: true })]), 'profile');
 });
+
+test('an attempt rechecked or annulled by an expert keeps the profile and its history readable', () => {
+  const annulled = result({ closedScore: 85, openStatus: 'expert', reviewedByExpert: true, invalidated: true, review: { decidedAt: '2026-10-12T00:00:00Z', note: 'Ответы совпадают с чужим решением.' } });
+  assert.equal(resolveCandidatePage('profile', true, null, [annulled]), 'profile');
+  assert.equal(resolveCandidatePage('profile', true, null, [result({ closedScore: 85, openStatus: 'ai', openScore: 40, score: 63 })]), 'assessment');
+});

@@ -3,10 +3,11 @@ import { Check, ChevronDown, Hourglass, Sparkles, X } from 'lucide-react';
 import { claimRequest } from '../claims-api';
 import { dateLabel, gradeLabels, specializationNames, type Grade, type Specialization } from '../model';
 
-type ReviewStatus = 'pending' | 'completed' | 'invalidated' | 'all';
+type ReviewStatus = 'pending' | 'ai' | 'completed' | 'invalidated' | 'all';
 type ItemStatus = Exclude<ReviewStatus, 'all'> | 'auto';
 interface QueueItem { id: string; candidate: string; specialization: Specialization; grade: Grade; status: ItemStatus; version: number; annulled?: boolean;
-  submittedAt: string; decidedAt: string | null; closedScore: number | null; score: number | null; passed: boolean; openCount: number; departures: number }
+  submittedAt: string; decidedAt: string | null; closedScore: number | null; score: number | null; passed: boolean; openCount: number; departures: number;
+  openStatus?: 'ai' | 'queued' | 'expert' | null; reviewedByExpert?: boolean }
 interface Criterion { id: string; expected: string; scale: Record<string, string> }
 interface OpenTask { id: string; topic: string; title: string; text: string; answerFormat: string; minutes: number; rubric: Criterion[]; reference: string;
   criticalErrors: string[]; answer: { text: string | null; late: boolean; seconds: number } | null;
@@ -17,14 +18,32 @@ interface ClosedItem { id: string; topic: string; text: string; options: { id: s
   origin: { kind: 'authored' | 'generated'; generator?: string; verifier?: string | null; confidence?: number | null } }
 interface Detail { id: string; candidate: string; specialization: Specialization; grade: Grade; status: ItemStatus; version: number; submittedAt: string; answersRecorded: boolean;
   integrity: { departures: number; blockedCopies: number; blockedActions: number; fullscreenExits: number };
-  result: { closedScore?: number; score: number; openScore?: number; passed: boolean; annulled?: boolean; review?: { note: string };
+  result: { closedScore?: number; score: number; openScore?: number; passed: boolean; annulled?: boolean; pending?: boolean; invalidated?: boolean;
+    openStatus?: 'ai' | 'queued' | 'expert'; openTimedOut?: boolean; reviewedByExpert?: boolean;
+    review?: { note: string; previousScore?: number; previousOpenScore?: number | null; previousStatus?: 'ai' | 'queued' };
     competencies?: { topic: string; correct: number; total: number }[] };
+  aiReview?: null | { status: 'scored'; model: string | null; at: string; marks: AiMark[] } | { status: 'failed'; reason: string; at: string };
+  confirmation?: null | { applied: boolean; action?: 'confirmed' | 'revoked'; reason?: string };
   decision: { decision: string; note: string; marks?: { questionId: string; criteria: { id: string; score: number }[]; comment: string }[] } | null;
   closed: ClosedItem[]; open: OpenTask[]; policy: { threshold: number; closedWeight: number; openWeight: number } }
+interface AiMark { questionId: string; score: number; comment: string; criteria: { id: string; score: number; reason: string }[] }
 interface Suggestion { model: string; tasks: { questionId: string; comment: string; criteria: { id: string; score: number; reason: string }[] }[] }
 
-const statusLabels: Record<ReviewStatus, string> = { pending: 'На проверке', completed: 'Проверено', invalidated: 'Аннулировано', all: 'Все попытки' };
-const itemLabels: Record<ItemStatus, string> = { pending: 'На проверке', completed: 'Проверено', invalidated: 'Аннулировано', auto: 'Автоматически' };
+const statusLabels: Record<ReviewStatus, string> = { pending: 'Ждут эксперта', ai: 'Оценено ИИ', completed: 'Проверено', invalidated: 'Аннулировано', all: 'Все попытки' };
+const itemLabels: Record<ItemStatus, string> = { pending: 'Ждёт эксперта', ai: 'Оценено ИИ', completed: 'Проверено экспертом', invalidated: 'Аннулировано экспертом', auto: 'Автоматически' };
+const failureLabels: Record<string, string> = { 'no-key': 'на сервере не задан ключ модели', timeout: 'модель не ответила вовремя', format: 'ответ модели в неожиданном формате',
+  incomplete: 'модель оценила не все критерии' };
+const emptyLabels: Partial<Record<ReviewStatus, string>> = { pending: 'Очередь пуста: попытки, практику которых ИИ не смог оценить, появятся здесь.',
+  ai: 'Пока нет попыток, оценённых ИИ: они появятся сразу после завершения теста.' };
+
+function itemMeta(item: QueueItem) {
+  if (item.annulled) return 'Аннулирована: уходы со страницы';
+  if (item.status === 'pending') return item.openStatus === 'queued'
+    ? `Закрытая часть ${item.closedScore}/100 · грейд ${item.passed ? 'подтверждён' : 'не подтверждён'} по ней · практика ${item.openCount} ждёт оценки`
+    : `Закрытая часть ${item.closedScore}/100 · открытых ${item.openCount}`;
+  if (item.status === 'ai') return `Итог ${item.score}/100 · ${item.passed ? 'пройден' : 'не пройден'} · практику оценил ИИ`;
+  return `Итог ${item.score}/100 · ${item.passed ? 'пройден' : 'не пройден'}${item.reviewedByExpert ? ' · проверено экспертом' : ''}`;
+}
 const errorText = (cause: unknown) => cause instanceof Error ? cause.message : 'Не удалось выполнить действие.';
 const formatLabels: Record<string, string> = { code: 'код', sql: 'SQL', calculation: 'расчёт', case: 'разбор кейса' };
 
@@ -59,11 +78,11 @@ export function AssessmentReviews({ accountId, onDecided }: { accountId: string;
           onClick={() => { setStatus(value); setSelected(null); }}>{statusLabels[value]}</button>)}
       </div>
       {error && !selected && <p className="form-error" role="alert">{error}</p>}
-      {!items.length && !error && <p className="muted">{status === 'pending' ? 'Очередь пуста: новые попытки с открытыми задачами появятся здесь.' : 'Пока ничего нет.'}</p>}
+      {!items.length && !error && <p className="muted">{emptyLabels[status] || 'Пока ничего нет.'}</p>}
       {items.map(item => <button key={item.id} className={'review-item' + (selected?.id === item.id ? ' active' : '')} onClick={() => void open(item.id)} disabled={busy === 'open'}>
         <strong>{item.candidate}</strong>
         <span>{specializationNames[item.specialization]} · {gradeLabels[item.grade]}</span>
-        <span className="review-item-meta">{item.status === 'pending' ? `Закрытая часть ${item.closedScore}/100 · открытых ${item.openCount}` : item.annulled ? 'Аннулирована: уходы со страницы' : `Итог ${item.score}/100 · ${item.passed ? 'пройден' : 'не пройден'}`}
+        <span className="review-item-meta">{itemMeta(item)}
           {status === 'all' && <span>{itemLabels[item.status]}</span>}
           {item.departures > 0 && <span className="review-departures">уходов: {item.departures}</span>}</span>
         <time dateTime={item.submittedAt}>{dateLabel(item.submittedAt)}</time>
@@ -75,8 +94,17 @@ export function AssessmentReviews({ accountId, onDecided }: { accountId: string;
   </div>;
 }
 
+function confirmationText(detail: Detail) {
+  const value = detail.confirmation;
+  if (!value) return detail.result.passed ? 'Профиль кандидата не менялся.' : 'Категория профиля не менялась: попытка её не подтверждала.';
+  if (value.applied) return value.action === 'revoked' ? 'Категория снята с профиля кандидата.' : 'Категория подтверждена в профиле кандидата.';
+  return `Профиль не изменён${value.reason ? ': ' + value.reason : '.'}`;
+}
+
 function ReviewCard({ detail, accountId, onDecided }: { detail: Detail; accountId: string; onDecided: (detail: Detail) => void }) {
-  const decided = detail.decision?.marks;
+  // A decision shows the expert's marks; an attempt scored by the model starts from the model's marks.
+  const aiMarks = detail.aiReview?.status === 'scored' ? detail.aiReview.marks : null;
+  const decided = detail.decision?.marks || (detail.status === 'ai' ? aiMarks : null);
   const [scores, setScores] = useState<Record<string, Record<string, number>>>(() => Object.fromEntries(detail.open.map(task => [task.id,
     Object.fromEntries((decided?.find(mark => mark.questionId === task.id)?.criteria || []).map(item => [item.id, item.score]))])));
   const [comments, setComments] = useState<Record<string, string>>(() => Object.fromEntries(detail.open.map(task => [task.id, decided?.find(mark => mark.questionId === task.id)?.comment || ''])));
@@ -84,7 +112,9 @@ function ReviewCard({ detail, accountId, onDecided }: { detail: Detail; accountI
   const [suggestion, setSuggestion] = useState<Suggestion | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState('');
-  const pending = detail.status === 'pending';
+  // Waiting for an expert or scored by the model: the expert may grade or annul.
+  const pending = detail.status === 'pending' || detail.status === 'ai';
+  const scoredByAi = detail.status === 'ai';
 
   const preview = useMemo(() => {
     const taskScores = detail.open.map(task => {
@@ -129,16 +159,19 @@ function ReviewCard({ detail, accountId, onDecided }: { detail: Detail; accountI
       <div><span>Закрытая часть</span><strong>{detail.result.closedScore ?? detail.result.score}/100</strong><small>{closedCorrect} из {closedTotal} верно</small></div>
       {detail.open.length > 0 && <div><span>Открытая часть</span><strong>{pending ? (preview ? preview.open + '/100' : '—') : (detail.result.openScore ?? '—') + '/100'}</strong><small>{detail.open.length} задачи по рубрике</small></div>}
       <div><span>Итог</span><strong>{pending ? (preview ? preview.final + '/100' : '—') : detail.result.score + '/100'}</strong>
-        <small>{pending ? (preview ? (preview.final >= detail.policy.threshold ? 'пройдёт' : 'не пройдёт') + ` · порог ${detail.policy.threshold}` : 'оцените все критерии') : detail.result.passed ? 'грейд подтверждён' : 'не подтверждён'}</small></div>
+        <small>{pending ? (preview ? (preview.final >= detail.policy.threshold ? 'пройдёт' : 'не пройдёт') + ` · порог ${detail.policy.threshold}` : 'оцените все критерии') : detail.result.passed ? 'грейд подтверждён' : 'не подтверждён'}
+          {pending && detail.result.openStatus && ` · сейчас ${detail.result.score}/100, ${detail.result.passed ? 'грейд подтверждён' : 'не подтверждён'}`}</small></div>
       <div><span>Контроль</span><strong>{detail.integrity.departures}</strong><small>уходов · копирований {detail.integrity.blockedCopies}</small></div>
     </div>
-    {pending && <div className="review-ai"><button className="button secondary" disabled={!!busy} onClick={() => void suggest()}><Sparkles size={16} />{busy === 'ai' ? 'Модель оценивает…' : 'ИИ-подсказка оценок'}</button>
+    {scoredByAi && <p className="review-ai-note"><Sparkles size={15} />Практику оценил ИИ{detail.aiReview?.status === 'scored' && detail.aiReview.model ? ` (${detail.aiReview.model})` : ''} по рубрике: {detail.result.openScore}/100, итог {detail.result.score}/100 — грейд {detail.result.passed ? 'подтверждён' : 'не подтверждён'}. Баллы ИИ подставлены ниже: подтвердите или измените их, либо аннулируйте попытку.{detail.result.openTimedOut ? ' Время истекло на практическом этапе.' : ''}</p>}
+    {detail.status === 'pending' && detail.result.openStatus === 'queued' && <p className="review-ai-note review-ai-failed">ИИ не оценил практику{detail.aiReview?.status === 'failed' ? `: ${failureLabels[detail.aiReview.reason] || detail.aiReview.reason}` : ''}. Грейд определён по закрытой части ({detail.result.closedScore}/100, {detail.result.passed ? 'подтверждён' : 'не подтверждён'}); оценка практики пересчитает итог.</p>}
+    {detail.status === 'pending' && <div className="review-ai"><button className="button secondary" disabled={!!busy} onClick={() => void suggest()}><Sparkles size={16} />{busy === 'ai' ? 'Модель оценивает…' : 'ИИ-подсказка оценок'}</button>
       <span className="field-help">{suggestion ? `Подставлены оценки ${suggestion.model}; проверьте каждую. Имя и контакты в модель не передаются.` : 'Модель предложит баллы по рубрике; решение за вами.'}</span></div>}
 
     {detail.open.length > 0 && <h3 className="review-section">Открытые задачи</h3>}
     {!detail.open.length && <p className="muted">Открытых задач нет: {detail.result.annulled ? 'попытка аннулирована за уходы со страницы' : detail.result.passed ? 'тест прошёл без практического этапа' : 'закрытая часть не пройдена, практический этап не выдавался'}.</p>}
     {detail.open.map((task, index) => {
-      const advice = suggestion?.tasks.find(item => item.questionId === task.id);
+      const advice = suggestion?.tasks.find(item => item.questionId === task.id) || aiMarks?.find(item => item.questionId === task.id);
       return <article className="review-task" key={task.id}>
         <header><span className="question-topic">Задача {index + 1} · {task.topic} · {formatLabels[task.answerFormat] || task.answerFormat} · {task.minutes} мин</span>
           <span className={'review-origin review-origin-' + task.origin.kind}>{task.origin.kind === 'generated' ? `Сгенерировано ${task.origin.model}` : 'Авторская задача банка'}</span></header>
@@ -162,11 +195,12 @@ function ReviewCard({ detail, accountId, onDecided }: { detail: Detail; accountI
               title={criterion.scale[String(score)]} disabled={!pending || (score > 0 && (!task.answer?.text || task.answer.late))}
               onClick={() => setScores(previous => ({ ...previous, [task.id]: { ...previous[task.id], [criterion.id]: score } }))}>{score}</button>)}</div>
             {value !== undefined && <span className="field-help">{criterion.scale[String(value)]}</span>}
-            {reason && pending && <span className="review-reason">ИИ: {reason}</span>}
+            {reason && <span className="review-reason">ИИ: {reason}</span>}
           </div>;
         })}</div>
         <label className="field"><span>Комментарий к задаче</span><textarea rows={2} maxLength={2000} disabled={!pending} value={comments[task.id] || ''}
           onChange={event => setComments(previous => ({ ...previous, [task.id]: event.target.value }))} placeholder={advice?.comment || 'Что получилось и чего не хватило'} /></label>
+        {aiMarks && !scoredByAi && <p className="field-help">ИИ при сдаче: {aiMarks.find(item => item.questionId === task.id)?.score ?? '—'}/100</p>}
       </article>;
     })}
 
@@ -184,9 +218,11 @@ function ReviewCard({ detail, accountId, onDecided }: { detail: Detail; accountI
       placeholder="Итог проверки; для аннулирования — причина" /></label>}
     {error && <p className="form-error" role="alert">{error}</p>}
     {pending ? <div className="button-group review-actions">
-      <button className="button secondary" disabled={!!busy || note.trim().length < 10} title="Дефект задания: попытка не засчитывается и не блокирует пересдачу" onClick={() => void decide('invalidate')}>Аннулировать</button>
+      <button className="button secondary" disabled={!!busy || note.trim().length < 10} title={detail.result.openStatus ? 'Попытка не засчитывается; категория, подтверждённая ею, снимается с профиля. Нужна причина от 10 символов' : 'Дефект задания: попытка не засчитывается и не блокирует пересдачу'} onClick={() => void decide('invalidate')}>{busy === 'invalidate' ? 'Сохраняем…' : 'Аннулировать'}</button>
       <button className="button primary" disabled={!!busy || !preview} onClick={() => void decide('grade')}>{busy === 'grade' ? 'Сохраняем…' : 'Утвердить оценку'}</button>
     </div> : detail.status === 'auto' ? <p className="field-help">Результат посчитан автоматически: проверка модератора не требовалась.</p>
-      : <p className="field-help">Решение принято{detail.decision?.note ? ': ' + detail.decision.note : ''}.</p>}
+      : <p className="field-help review-decided">{detail.status === 'invalidated' ? 'Аннулировано экспертом' : 'Проверено экспертом'}{detail.decision?.note ? ': ' + detail.decision.note : ''}.
+        {detail.result.review?.previousScore !== undefined && ` До проверки: ${detail.result.review.previousScore}/100${detail.result.review.previousStatus === 'ai' ? `, практика ИИ ${detail.result.review.previousOpenScore ?? '—'}/100` : ', практика не оценена'}.`}</p>}
+    {detail.confirmation !== undefined && <p className={'review-confirmation' + (detail.confirmation && !detail.confirmation.applied ? ' review-confirmation-skipped' : '')} role="status">{confirmationText(detail)}</p>}
   </section>;
 }

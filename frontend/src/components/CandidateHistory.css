@@ -32,3 +32,7 @@
 .history-score.pending { color: #9a5b00; }
 .history-review-note { white-space: pre-wrap; font-size: 14px; line-height: 1.7; }
 .history-review-marks { margin-left: 18px; font-size: 14px; line-height: 1.7; }
+.history-entry-text > .history-mark { align-self: flex-start; padding: 1px 6px; border-radius: 4px; background: #eef4ff; color: #005abd; }
+.history-entry-text > .history-mark-queued { background: #fff6e8; color: #9a5b00; }
+.history-entry-text > .history-mark-expert { background: #edf6f0; color: #2f6b45; }
+.history-entry-text > .history-mark-invalidated { background: #fbeef2; color: #9b2c48; }

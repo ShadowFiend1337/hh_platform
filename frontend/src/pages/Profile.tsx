@@ -1,6 +1,6 @@
 import { useRef, useState, type FormEvent } from 'react';
 import { BadgeCheck, Eye, FileText, Medal, UserRound } from 'lucide-react';
-import { gradeLabels, gradeOptions, professionalRoleOptions, specializationOptions, specializationLabels, type PlatformState } from '../model';
+import { gradeLabels, gradeOptions, practiceMark, professionalRoleOptions, specializationOptions, specializationLabels, type PlatformState } from '../model';
 import { FormHeader } from './Company';
 import { resumeTextLimits } from '../../../shared/resume-limits';
 import { employmentTypes } from '../../../shared/search.ts';
@@ -39,6 +39,9 @@ export function Profile({ state, update, notify, onTest, onSurvey, onPreview, on
   const [reading, setReading] = useState(false);
   const edited = useRef(new Set<keyof ResumeDraft>());
   const profile = state.profile;
+  const confirmingResult = profile.confirmed && state.history.find(item => item.passed && item.date === profile.confirmed?.date
+    && item.grade === profile.confirmed.grade && item.specialization === profile.confirmed.specialization);
+  const confirmedMark = confirmingResult ? practiceMark(confirmingResult) : '';
   function change<K extends keyof ResumeDraft>(field: K, value: ResumeDraft[K]) {
     edited.current.add(field);
     setDraft(previous => ({ ...previous, [field]: value })); setError('');
@@ -119,7 +122,8 @@ export function Profile({ state, update, notify, onTest, onSurvey, onPreview, on
         }} />
         <section className="panel category-panel"><h2 className="sr-only">Подтверждённая категория</h2><p className="muted">{specializationLabels[profile.confirmed?.specialization || profile.specialization]}</p>
           <div className="category-status"><BadgeCheck size={20} /><div><span className="field-caption">Подтверждённый грейд</span><strong>{profile.confirmed ? gradeLabels[profile.confirmed.grade] : 'Не подтверждён'}</strong></div></div>
-          {profile.confirmed && <div className="category-score" aria-label={'Результат теста: ' + profile.confirmed.score + ' из 100'}><strong>{profile.confirmed.score}<span>/100</span></strong></div>}
+          {profile.confirmed && <div className="category-score" aria-label={'Результат теста: ' + profile.confirmed.score + ' из 100'}><strong>{profile.confirmed.score}<span>/100</span></strong>
+            {confirmedMark && <span className="category-practice-mark">{confirmedMark}</span>}</div>}
           <button className="button primary full-width" onClick={onTest}>{profile.confirmed ? 'Пройти тест' : 'Подтвердить грейд'}</button>
         </section>
         <IntegrationPanel accountId={accountId} consent={consent && profile.consent && syncStatus === 'saved'} onChange={onFspChange} />
