@@ -20,7 +20,7 @@ flowchart LR
 git clone <репозиторий> predel && cd predel
 ```
 
-Веса смыслового поиска в Git не хранятся. Скопируйте с машины, где модель обучена, каталоги `server/data/semantic-model` и `server/data/semantic-runs/task-v2-search`, например через `rsync`. Без них сайт работает, но текстовый запрос в поиске сообщает, что поиск по смыслу недоступен; фильтры работают.
+Веса смыслового поиска в Git не хранятся. Их можно скачать из GitHub Release `search-model-task-v2` командой `npm run fetch:search-model` (хеши сверяются с `metadata.json`) или скопировать с машины, где модель обучена, каталоги `server/data/semantic-model` и `server/data/semantic-runs/task-v2-search`, например через `rsync`. Без них сайт работает, но текстовый запрос в поиске сообщает, что поиск по смыслу недоступен; фильтры работают.
 
 ## 3. `.env` на сервере
 

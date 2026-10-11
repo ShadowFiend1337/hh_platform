@@ -39,6 +39,7 @@
     "activate:search-model": "node scripts/ml.mjs activate",
     "test:search-quality": "node ml/search-regression.mjs --run --strict",
     "evaluate:relevance": "node ml/relevance-eval.mjs",
+    "fetch:search-model": "node scripts/fetch-search-model.mjs",
     "validate:assessment": "node server/validate.mjs",
     "validate:assessment-model": "node scripts/validate-assessment.mjs",
     "bank:stats": "node --use-env-proxy scripts/item-bank.mjs stats",
