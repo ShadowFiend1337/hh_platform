@@ -1,19 +1,19 @@
 import { useState } from 'react';
 import { Dialog } from './Dialog';
 import { dateLabel, gradeLabels, specializationLabels, type CandidateSurvey, type PlatformState, type TestResult } from '../model';
+import { resumeSections } from '../../../shared/resume-structure';
+import { ResumeSummary } from './ResumeSummary';
 import './CandidateHistory.css';
 
 const pageSize = 10;
 
 function SurveySnapshot({ survey }: { survey: CandidateSurvey }) {
   const sections: [string, string | undefined][] = [
-    ['Места работы и проекты', survey.workHistory], ['Достижения', survey.careerAchievements],
     ['Образование', survey.education], ['Языки', survey.languages], ['Портфолио', survey.portfolio],
   ];
   return <div className="survey-snapshot" data-survey-id={survey.id}>
     <h3>Анкета от {dateLabel(survey.date)}</h3>
     <dl className="history-details">
-      <div><dt>Отрасль</dt><dd>{survey.industry}</dd></div>
       <div><dt>Роль</dt><dd>{survey.professionalRole}</dd></div>
       <div><dt>Специализация</dt><dd>{specializationLabels[survey.specialization]}</dd></div>
       <div><dt>Предполагаемый грейд</dt><dd>{gradeLabels[survey.desiredGrade]}</dd></div>
@@ -24,6 +24,7 @@ function SurveySnapshot({ survey }: { survey: CandidateSurvey }) {
     <section><h4>Софт-скиллы <span className="field-caption">Самооценка</span></h4>{survey.softSkills.length
       ? <div className="tags">{survey.softSkills.map(skill => <span className="tag" key={skill}>{skill}</span>)}</div>
       : <p className="muted">Не указаны</p>}</section>
+    <ResumeSummary sections={resumeSections(survey)} />
     {sections.filter(([, text]) => Boolean(text)).map(([label, text]) => <section key={label}>
       <h4>{label}</h4><p className="body-copy resume-copy">{text}</p>
     </section>)}

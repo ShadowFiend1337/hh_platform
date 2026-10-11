@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { BadgeCheck, Download, LockKeyhole, MapPin, Medal } from 'lucide-react';
 import { dateLabel, gradeLabels, initials, specializationLabels, type Candidate } from '../model';
+import { resumeSections } from '../../../shared/resume-structure';
+import { ResumeSummary } from './ResumeSummary';
 
 import { CandidateEvidence } from './EvidenceList';
 
@@ -28,15 +30,21 @@ export function CandidateDetails({ person, contacts, onInvite, contactNote = 'О
   const sectionText = (value?: string) => person.synthetic ? (value || '').split(/\r?\n/u)
     .filter(line => !/^(?:Вымышленный демонстрационный профиль\.|Демонстрационный профиль:|Демонстрационные данные:|Результат демонстрационного проекта:)/u.test(line.trimStart()))
     .join('\n').replace(/^Вымышленный проект /u, 'Проект ') : value;
-  const workHistory = sectionText(person.workHistory);
-  const careerAchievements = sectionText(person.careerAchievements);
+  const resume = resumeSections(person);
+  const sections = {
+    workExperiences: resume.workExperiences.map(entry => ({ ...entry, company: sectionText(entry.company) || '', tasks: sectionText(entry.tasks) || '' })),
+    petProjects: resume.petProjects.map(entry => ({ ...entry, description: sectionText(entry.description) || '' })),
+    achievementItems: resume.achievementItems.map(item => sectionText(item) || '').filter(Boolean),
+    interests: resume.interests,
+  };
   const education = sectionText(person.education);
   const achievements = person.achievements;
+  const specializationLabel = specializationLabels[person.confirmed?.specialization || person.specialization];
   return <div className="candidate-details">
     <div className="detail-person">
       <div className="avatar avatar-large">{initials(person.name)}</div>
-      <div><h3>{person.name}</h3>{person.demoProfile && <span className="tag" title="Вымышленный профиль для проверки подбора">Демо</span>}<p>{specializationLabels[person.confirmed?.specialization || person.specialization]}</p>
-      {(person.industry || person.professionalRole) && <p className="muted">{[person.industry, person.professionalRole].filter(Boolean).join(' · ')}</p>}
+      <div><h3>{person.name}</h3>{person.demoProfile && <span className="tag" title="Вымышленный профиль для проверки подбора">Демо</span>}<p>{specializationLabel}</p>
+      {person.professionalRole && person.professionalRole !== specializationLabel && <p className="muted">{person.professionalRole}</p>}
       <span className="metadata">{person.city && <><MapPin size={14} />{person.city} · </>}{person.format}</span></div>
     </div>
     <div className="detail-grid">
@@ -48,8 +56,7 @@ export function CandidateDetails({ person, contacts, onInvite, contactNote = 'О
     <section><h4>О себе</h4><p className="body-copy">{person.bio || 'Пока не заполнено'}</p></section>
     <section><h4>Стек</h4><div className="tags">{person.stack.map(skill => <span className="tag" key={skill}>{skill}</span>)}</div></section>
     {person.softSkills?.length > 0 && <section><h4>Софт-скиллы <span className="field-caption">Самооценка</span></h4><div className="tags">{person.softSkills.map(skill => <span className="tag" key={skill}>{skill}</span>)}</div></section>}
-    {workHistory && <section><h4>Места работы и проекты</h4><p className="body-copy resume-copy">{workHistory}</p></section>}
-    {careerAchievements && <section><h4>Достижения</h4><p className="body-copy resume-copy">{careerAchievements}</p></section>}
+    <ResumeSummary sections={sections} />
     {education && <section><h4>Образование</h4><p className="body-copy resume-copy">{education}</p></section>}
     {person.languages && <section><h4>Языки</h4><p className="body-copy resume-copy">{person.languages}</p></section>}
     {(person.synthetic || person.fspEvidence?.mode === 'demo' || achievements.length > 0) && <section><h4 className="inline-icon" title={person.synthetic || person.fspEvidence?.mode === 'demo' ? 'Вымышленные результаты; личность ФСП не подтверждена' : 'Сведения из профиля'}><Medal size={17} />{person.synthetic || person.fspEvidence?.mode === 'demo' ? 'ФСП · демо' : 'Достижения ФСП'}</h4>

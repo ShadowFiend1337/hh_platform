@@ -140,7 +140,7 @@ try {
   });
   await page.goto(base + '/app?role=candidate&tab=onboarding');
   await page.getByRole('heading', { name: 'Анкета', exact: true }).waitFor();
-  await page.locator('.onboarding-form [name="professionalRole"]').selectOption('ML-инженер');
+  await page.locator('.onboarding-form [name="professionalRole"]').selectOption('Специалист по машинному обучению');
   await page.locator('.onboarding-form [name="specialization"]').selectOption('ML');
   await page.locator('.onboarding-form [name="desiredGrade"]').selectOption('Junior');
   await fillResumeStack(page, ['Python', 'PyTorch']);

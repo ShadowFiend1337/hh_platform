@@ -1,5 +1,6 @@
 import { Check, ChevronRight } from 'lucide-react';
 import { profileReadiness, type ReadinessAction } from '../../../shared/readiness.ts';
+import { petProjectsText, resumeSections, workHistoryText } from '../../../shared/resume-structure.ts';
 import { currentSurvey, type PlatformState } from '../model';
 
 const actionLabels: Record<ReadinessAction, string> = { onboarding: 'К анкете', assessment: 'К тесту', profile: 'Заполнить' };
@@ -11,9 +12,10 @@ const levelText = {
 
 export function readinessFor(state: PlatformState) {
   const profile = state.profile;
+  const sections = resumeSections(profile);
   return profileReadiness({
     surveyComplete: Boolean(currentSurvey(state)), confirmed: Boolean(profile.confirmed), stack: profile.stack,
-    bio: profile.bio, workHistory: profile.workHistory, email: profile.email, phone: profile.phone,
+    bio: profile.bio, workHistory: [workHistoryText(sections.workExperiences), petProjectsText(sections.petProjects)].filter(Boolean).join('\n'), email: profile.email, phone: profile.phone,
     consent: profile.consent, visible: profile.visible, fspLinked: Boolean(profile.fspId || profile.achievements.length),
     salaryFrom: profile.salaryFrom, salaryTo: profile.salaryTo, employmentType: profile.employmentType,
   });

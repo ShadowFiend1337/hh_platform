@@ -3,6 +3,7 @@ import { MatchBadge, MatchBreakdown } from './MatchBadge';
 import { ArrowUpRight, BadgeCheck, Heart, MapPin, Medal, RotateCcw, X } from 'lucide-react';
 import { gradeLabels, initials, specializationLabels, type Candidate, type CandidateDecision } from '../model';
 import type { DirectoryItem } from '../directory-api';
+import { petProjectsText, resumeSections, workHistoryText } from '../../../shared/resume-structure.ts';
 
 type Decision = CandidateDecision['decision'];
 type Props = {
@@ -31,6 +32,8 @@ export function CandidateDeck({ items, decisions, favorites, loading, loadingMor
   const remaining = items.filter(item => !visited.has(item.person.id)
     && (favorites ? choice.get(item.person.id) === 'liked' : !choice.has(item.person.id)));
   const current = remaining[0];
+  const currentResume = current ? resumeSections(current.person) : null;
+  const professionalStory = currentResume ? workHistoryText(currentResume.workExperiences) || petProjectsText(currentResume.petProjects) : '';
   const disabled = loading || loadingMore || failed || Boolean(flight);
 
   useEffect(() => () => { window.clearTimeout(timer.current); }, []);
@@ -126,7 +129,7 @@ export function CandidateDeck({ items, decisions, favorites, loading, loadingMor
         {(current.person.salaryFrom != null || current.person.salaryTo != null) && <p className="swipe-salary">{current.person.salaryFrom != null ? amount(current.person.salaryFrom) : ''}
           {current.person.salaryFrom != null && current.person.salaryTo != null ? '–' : current.person.salaryFrom != null ? '+' : 'до '}
           {current.person.salaryTo != null ? amount(current.person.salaryTo) : ''} ₽<span> / месяц</span></p>}
-        <p className="swipe-bio">{current.person.bio || current.person.workHistory || 'Профессиональные сведения в профиле'}</p>
+        <p className="swipe-bio">{current.person.bio || professionalStory || 'Профессиональные сведения в профиле'}</p>
         <div className="tags swipe-stack">{current.person.stack.slice(0, 6).map(skill => <span className="tag" key={skill}>{skill}</span>)}</div>
         <div className="swipe-card-footer"><div className="swipe-test"><BadgeCheck size={18} /><strong>{current.person.confirmed?.score ?? '—'}<span>/100</span></strong></div>
           {!current.person.demoProfile && <button className="button secondary compact" disabled={disabled || pendingIds.has(current.person.id)} onClick={() => onInvite(current.person)}>{pendingIds.has(current.person.id) ? 'Отправлено' : 'Пригласить'}</button>}

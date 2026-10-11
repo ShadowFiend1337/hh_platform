@@ -1,20 +1,29 @@
 import { PDFDocument, rgb, type PDFFont, type PDFPage } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
 import { dateLabel, gradeLabels, specializationLabels, type Candidate } from './model.ts';
+import { careerAchievementsText, petProjectsText, resumeSections, workHistoryText } from '../../shared/resume-structure.ts';
+
+const hideContacts = (value: string) => value.replace(/[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/gu, '[контакт скрыт]')
+  .replace(/(?:\+?\d[\d ()-]{8,}\d)/gu, match => {
+    const digits = match.replace(/\D/gu, '').length;
+    return digits >= 10 && digits <= 15 ? '[контакт скрыт]' : match;
+  });
 
 /** Generates selectable Unicode text locally; contact permission comes from the caller's authorized view. */
 export async function createProfilePdf(person: Candidate, contacts: boolean, fontBytes: Uint8Array): Promise<Uint8Array> {
   const showContacts = contacts && !person.demoProfile;
+  const sections = resumeSections(person);
   const document = await PDFDocument.create();
   document.registerFontkit(fontkit);
   const font = await document.embedFont(fontBytes, { subset: true });
-  document.setTitle('Профиль · ' + person.name); document.setAuthor('predel');
+  document.setTitle('Профиль · ' + (showContacts ? person.name : hideContacts(person.name))); document.setAuthor('predel');
   document.setSubject('Профиль кандидата');
-  const layout = new ProfileLayout(document, font);
+  const layout = new ProfileLayout(document, font, showContacts);
   layout.text('predel', 13, rgb(0, .42, .91)); layout.space(12);
   layout.text(person.name || 'Профиль кандидата', 25); layout.space(8);
-  layout.text(specializationLabels[person.confirmed?.specialization || person.specialization], 15);
-  if (person.professionalRole || person.industry) layout.text([person.professionalRole, person.industry].filter(Boolean).join(' · '));
+  const specializationLabel = specializationLabels[person.confirmed?.specialization || person.specialization];
+  layout.text(specializationLabel, 15);
+  if (person.professionalRole && person.professionalRole !== specializationLabel) layout.text(person.professionalRole);
   if (person.synthetic) layout.text('Демонстрационный профиль. Данные и результаты вымышленные.', 10, rgb(.38, .41, .46));
   layout.space(12);
   layout.text('Грейд: ' + (person.confirmed ? gradeLabels[person.confirmed.grade] + ' · подтверждён тестом ' + dateLabel(person.confirmed.date) : 'не подтверждён'));
@@ -24,8 +33,10 @@ export async function createProfilePdf(person: Candidate, contacts: boolean, fon
   layout.section('О себе', person.bio);
   layout.section('Стек', person.stack.join(', '));
   layout.section('Софт-скиллы · самооценка', person.softSkills.join(', '));
-  layout.section('Места работы и проекты', person.workHistory);
-  layout.section('Достижения', person.careerAchievements);
+  layout.section('Опыт работы', workHistoryText(sections.workExperiences));
+  layout.section('Pet-проекты', petProjectsText(sections.petProjects));
+  layout.section('Достижения из резюме', careerAchievementsText(sections.achievementItems));
+  layout.section('Интересы / дополнительно', sections.interests.join('\n'));
   layout.section('Образование', person.education);
   layout.section('Языки', person.languages);
   layout.section(person.synthetic ? 'ФСП · демо' : 'Достижения ФСП',
@@ -44,8 +55,10 @@ class ProfileLayout {
   private readonly supported: Set<number>;
   private readonly document: PDFDocument;
   private readonly font: PDFFont;
-  constructor(document: PDFDocument, font: PDFFont) {
+  private readonly contacts: boolean;
+  constructor(document: PDFDocument, font: PDFFont, contacts: boolean) {
     this.document = document; this.font = font;
+    this.contacts = contacts;
     this.page = document.addPage([595, 842]); this.supported = new Set(font.getCharacterSet());
   }
   space(size = 12) { this.y -= size; }
@@ -53,6 +66,7 @@ class ProfileLayout {
     if (this.y - height < 58) { this.page = this.document.addPage([595, 842]); this.y = 792; }
   }
   private clean(value: string) {
+    if (!this.contacts) value = hideContacts(value);
     return [...value.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '')]
       .map(char => char === '\n' || char === '\r' || char === '\t' || this.supported.has(char.codePointAt(0)!) ? char : '?').join('');
   }

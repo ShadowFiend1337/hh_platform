@@ -73,7 +73,7 @@ export function ApplicationList({ role, revision = 0, notify, showEmpty = true, 
 
   async function openProfile(application: Application) {
     if (!application.candidate) return;
-    const person = { ...application.candidate, email: '', phone: '' };
+    const person = { ...application.candidate, email: '', phone: '', portfolio: '' };
     const request = ++dialogSequence.current;
     dialogPersonId.current = person.id;
     setDialog({ person, loading: true, contacts: false, error: '' });
@@ -104,7 +104,7 @@ export function ApplicationList({ role, revision = 0, notify, showEmpty = true, 
         if (dialogPersonId.current === application.candidateId) {
           dialogSequence.current += 1;
           setDialog(previous => previous?.person.id === application.candidateId ? {
-            ...previous, person: { ...previous.person, email: '', phone: '' }, loading: false, contacts: false, error: errorMessage(cause),
+            ...previous, person: { ...previous.person, email: '', phone: '', portfolio: '' }, loading: false, contacts: false, error: errorMessage(cause),
           } : previous);
         }
       }

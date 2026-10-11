@@ -271,7 +271,7 @@ export function usePlatformPersistence(state: PlatformState, update: Dispatch<Se
     } };
 }
 
-export async function readCandidateContacts(id: string): Promise<{ email: string; phone: string }> {
+export async function readCandidateContacts(id: string): Promise<{ email: string; phone: string; portfolio?: string }> {
   const response = await fetch('/api/directory/' + encodeURIComponent(id) + '/contacts', { credentials: 'same-origin' });
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || 'Контакты пока недоступны.');
