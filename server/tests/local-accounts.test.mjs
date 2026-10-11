@@ -36,8 +36,8 @@ test('local account setup prepares both cabinets on a fresh database and preserv
   const employerState = platform.read(employer.platform_owner);
   assert(currentSurvey(candidateState.state));
   assert.equal(candidateState.state.profile.confirmed.grade, 'Junior');
-  assert.equal(candidateState.state.history.length, 2, 'A passed result and an attempt waiting for the test moderator');
-  assert.equal(candidateState.state.history.filter(item => item.pending).length, 1);
+  assert.equal(candidateState.state.history.length, 2, 'A passed result and an attempt whose practice waits for the test moderator');
+  assert.equal(candidateState.state.history.filter(item => item.openStatus === 'queued' && item.passed).length, 1);
   assert.ok(candidateState.state.history.every(item => assessments.get(item.id).owner === candidate.platform_owner));
   assert.equal(candidateState.state.invitations.length, 1);
   assert.equal(candidateState.state.invitations[0].status, 'sent');

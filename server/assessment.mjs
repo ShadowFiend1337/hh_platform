@@ -262,9 +262,10 @@ function scoreAttempt(attempt, selection, now, integrity) {
   const correct = scored.filter(isCorrect).length;
   const score = Math.round(correct / scored.length * 100);
   const timeouts = scored.filter(question => { const answer = selection.get(question.id); return !answer || answer.late || answer.optionId === null; }).length;
-  // With open tasks the grade waits for a moderator: the closed score is final, the result is not yet.
-  const pending = openTasks.length > 0;
-  const passed = !pending && score >= threshold;
+  // With open tasks this is the closed-part result: the server adds the practical score
+  // (automatic grading, docs/open_tasks.md); without it the closed part decides.
+  const practice = openTasks.length > 0;
+  const passed = score >= threshold;
   const higher = nextGrade(attempt.grade);
   const normalized = [...selection].map(([questionId, answer]) => [questionId, answer.optionId ?? (answer.text ? digest(answer.text) : null)]).sort(([a], [b]) => a.localeCompare(b));
   const responses = attempt.questions.filter(question => !isOpenQuestion(question)).map(question => ({ itemId: question.variantId, pilot: Boolean(question.pilot),
@@ -275,8 +276,9 @@ function scoreAttempt(attempt, selection, now, integrity) {
     vacancySkills: attempt.vacancy?.matchedSkills || [], questionCount: scored.length, timeouts,
     ...(passed && score >= confidentThreshold && higher ? { nextGradeAvailable: higher } : {}),
     ...(attempt.extension ? { clarified: true } : {}),
-    ...(pending ? { pending: true, closedScore: score, openCount: openTasks.length,
-      openAnswered: openTasks.filter(question => selection.get(question.id)?.text && !selection.get(question.id)?.late).length } : {}),
+    ...(practice ? { closedScore: score, openCount: openTasks.length, openStatus: 'queued',
+      openAnswered: openTasks.filter(question => selection.get(question.id)?.text && !selection.get(question.id)?.late).length,
+      ...(openTasks.some(question => selection.get(question.id)?.expired) ? { openTimedOut: true } : {}) } : {}),
     ...(integrity ? { integrity } : {}),
   } };
 }
@@ -286,12 +288,18 @@ function scoreAttempt(attempt, selection, now, integrity) {
  * list is still accepted for an attempt whose answers were never locked.
  */
 export function evaluate(attempt, answers, now = Date.now(), { progress = null, integrity = null } = {}) {
-  if (now >= Date.parse(attempt.expiresAt)) throw new RequestError(410, 'Время теста истекло. Начните новую попытку.');
+  const expired = now >= Date.parse(attempt.expiresAt);
+  // Time ran out during the practical stage: the closed part is complete, so the attempt is
+  // graded and every task left without an answer scores zero.
+  const practiceExpired = expired && practiceTimedOut(attempt, progress);
+  if (expired && !practiceExpired) throw new RequestError(410, 'Время теста истекло. Начните новую попытку.');
   const locked = progress && answeredCount(progress) > 0;
   const selection = new Map();
   if (locked) {
-    if (answeredCount(progress) !== attempt.questions.length) throw new RequestError(400, 'Ответьте на все вопросы.');
-    for (const question of attempt.questions) selection.set(question.id, progress.answers[question.id]);
+    if (!practiceExpired && answeredCount(progress) !== attempt.questions.length) throw new RequestError(400, 'Ответьте на все вопросы.');
+    for (const question of attempt.questions) {
+      selection.set(question.id, progress.answers[question.id] || { optionId: null, text: null, late: true, ms: 0, expired: true });
+    }
     if (answers !== undefined && answers !== null) {
       if (!Array.isArray(answers)) throw new RequestError(400, 'Некорректный ответ.');
       for (const answer of answers) {
@@ -311,6 +319,12 @@ export function evaluate(attempt, answers, now = Date.now(), { progress = null, 
     }
   }
   return scoreAttempt(attempt, selection, now, integrity);
+}
+
+/** The practical stage started and every closed item has a locked answer. */
+export function practiceTimedOut(attempt, progress) {
+  if (!attempt.openStage || attempt.delivery !== 'sequential' || !progress) return false;
+  return attempt.questions.slice(0, attempt.openStage.from).every(question => progress.answers?.[question.id]);
 }
 
 /** Annulment after repeated departures: a recorded failure that never confirms a grade. */

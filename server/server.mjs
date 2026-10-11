@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { resolve, relative, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openStore } from './store.mjs';
-import { annulledResult, createAttempt, digest, emptyProgress, evaluate, extendBorderline, integrityKinds, maxDepartures, programInfo, provisionalScore, publicAttempt,
+import { annulledResult, createAttempt, digest, emptyProgress, evaluate, extendBorderline, integrityKinds, maxDepartures, practiceTimedOut, programInfo, provisionalScore, publicAttempt,
   recordAnswer, RequestError, retakeLock, retryDays, threshold, validateSurvey } from './assessment.mjs';
 import { programs } from './bank.mjs';
 import { ItemBank } from './item-bank.mjs';
@@ -160,12 +160,50 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
     setCookie(response, cookieName + '=' + session + '; Path=/api; HttpOnly; SameSite=Strict; Max-Age=2592000' + (secureCookie ? '; Secure' : ''));
     return { owner: digest(session), account: null, authToken: null };
   }
-  function authorized(id, session, token) {
+  /** `gradable`: an attempt whose time ran out during the practical stage is still graded. */
+  function authorized(id, session, token, { gradable = false } = {}) {
     const row = store.get(id);
     if (!row || row.owner !== session) throw new RequestError(404, 'Попытка не найдена.');
     if (typeof token !== 'string' || token.length !== 64 || !timingSafeEqual(Buffer.from(digest(token)), Buffer.from(row.token_hash))) throw new RequestError(403, 'Нет доступа к попытке.');
-    if (!row.result && now() >= Date.parse(row.expires_at)) throw new RequestError(410, 'Время теста истекло. Начните новую попытку.');
+    if (!row.result && now() >= Date.parse(row.expires_at) && !(gradable && practiceTimedOut(row.attempt, row.progress))) {
+      throw new RequestError(410, 'Время теста истекло. Начните новую попытку.');
+    }
     return row;
+  }
+  const expiredUnfinished = row => !row.result && now() >= Date.parse(row.expires_at);
+  const grading = new Map();
+  /**
+   * Grades a finished attempt exactly once. Practical answers are scored by the model right
+   * away (docs/open_tasks.md); concurrent submissions share that grading, and an annulment
+   * that lands meanwhile wins. A repeated submission returns the stored result.
+   */
+  async function finishAttempt(row, answers) {
+    if (row.result?.annulled) return row.result;
+    const evaluated = evaluate(row.attempt, answers, row.result ? Date.parse(row.result.date) : now(),
+      { progress: row.progress, integrity: integritySummary(store.integrity(row.id)) });
+    if (row.result) {
+      if (row.answer_digest !== evaluated.answerDigest) throw new RequestError(409, 'Попытка уже проверена. Ответы менять нельзя.');
+      return row.result;
+    }
+    if (grading.has(row.id)) {
+      await grading.get(row.id).catch(() => null);
+      return finishAttempt(store.get(row.id), answers);
+    }
+    let result = evaluated.result, aiReview = null;
+    if (result.openStatus) {
+      const job = reviews.autoGrade(row, result);
+      grading.set(row.id, job);
+      try { ({ result, aiReview } = await job); } finally { grading.delete(row.id); }
+    }
+    if (!store.complete(row.id, evaluated.answerDigest, result)) {
+      const saved = store.get(row.id);
+      if (saved.result?.annulled) return saved.result;
+      if (saved.answer_digest !== evaluated.answerDigest) throw new RequestError(409, 'Попытка уже проверена. Ответы менять нельзя.');
+      return saved.result;
+    }
+    bank.recordResponses(evaluated.responses, result.closedScore ?? result.score);
+    if (result.openStatus) reviews.enqueue(row.id, row.owner, { status: result.openStatus === 'ai' ? 'ai' : 'pending', aiReview });
+    return result;
   }
   function allowRole(identity, role, message) {
     if (!identity.account) throw new RequestError(401, 'Войдите в аккаунт.');
@@ -523,9 +561,12 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
         if (answerRoute && request.method === 'POST') {
           allowRole(identity, 'candidate', 'Тестирование доступно соискателю.');
           const input = await body(request, 4096);
-          let row = authorized(answerRoute[1], session, input.token);
+          let row = authorized(answerRoute[1], session, input.token, { gradable: true });
           if (row.result) throw new RequestError(409, row.result.annulled ? 'Попытка аннулирована из-за нарушений.' : 'Тест уже завершён.');
           if (row.attempt.delivery !== 'sequential') throw new RequestError(409, 'Эта попытка принимает ответы целиком.');
+          // Time ran out during the practice: the answer is not accepted, the attempt goes to grading.
+          if (expiredUnfinished(row)) return send(response, 200, { ...publicAttempt(row.attempt, row.progress), complete: true, extended: false, opened: false,
+            expired: true, serverNow: new Date(now()).toISOString(), integrity: store.integrity(row.id), status: 'active' });
           let recorded = recordAnswer(row.attempt, row.progress, input, now());
           if (recorded.changed && !store.saveProgress(row.id, recorded.progress, row.progress)) {
             row = store.get(row.id);
@@ -565,30 +606,17 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
         const match = /^\/api\/assessment\/attempts\/([a-f0-9-]{36})(\/submit)?$/.exec(url.pathname);
         if (match && !match[2] && request.method === 'GET') {
           allowRole(identity, 'candidate', 'Тестирование доступно соискателю.');
-          const row = authorized(match[1], session, request.headers['x-attempt-token']);
+          let row = authorized(match[1], session, request.headers['x-attempt-token'], { gradable: true });
+          // Returning after the time ran out during the practice: the attempt is graded now.
+          if (expiredUnfinished(row)) { await finishAttempt(row); row = store.get(row.id); }
           return send(response, 200, { ...publicAttempt(row.attempt, row.progress), serverNow: new Date(now()).toISOString(), integrity: store.integrity(row.id), status: row.result ? 'completed' : 'active', ...(row.result ? { result: row.result } : {}) });
         }
         if (match?.[2] && request.method === 'POST') {
           allowRole(identity, 'candidate', 'Тестирование доступно соискателю.');
           const input = await body(request);
           if (Object.keys(input).some(key => !['token', 'answers'].includes(key))) throw new RequestError(400, 'Недопустимые поля ответа.');
-          const row = authorized(match[1], session, input.token);
-          if (row.result?.annulled) return send(response, 200, row.result);
-          const evaluated = evaluate(row.attempt, input.answers, row.result ? Date.parse(row.result.date) : now(),
-            { progress: row.progress, integrity: integritySummary(store.integrity(row.id)) });
-          if (row.result) {
-            if (row.answer_digest !== evaluated.answerDigest) throw new RequestError(409, 'Попытка уже проверена. Ответы менять нельзя.');
-            return send(response, 200, row.result);
-          }
-          if (!store.complete(row.id, evaluated.answerDigest, evaluated.result)) {
-            const saved = store.get(row.id);
-            if (saved.result?.annulled) return send(response, 200, saved.result);
-            if (saved.answer_digest !== evaluated.answerDigest) throw new RequestError(409, 'Попытка уже проверена. Ответы менять нельзя.');
-            return send(response, 200, saved.result);
-          }
-          bank.recordResponses(evaluated.responses, evaluated.result.closedScore ?? evaluated.result.score);
-          if (evaluated.result.pending) reviews.enqueue(row.id, session);
-          return send(response, 200, evaluated.result);
+          const row = authorized(match[1], session, input.token, { gradable: true });
+          return send(response, 200, await finishAttempt(row, input.answers));
         }
         if (url.pathname.startsWith('/api/review-bank/variants')) {
           if (!identity.account?.canModerate) throw new RequestError(403, 'Авторские варианты доступны модератору.');
@@ -708,7 +736,7 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
   server.requestTimeout = 15000;
   server.headersTimeout = 10000;
   server.on('close', () => { integrations.close(); auth.close(); directory.close(); store.close(); });
-  return { server, store, directory, platform, marketplace, auth, fsp, integrations, bank, llm, generation, variants };
+  return { server, store, directory, platform, marketplace, auth, fsp, integrations, bank, llm, generation, variants, reviews };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

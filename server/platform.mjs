@@ -237,7 +237,7 @@ function publicResult(value) {
   const result = { id: value.id, date: value.date, specialization: value.specialization, grade: value.grade,
     score: value.score, passed: value.passed, surveyId: value.surveyId || null };
   for (const key of ['bankVersion', 'competencies', 'vacancySkills', 'questionCount', 'timeouts', 'nextGradeAvailable', 'annulled', 'integrity', 'clarified',
-    'pending', 'closedScore', 'openScore', 'openCount', 'openAnswered', 'invalidated', 'review']) if (value[key] !== undefined) result[key] = value[key];
+    'pending', 'closedScore', 'openScore', 'openCount', 'openAnswered', 'openStatus', 'openTimedOut', 'reviewedByExpert', 'invalidated', 'review']) if (value[key] !== undefined) result[key] = value[key];
   return result;
 }
 function sameConfirmation(a, b) {
@@ -448,6 +448,9 @@ export class PlatformService {
           if (incomingSurveys.length >= 100) fail('Допустимо до 100 сохранённых анкет.');
           incomingSurveys.push(survey(proofSurvey));
         }
+      } else if (person.confirmed && [...byId.values()].some(row => row.result?.reviewedByExpert && !row.result.passed && sameConfirmation(person.confirmed, row.result))) {
+        // An expert annulled or failed the attempt behind this category: a stale copy cannot bring it back.
+        person.confirmed = null;
       } else if (person.confirmed) {
         // Legacy or unverifiable categories may be kept privately for migration.
         person.gradeChangedAt = date(value.profile.gradeChangedAt, 'Дата смены категории', person.confirmed.date);

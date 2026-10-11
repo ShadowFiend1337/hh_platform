@@ -37,7 +37,10 @@ const pendingOpenAnswers = {
     + 'Если добавить cancelled, default его поглотит — нужно было бы добавить проверку, но я не уверен как.',
 };
 
-/** A second attempt of the test candidate whose open answers wait for the test moderator. */
+/**
+ * A second attempt of the test candidate graded while the model was unavailable: the closed
+ * part confirmed the grade, the open answers wait for the test moderator.
+ */
 function seedPendingReview(assessments, owner, survey) {
   const started = Date.now();
   let attempt = createAttempt(survey, '', [], started);
