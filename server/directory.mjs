@@ -14,6 +14,7 @@ import { CATEGORY_RECOMMENDATION_POLICY, recommendCategories } from './category-
 import { SEARCH_EXPLANATION_POLICY, explainSearchResults } from './search-explanations.mjs';
 import { annotateMatches } from './search-match.mjs';
 import { PROFILE_PUBLICATION_POLICY, CONFIRMATION_ORDER_POLICY, confirmedFirst } from './profile-publication.mjs';
+import { REQUIREMENT_POLICY, MINIMUM_RESULTS, splitStackConstraints, expandSpecializations, requirementCoverage, orderByRequirements } from './search-requirements.mjs';
 
 function validateFilters(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new RequestError(400,'Некорректные фильтры.');
@@ -43,7 +44,7 @@ const mentions = (text, values) => values.flatMap(([value, expression]) => {
 const roleAliases = [
   ['Frontend', 'front[- ]?end|фронт[- ]?[эе]нд[а-я]*|разработ[а-я]*\\s+интерфейс[а-я]*'],
   ['Backend', 'back[- ]?end|б[эе]к[- ]?[эе]нд[а-я]*|серверн[а-я]*\\s+разработ[а-я]*'],
-  ['Fullstack', 'full[- ]?stack|фулл?ст[эе]к[а-я]*'],
+  ['Fullstack', 'full[- ]?stack|фулл?ст[эе]к[а-я]*|(?:универсальн[а-я]*\\s+)?(?:веб|web)[- ]?разработ[а-я]*|web[- ]developer[a-z]*'],
   ['Mobile', 'mobile|мобильн[а-я]*\\s+разработ[а-я]*'],
   ['ML', 'ml|machine\\s+learning|data\\s+scien(?:ce|tist)|машинн[а-я]*\\s+обучени[а-я]*'],
   ['DataAnalysis', 'data\\s+analys[а-яa-z]*|аналитик[а-я]*\\s+данных|аналитика данных|bi[- ]?аналитик[а-я]*'],
@@ -112,6 +113,15 @@ function polarity(text, match) {
   if (!comparison && !notOnly && /(?:^|\s)(?:не|без|кроме|исключая|not|no|without|except)\s+(?:[\p{L}\p{N}+_-]+\s+){0,3}$/iu.test(prefix)
     || /^\s+(?:не\s+(?:нуж[а-я]*|подход[а-я]*|рассматрива[а-я]*|интерес[а-я]*)|исключ[а-я]*|not\s+(?:needed|wanted|required))/iu.test(suffix)) return 'negative';
   return 'positive';
+}
+// A mentioned technology is a soft requirement unless the employer marks it
+// mandatory in the same clause ("Docker обязателен", "обязательно: Go").
+function mandatoryMention(text, match) {
+  const suffix = text.slice(match.end).split(/[,;.\n]/u)[0];
+  const start = Math.max(text.lastIndexOf('.', match.start - 1), text.lastIndexOf(';', match.start - 1), text.lastIndexOf('\n', match.start - 1)) + 1;
+  const prefix = text.slice(start, match.start);
+  const must = /(?<![\p{L}])(?:обязател[а-я]*|must|required|строго)(?![\p{L}])/iu, denied = /не\s*обязател|not\s+required/iu;
+  return must.test(suffix) && !denied.test(suffix) || must.test(prefix) && !denied.test(prefix);
 }
 
 export function interpretQuery(query, options) {
@@ -193,6 +203,8 @@ export function interpretQuery(query, options) {
   const stack = mentions(professionalQuery, stackOptions.map(skill => [skill, escaped(skill)]));
   const fullStackNames = stack.filter(match => !stack.some(other => other.start <= match.start && other.end >= match.end && other.end - other.start > match.end - match.start));
   categorical('stack', fullStackNames.sort((a, b) => a.start - b.start), { conjunctive: true, context: professionalQuery });
+  const requiredStack = [...new Set(fullStackNames.filter(match => polarity(professionalQuery, match) === 'positive' && mandatoryMention(professionalQuery, match)).map(match => match.value))];
+  if (requiredStack.length) interpreted.requiredStack = requiredStack;
   categorical('language', mentions(query, languages).sort((a, b) => a.start - b.start), { conjunctive: true });
   const portfolio = mentions(query, [['portfolio', 'портфолио|portfolio']]);
   if (portfolio.some(match => polarity(query, match) === 'positive')) interpreted.hasPortfolio = true;
@@ -327,12 +339,20 @@ export class DirectoryService {
     const embeddingQuery=semanticQuery(query,interpreted);
     const rerankerQuery=semanticQuery(query,interpreted,{stripWrapper:false});
     const evidenceRequirements=queryEvidenceRequirements(semanticQuery(query,interpreted,{stripWrapper:false,includePreamble:true}));
+    // A role named only in the text also reaches adjacent directions, and
+    // technologies named in the text rank rather than filter (see
+    // search-requirements.mjs). Manual filters keep their exact meaning.
+    const {primary,related}=expandSpecializations(filters.specialization?[]:interpreted.queryConstraints.any.specialization||[]);
+    const {sql:sqlConstraints,requirements}=splitStackConstraints(interpreted.queryConstraints,{mandatory:interpreted.requiredStack||[],filterStack:filters.stack});
+    if (related.length) sqlConstraints.any.specialization=[...primary,...related];
+    const softRequirements=requirements.some(requirement=>!requirement.hard);
     for (const key of ['specialization','grade','format','city','language']) if (interpreted[key]&&!filters[key]) filters[key]=interpreted[key];
     if (interpreted.salaryMax!==undefined) filters.salaryMax=filters.salaryMax===null?interpreted.salaryMax:Math.min(filters.salaryMax,interpreted.salaryMax);
     if (interpreted.experienceMin!==undefined) filters.experienceMin=Math.max(filters.experienceMin??0,interpreted.experienceMin);
     if (interpreted.experienceMax!==undefined) filters.experienceMax=Math.min(filters.experienceMax??Infinity,interpreted.experienceMax);
     if (interpreted.hasPortfolio) filters.hasPortfolio=true;
-    if (interpreted.stack?.length) filters.stack=[...new Set([...filters.stack,...interpreted.stack])];
+    if (interpreted.requiredStack?.length) filters.stack=[...new Set([...filters.stack,...interpreted.requiredStack])];
+    const sqlFilters=related.length?{...filters,specialization:''}:filters;
     // An explicitly requested profession outside our catalog has no eligible
     // profiles. This is a structural scope constraint, independent of neural
     // similarity, the model's availability or approximate admission scores.
@@ -341,7 +361,7 @@ export class DirectoryService {
     // A specific requested method needs an affirmative professional claim.
     // Apply this to each fresh snapshot, before both strong and approximate
     // admission; a large neural score cannot turn a denial into experience.
-    const matching=()=>this.store.matching(filters,interpreted.queryConstraints).filter(row=>{
+    const matching=()=>this.store.matching(sqlFilters,sqlConstraints).filter(row=>{
       if (!this.accessible(owner,row)) return false;
       if (!embeddingQuery || !evidenceRequirements.length) return true;
       const person=publicDirectoryCandidate(row);
@@ -403,10 +423,11 @@ export class DirectoryService {
       return {person,semanticScore,rank:semanticScore??row.score,reason:reasons.join(' '),testScore:row.score,fsp:row.fsp,
         evidenceText:evidence,evidenceKind:semanticRerankingSections(person).some(section=>section.text.replace(/^Вымышленный проект /u, 'Проект ')===evidence && section.kind==='professional')?'professional':'competencies',
         sourceId:row.id,documentHash:row.document_hash,publicPayload:row.public_payload,
-        taskSections:stage?semanticRerankingSections(person):[],reasonSuffix:reasons.slice(1),
+        taskSections:stage?semanticRerankingSections(person):[],reasonSuffix:reasons.slice(1),coverage:requirementCoverage(person,requirements),
         roleLabel:specializationLabels[row.specialization] || row.specialization};
     });
     let items;
+    let nearest=[];
     const warnings=[];
     if (stage) {
       try {
@@ -502,27 +523,56 @@ export class DirectoryService {
             .map(item=>({...item,approximate:true}));
           if (items.length) warnings.push('Точных совпадений нет. Показаны ближайшие профили.');
         }
+        // Reserve for a named role or skill: scored profiles below the cutoff,
+        // then current profiles outside the reranked shortlist.
+        const scored=new Set(eligible.map(item=>item.sourceId)), admitted=new Set(items.map(item=>item.sourceId));
+        nearest=[...eligible.filter(item=>!admitted.has(item.sourceId)).sort(semanticOrder),
+          ...candidates.filter(item=>!scored.has(item.sourceId)&&item.semanticScore!==null&&fresh.get(item.sourceId)?.document_hash===item.documentHash)
+            .sort((a,b)=>b.semanticScore-a.semanticScore||a.sourceId.localeCompare(b.sourceId)).map(item=>({...item,rank:-Infinity}))];
       } catch { throw new RequestError(503,'Поиск по смыслу недоступен. Повторите запрос или используйте фильтры без текста.'); }
-    } else items=candidates.filter(item=>!embeddingQuery||item.semanticScore!==null&&item.semanticScore>=this.encoder.info.threshold);
+    } else {
+      items=candidates.filter(item=>!embeddingQuery||item.semanticScore!==null&&item.semanticScore>=this.encoder.info.threshold);
+      nearest=candidates.filter(item=>embeddingQuery&&item.semanticScore!==null&&!items.includes(item)).sort(semanticOrder);
+    }
+    if (embeddingQuery && softRequirements) {
+      // A profile without any requested technology is never a confident match.
+      nearest=[...items.filter(item=>item.coverage.share===0),...nearest];
+      items=items.filter(item=>item.coverage.share>0);
+    }
+    // A named role or technology always yields a usable top-K. Missing slots
+    // are filled from the same structural pool, explicitly marked as nearest;
+    // a request with neither signal keeps the strict model cutoff.
+    if (embeddingQuery && (primary.length || softRequirements) && items.length<MINIMUM_RESULTS) {
+      const reachable=new Set([...primary,...related]);
+      const taken=new Set(items.map(item=>item.sourceId));
+      const extra=nearest.filter(item=>!taken.has(item.sourceId)&&(primary.length
+        ? reachable.has(item.person.confirmed?.specialization||item.person.specialization) : item.coverage?.share>0))
+        .slice(0,MINIMUM_RESULTS-items.length).map(item=>({...item,approximate:true}));
+      if (extra.length) {
+        items=[...items,...extra];
+        if (!warnings.length) warnings.push('Уверенных совпадений мало. Ниже показаны ближайшие профили с пометкой «Низкая уверенность».');
+      }
+    }
     // Admission and the nearest-list limit have already been applied using
     // unchanged neural scores. Evidence can only exchange comparable slots
     // within the same confirmed category, before response pagination.
     if (embeddingQuery) items=rankComparableCandidates(items,{scoreKind:stage?'logit':'cosine', ...(this.fspEvidence ? {fspEvidence:this.fspEvidence} : {})});
     else items.sort(filterOrder);
+    if (requirements.length || related.length) items=orderByRequirements(items,{related});
     // Category navigation narrows the current recommendation; it never changes
     // employer constraints, neural admission, or recommendations for other groups.
     items=confirmedFirst(items);
-    items=explainSearchResults(items,{semantic:Boolean(embeddingQuery),scoreKind:stage?'logit':'cosine',filters});
-    items=annotateMatches(items,{semantic:Boolean(embeddingQuery),filters});
+    items=explainSearchResults(items,{semantic:Boolean(embeddingQuery),scoreKind:stage?'logit':'cosine',filters,related});
+    items=annotateMatches(items,{semantic:Boolean(embeddingQuery),filters,related});
     const categories=recommendCategories(items,{semantic:Boolean(embeddingQuery)});
     const selected=category?items.filter(item=>item.person.confirmed?.specialization===category.specialization
       && item.person.confirmed?.grade===category.grade):items;
-    return {items:selected.slice(offset,offset+limit).map(({testScore,fsp,sourceId,documentHash,publicPayload,taskSections,reasonSuffix,roleLabel,evidenceText,rankingTrace,...item})=>
+    return {items:selected.slice(offset,offset+limit).map(({testScore,fsp,sourceId,documentHash,publicPayload,taskSections,reasonSuffix,roleLabel,evidenceText,rankingTrace,coverage,...item})=>
       this.freshness?{...item,freshness:this.freshness(item.person.id)}:item),
       categories,selectedCategory:category,total:selected.length,offset,limit,query,interpreted,effectiveFilters:filters,
       model:{...this.encoder.info,indexPolicy:PROFILE_INDEX_POLICY,taskEvidencePolicy:TASK_EVIDENCE_POLICY,
         categoryRecommendationPolicy:CATEGORY_RECOMMENDATION_POLICY,
-        searchExplanationPolicy:SEARCH_EXPLANATION_POLICY,
+        searchExplanationPolicy:SEARCH_EXPLANATION_POLICY,requirementPolicy:REQUIREMENT_POLICY,
         profilePublicationPolicy:PROFILE_PUBLICATION_POLICY,
         confirmationOrderPolicy:CONFIRMATION_ORDER_POLICY,
         ...(embeddingQuery?{categoryRankingPolicy:CATEGORY_RANKING_POLICY}:{}),...(stage?{stage:structuredClone(stage),

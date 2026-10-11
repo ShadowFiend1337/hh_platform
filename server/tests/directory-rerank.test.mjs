@@ -125,12 +125,17 @@ test('a sparse profile can match its actual role and skills without claiming des
   assert.equal(result.items[0].explanation.evidence.kind,'competencies');
 });
 
-test('sparse competency evidence below the frozen cutoff is rejected even with perfect recall', async t => {
+test('sparse competency evidence below the frozen cutoff is never admitted as a match, even with perfect recall', async t => {
   const encoder=new Encoder();encoder.encode=async texts=>texts.map(()=>[1,0]);
   encoder.rerank=async(text,passages)=>{encoder.rerankCalls.push({query:text,passages});return passages.map(()=>-3);};
   const value=service(t,[profile('identity-only',{bio:'',workHistory:'',careerAchievements:'',education:''})],encoder);
-  assert.equal((await value.search('Нужен инженер электроники с C++')).total,0);
-  assert.equal(encoder.rerankCalls.length,1,'The model evaluates competencies instead of blanket admission by identity');
+  assert.equal((await value.search('Нужен человек, который поможет с устройством')).total,0,'Without a named role or skill the frozen cutoff decides alone');
+  const named=await value.search('Нужен инженер электроники с C++');
+  assert.equal(named.total,1,'A named role still yields its nearest profile');
+  assert.equal(named.items[0].approximate,true);
+  assert.equal(named.items[0].match.confidence.level,'low');
+  assert.equal(named.warnings.length,1);
+  assert.equal(encoder.rerankCalls.length,2,'The model evaluates competencies instead of blanket admission by identity');
 });
 
 test('generic education does not hide sparse role and skill evidence', async t => {

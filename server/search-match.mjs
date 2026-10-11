@@ -4,7 +4,8 @@
 //                shown profile passed the model's admission cutoff, so the scale
 //                starts at 55% and spreads by the executed rank within the result);
 //   category   — confirmed specialization/grade versus the employer's request;
-//   stack      — share of requested technologies present in the profile;
+//   stack      — share of requested technologies present in the profile
+//                (text requirements, one of an OR group suffices);
 //   test       — server test score of the confirmed category;
 //   fsp        — provider-backed FSP achievements.
 // Components the employer did not ask about are left out and weights renormalised.
@@ -12,24 +13,25 @@
 // match against, so no percentage is shown. Rationale: docs/search_match.md.
 export const MATCH_POLICY = 'weighted-public-signals-v1';
 const weights = { tasks: 45, category: 20, stack: 15, test: 15, fsp: 5 };
+import { confidenceOf } from './search-requirements.mjs';
 const fold = value => String(value || '').normalize('NFKC').toLocaleLowerCase('ru');
 
-function categoryFit(person, filters) {
+function categoryFit(person, filters, related = []) {
   const confirmed = person.confirmed;
   const wantSpecialization = filters.specialization || '';
   const wantGrade = filters.grade || '';
   const specialization = confirmed?.specialization || person.specialization;
-  if (wantSpecialization && specialization !== wantSpecialization) return 0.2;
+  if (wantSpecialization && specialization !== wantSpecialization) return related.includes(specialization) ? 0.6 : 0.2;
   if (!confirmed) return wantGrade ? 0.35 : 0.45;
   if (wantGrade && confirmed.grade !== wantGrade) return 0.6;
   return 1;
 }
 
-export function annotateMatches(items, { semantic = false, filters = {} } = {}) {
+export function annotateMatches(items, { semantic = false, filters = {}, related = [] } = {}) {
   const ranks = items.map(item => item.rank).filter(Number.isFinite);
   const top = Math.max(...ranks), bottom = Math.min(...ranks);
   const requestedStack = (Array.isArray(filters.stack) ? filters.stack : []).map(fold);
-  if (!semantic && !filters.specialization && !filters.grade && !requestedStack.length) return items;
+  if (!semantic && !filters.specialization && !filters.grade && !requestedStack.length && !items.some(item => item.coverage)) return items;
   return items.map(item => {
     const person = item.person || {};
     const parts = [];
@@ -39,8 +41,9 @@ export function annotateMatches(items, { semantic = false, filters = {} } = {}) 
       const value = item.approximate ? 0.35 + 0.15 * relative : 0.55 + 0.45 * relative;
       parts.push({ key: 'tasks', label: item.approximate ? 'Задачи (ближайшее совпадение)' : 'Задачи из профиля', value });
     }
-    parts.push({ key: 'category', label: person.confirmed ? 'Подтверждённая категория' : 'Категория не подтверждена', value: categoryFit(person, filters) });
-    if (requestedStack.length) {
+    parts.push({ key: 'category', label: person.confirmed ? 'Подтверждённая категория' : 'Категория не подтверждена', value: categoryFit(person, filters, related) });
+    if (item.coverage) parts.push({ key: 'stack', label: 'Требуемый стек', value: item.coverage.share });
+    else if (requestedStack.length) {
       const stack = new Set((Array.isArray(person.stack) ? person.stack : []).map(fold));
       parts.push({ key: 'stack', label: 'Требуемый стек', value: requestedStack.filter(skill => stack.has(skill)).length / requestedStack.length });
     }
@@ -55,7 +58,8 @@ export function annotateMatches(items, { semantic = false, filters = {} } = {}) 
     const rounded = shares.map(Math.floor);
     shares.map((share, index) => [share - rounded[index], index]).sort((a, b) => b[0] - a[0])
       .slice(0, 100 - rounded.reduce((sum, value) => sum + value, 0)).forEach(([, index]) => { rounded[index]++; });
-    return { ...item, match: { policy: MATCH_POLICY, percent,
+    const requirements = item.coverage ? { matched: item.coverage.matched, missing: item.coverage.missing, total: item.coverage.total, text: item.coverage.text } : undefined;
+    return { ...item, match: { policy: MATCH_POLICY, percent, confidence: confidenceOf(item, { related }), ...(requirements ? { requirements } : {}),
       parts: parts.map((part, index) => ({ ...part, value: Math.round(part.value * 100), weight: rounded[index] })) } };
   });
 }

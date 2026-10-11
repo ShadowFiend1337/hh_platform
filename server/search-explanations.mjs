@@ -96,7 +96,7 @@ function fspExplanation(person, source, contribution) {
 
 /** Annotate admitted public results; return their existing order and scores. */
 export function explainSearchResults(items, { semantic = false, scoreKind = 'logit', filters = {},
-  fspEvidence = rankingFspEvidence } = {}) {
+  fspEvidence = rankingFspEvidence, related = [] } = {}) {
   if (!Array.isArray(items)) throw new TypeError('Expected search results');
   if (scoreKind !== 'logit' && scoreKind !== 'cosine') throw new TypeError('Unknown semantic score kind');
   if (typeof fspEvidence !== 'function') throw new TypeError('Expected a trusted FSP evidence resolver');
@@ -141,11 +141,16 @@ export function explainSearchResults(items, { semantic = false, scoreKind = 'log
     }
     const relevance = item.approximate === true ? 'nearest' : semantic ? 'semantic' : 'filters';
     const testSummary = !category ? test.explanation : `${person.synthetic === true ? 'Учебный результат теста' : 'Серверный результат теста'}: ${category.score}/100.`;
-    const parts = [`${categoryInfo.label}. ${categoryInfo.explanation}`, item.approximate === true
-      ? 'Это ближайший профиль: точных совпадений не найдено.' : '', evidence.text ? `${evidence.explanation} ${evidence.text}` : evidence.explanation,
+    const adjacent = filters.specialization && related.includes(categoryInfo.specialization)
+      ? `Смежная специализация к запрошенной (${specializationLabels[filters.specialization] || filters.specialization}).` : '';
+    const parts = [`${categoryInfo.label}. ${categoryInfo.explanation}`, adjacent, item.approximate === true
+      ? 'Это ближайший профиль: уверенность модели ниже порога строгого совпадения.' : '',
+    item.coverage ? `Требования запроса: ${item.coverage.text}` : '', evidence.text ? `${evidence.explanation} ${evidence.text}` : evidence.explanation,
     conditions.length ? `Условия: ${conditions.map(condition => condition.value).join('; ')}.` : '', testSummary,
     fsp.explanation, ordering.explanation];
     return { ...item, reason: parts.filter(Boolean).join(' '), explanation: { policy: SEARCH_EXPLANATION_POLICY,
-      relevance, category: categoryInfo, evidence, conditions, test, fsp, ordering } };
+      relevance, category: categoryInfo, evidence, conditions, test, fsp, ordering,
+      ...(item.coverage ? { requirements: { matched: item.coverage.matched, missing: item.coverage.missing, total: item.coverage.total } } : {}),
+      ...(adjacent ? { adjacentSpecialization: true } : {}) } };
   });
 }

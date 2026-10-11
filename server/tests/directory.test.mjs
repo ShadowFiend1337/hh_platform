@@ -272,12 +272,19 @@ test('skill alternatives and grade ranges are unions rather than exact singleton
   assert.deepEqual(interpretQuery('грейд от Junior до Senior', { cities: [] }).queryConstraints.any.grade, ['Junior', 'Middle', 'Senior']);
 });
 
-test('OR skill groups remain mandatory independently of other required skills', async t => {
+test('OR skill groups rank by coverage while a skill marked mandatory stays a hard filter', async t => {
   const value = service(t, [profile('fits', { stack: ['React', 'Python', 'Docker'] }),
     profile('also-fits', { stack: ['Vue', 'Node.js', 'Docker'] }), profile('missing-docker', { stack: ['React', 'Python'] }),
     profile('missing-second-group', { stack: ['React', 'Docker'] })]);
   const result = await value.search('React или Vue, Python или Node.js, Docker обязателен');
-  assert.deepEqual(new Set(result.items.map(item => item.person.id)), new Set(['fits', 'also-fits']));
+  const ids = result.items.map(item => item.person.id);
+  assert.deepEqual(new Set(ids.slice(0, 2)), new Set(['fits', 'also-fits']));
+  assert.equal(ids[2], 'missing-second-group', 'A partial match follows complete ones');
+  assert.ok(!ids.includes('missing-docker'), 'Docker обязателен remains a mandatory constraint');
+  assert.deepEqual(result.interpreted.requiredStack, ['Docker']);
+  assert.deepEqual(result.items[2].match.requirements.missing, ['Python или Node.js']);
+  assert.equal(result.items[2].match.confidence.level, 'medium');
+  assert.match(result.items[2].reason, /Совпало 2 из 3 .*не хватает: Python или Node\.js/u);
   assert.deepEqual(result.interpreted.queryConstraints.groups.stack, [['React', 'Vue'], ['Python', 'Node.js']]);
   assert.deepEqual(result.interpreted.queryConstraints.all.stack, ['Docker']);
 });
