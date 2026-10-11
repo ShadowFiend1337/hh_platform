@@ -9242,6 +9242,49 @@
         },
         "additionalProperties": true
       },
+      "WorkExperience": {
+        "type": "object",
+        "properties": {
+          "period": {
+            "type": "string",
+            "description": "Период работы в исходном виде",
+            "maxLength": 100
+          },
+          "company": {
+            "type": "string",
+            "description": "Компания",
+            "maxLength": 200
+          },
+          "tasks": {
+            "type": "string",
+            "description": "Задачи и обязанности",
+            "maxLength": 4000
+          }
+        }
+      },
+      "PetProject": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Название проекта",
+            "maxLength": 200
+          },
+          "description": {
+            "type": "string",
+            "description": "Описание проекта",
+            "maxLength": 4000
+          },
+          "stack": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 80
+            },
+            "maxItems": 100
+          }
+        }
+      },
       "Survey": {
         "type": "object",
         "properties": {
@@ -9253,7 +9296,8 @@
             "format": "date-time"
           },
           "industry": {
-            "type": "string"
+            "type": "string",
+            "description": "В новой анкете ИТ; старые значения принимаются для совместимости"
           },
           "professionalRole": {
             "type": "string"
@@ -9280,14 +9324,71 @@
             "items": {
               "type": "string"
             },
-            "minItems": 1
+            "minItems": 1,
+            "maxItems": 100
           },
           "softSkills": {
             "type": "array",
             "items": {
               "type": "string"
             },
-            "maxItems": 10
+            "maxItems": 30
+          },
+          "workExperiences": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkExperience"
+            },
+            "maxItems": 30,
+            "description": "Редактируемые места работы; общий текст до 20 000 символов"
+          },
+          "petProjects": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PetProject"
+            },
+            "maxItems": 30,
+            "description": "Личные проекты; общий текст до 20 000 символов"
+          },
+          "achievementItems": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 4000
+            },
+            "maxItems": 50,
+            "description": "Достижения из резюме, до 4000 символов суммарно. Подтверждение ФСП хранится отдельно"
+          },
+          "interests": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 4000
+            },
+            "maxItems": 50,
+            "description": "Интересы и дополнительные сведения, до 4000 символов суммарно"
+          },
+          "workHistory": {
+            "type": "string",
+            "description": "Текстовая проекция опыта для совместимости со старыми профилями",
+            "maxLength": 20000
+          },
+          "careerAchievements": {
+            "type": "string",
+            "description": "Текстовая проекция достижений из резюме",
+            "maxLength": 4000
+          },
+          "education": {
+            "type": "string"
+          },
+          "portfolio": {
+            "type": "string"
+          },
+          "languages": {
+            "type": "string"
+          },
+          "format": {
+            "type": "string"
           }
         },
         "required": [
@@ -9310,7 +9411,52 @@
           },
           "profile": {
             "type": "object",
-            "properties": {},
+            "properties": {
+              "workExperiences": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/WorkExperience"
+                },
+                "maxItems": 30,
+                "description": "Редактируемые места работы; общий текст до 20 000 символов"
+              },
+              "petProjects": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/PetProject"
+                },
+                "maxItems": 30,
+                "description": "Личные проекты; общий текст до 20 000 символов"
+              },
+              "achievementItems": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 4000
+                },
+                "maxItems": 50,
+                "description": "Достижения из резюме, до 4000 символов суммарно. Подтверждение ФСП хранится отдельно"
+              },
+              "interests": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 4000
+                },
+                "maxItems": 50,
+                "description": "Интересы и дополнительные сведения, до 4000 символов суммарно"
+              },
+              "workHistory": {
+                "type": "string",
+                "description": "Текстовая проекция опыта для совместимости со старыми профилями",
+                "maxLength": 20000
+              },
+              "careerAchievements": {
+                "type": "string",
+                "description": "Текстовая проекция достижений из резюме",
+                "maxLength": 4000
+              }
+            },
             "additionalProperties": true,
             "description": "Профиль соискателя: контакты, опыт, стек, согласие, публикация, подтверждённая категория"
           },
@@ -9525,6 +9671,50 @@
           },
           "format": {
             "type": "string"
+          },
+          "workExperiences": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkExperience"
+            },
+            "maxItems": 30,
+            "description": "Редактируемые места работы; общий текст до 20 000 символов"
+          },
+          "petProjects": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PetProject"
+            },
+            "maxItems": 30,
+            "description": "Личные проекты; общий текст до 20 000 символов"
+          },
+          "achievementItems": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 4000
+            },
+            "maxItems": 50,
+            "description": "Достижения из резюме, до 4000 символов суммарно. Подтверждение ФСП хранится отдельно"
+          },
+          "interests": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 4000
+            },
+            "maxItems": 50,
+            "description": "Интересы и дополнительные сведения, до 4000 символов суммарно"
+          },
+          "workHistory": {
+            "type": "string",
+            "description": "Текстовая проекция опыта для совместимости со старыми профилями",
+            "maxLength": 20000
+          },
+          "careerAchievements": {
+            "type": "string",
+            "description": "Текстовая проекция достижений из резюме",
+            "maxLength": 4000
           },
           "experience": {
             "type": "string"
@@ -10579,6 +10769,12 @@
           },
           "phone": {
             "type": "string"
+          },
+          "portfolio": {
+            "type": "string",
+            "description": {
+              "format": "uri"
+            }
           }
         },
         "required": [

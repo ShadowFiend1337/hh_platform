@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.models import Account, PlatformState
+from backend.services.resume_structure import resume_sections, pet_projects_text, work_history_text
 from backend.services.common import (
     ApiError, EMPLOYMENT_TYPES, FORMATS, GRADES, INDUSTRIES, LANGUAGES, LANGUAGE_OPTIONS,
     SPECIALIZATIONS, clone_json, company_id, public_id,
@@ -51,12 +52,17 @@ def public_candidate(person: dict[str, Any], candidate_id: str | None = None) ->
         "salaryFrom", "salaryTo", "experienceMonths", "employmentType", "availableFrom", "languageCodes", "synthetic",
     )
     result = {key: clone_json(person[key]) for key in allowed if key in person}
-    for key in ("name", "professionalRole", "experience", "bio", "careerAchievements", "education", "workHistory", "languages"):
+    sections = resume_sections(person)
+    result["workExperiences"] = [{key: _scrub(value) for key, value in entry.items()} for entry in sections["workExperiences"]]
+    result["petProjects"] = [{"name": _scrub(entry["name"]), "description": _scrub(entry["description"]), "stack": [_scrub(skill) for skill in entry["stack"]]} for entry in sections["petProjects"]]
+    result["achievementItems"] = [_scrub(item) for item in sections["achievementItems"]]
+    result["interests"] = [_scrub(item) for item in sections["interests"]]
+    for key in ("name", "professionalRole", "experience", "city", "format", "bio", "careerAchievements", "education", "workHistory", "languages"):
         if result.get(key):
             result[key] = _scrub(result[key])
     if isinstance(result.get("stack"), list):
         result["stack"] = [_scrub(value) for value in result["stack"]]
-    result.update({"id": candidate_id or str(person.get("id", "")), "email": "", "phone": "", "fspId": "", "softSkills": []})
+    result.update({"id": candidate_id or str(person.get("id", "")), "email": "", "phone": "", "portfolio": "", "fspId": "", "softSkills": [_scrub(skill) for skill in person.get("softSkills", []) if isinstance(skill, str)]})
     return result
 
 
@@ -88,7 +94,7 @@ def candidates(session: Session) -> list[dict[str, Any]]:
 def options(session: Session) -> dict[str, Any]:
     values = candidates(session)
     return {
-        "cities": sorted({str(item.get("city")) for item in values if item.get("city")}),
+        "cities": sorted({_scrub(item.get("city")) for item in values if item.get("city")}),
         "industries": sorted({str(item.get("industry")) for item in values if item.get("industry")}),
         "languages": LANGUAGE_OPTIONS,
         "employmentTypes": sorted({str(item.get("employmentType")) for item in values if item.get("employmentType")}),
@@ -171,9 +177,12 @@ def _matches(item: dict[str, Any], filters: dict[str, Any]) -> bool:
 def _query_score(person: dict[str, Any], query: str) -> int:
     if not query:
         return 0
-    haystack = " ".join(str(person.get(key, "")) for key in (
+    sections = resume_sections(person)
+    narrative = [work_history_text(sections["workExperiences"]), pet_projects_text(sections["petProjects"]),
+                 "\n".join(sections["achievementItems"]), "\n".join(sections["interests"])]
+    haystack = " ".join(_scrub(part) for part in [*narrative, *(str(person.get(key, "")) for key in (
         "name", "specialization", "desiredGrade", "professionalRole", "stack", "bio", "workHistory", "city", "industry",
-    )).casefold()
+    ))]).casefold()
     return sum(haystack.count(token) for token in re.findall(r"[\wа-яё+#.-]+", query.casefold()))
 
 

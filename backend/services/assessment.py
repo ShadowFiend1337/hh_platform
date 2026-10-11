@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from backend.models import AssessmentAttempt
 from backend.services.common import ApiError, GRADES, INDUSTRIES, SPECIALIZATIONS, clone_json, iso, sha256, utcnow
+from backend.services.resume_structure import MAX_SOFT_SKILLS
 
 
 THRESHOLD = 70
@@ -85,7 +86,7 @@ def validate_survey(value: Any) -> dict[str, Any]:
         "id": 100, "date": 40, "industry": 100, "professionalRole": 100, "experience": 100,
     }.items()}
     stack = _validated_string_list(value.get("stack"), 100)
-    soft_skills = _validated_string_list(value.get("softSkills"), 10, minimum=0)
+    soft_skills = _validated_string_list(value.get("softSkills"), MAX_SOFT_SKILLS, minimum=0)
     if not all(required.values()) or required["industry"] not in INDUSTRIES or stack is None or soft_skills is None:
         raise ApiError(400, "Сначала заполните анкету.")
     try:

@@ -12,11 +12,12 @@ from sqlalchemy.orm import Session
 from backend.models import Account, AssessmentAttempt, ConsentEvent, PlatformState
 from backend.services import assessment, directory
 from backend.services.common import ApiError, clone_json, company_id, json_size, public_id, utcnow
+from backend.services.resume_structure import resume_sections, validate_resume_fields, validate_resume_metadata, validate_soft_skills
 
 
 OWN_CANDIDATE_ID = "candidate-anna"
 OWN_COMPANY_ID = "company-line"
-STATE_KEYS = {"version", "profile", "company", "invitations", "history", "surveys", "savedSearches"}
+STATE_KEYS = {"version", "profile", "company", "invitations", "history", "surveys", "savedSearches", "hiringNeeds", "candidateDecisions"}
 INVITATION_STATUSES = {"sent", "viewed", "accepted", "rejected"}
 
 
@@ -36,6 +37,11 @@ def _validate_state(value: Any) -> dict[str, Any]:
     for key, maximum in (("invitations", 500), ("history", 500), ("surveys", 100), ("savedSearches", 100)):
         if not isinstance(value.get(key), list) or len(value[key]) > maximum:
             raise ApiError(400, "Некорректный список данных.")
+    for key in ("hiringNeeds", "candidateDecisions"):
+        if key in value and not isinstance(value[key], list):
+            raise ApiError(400, "Некорректный список данных.")
+        if value.get(key):
+            raise ApiError(400, "Потребности в специалистах и оценки кандидатов пока доступны только в основном Node API.")
     return clone_json(value)
 
 
@@ -44,7 +50,7 @@ def _has_private_profile(profile: dict[str, Any]) -> bool:
         "name", "email", "phone", "city", "bio", "careerAchievements", "education", "workHistory", "portfolio",
         "languages", "industry", "professionalRole", "experience", "employmentType", "availableFrom",
     )
-    return any(bool(profile.get(key)) for key in fields) or bool(profile.get("stack") or profile.get("languageCodes") or profile.get("confirmed") or profile.get("surveyCompletedAt")) or profile.get("salaryFrom") is not None or profile.get("salaryTo") is not None or profile.get("experienceMonths") is not None
+    return any(bool(profile.get(key)) for key in fields) or bool(profile.get("stack") or profile.get("softSkills") or profile.get("workExperiences") or profile.get("petProjects") or profile.get("achievementItems") or profile.get("interests") or profile.get("languageCodes") or profile.get("confirmed") or profile.get("surveyCompletedAt")) or profile.get("salaryFrom") is not None or profile.get("salaryTo") is not None or profile.get("experienceMonths") is not None
 
 
 def _valid_saved_searches(items: list[Any]) -> list[dict[str, Any]]:
@@ -73,7 +79,8 @@ def _valid_surveys(items: list[Any]) -> list[dict[str, Any]]:
         # Preserve the optional profile fields the UI places on the survey, but
         # only after the core assessment input was checked above.
         optional = ("careerAchievements", "education", "workHistory", "portfolio", "languages", "format")
-        result.append({**checked, **{key: item[key] for key in optional if isinstance(item, dict) and key in item and isinstance(item[key], str)}})
+        result.append({**checked, **{key: item[key] for key in optional if isinstance(item, dict) and key in item and isinstance(item[key], str)},
+                       **validate_resume_metadata(item)})
         ids.add(checked["id"])
     return result
 
@@ -146,6 +153,7 @@ def _state_for_read(session: Session, owner: str, row: PlatformState) -> dict[st
     state["invitations"] = own + _incoming(session, owner)
     state.setdefault("version", 2)
     state.setdefault("profile", {})
+    state["profile"].update(resume_sections(state["profile"]))
     state.setdefault("company", {})
     return state
 
@@ -311,6 +319,8 @@ def save(session: Session, owner: str, value: Any, base_revision: Any, role: str
     if (row.revision if row else 0) != base_revision:
         raise ApiError(409, "Данные изменились в другой вкладке. Обновите страницу.")
     profile = clone_json(state["profile"])
+    profile.update(validate_resume_fields(profile))
+    profile["softSkills"] = validate_soft_skills(profile.get("softSkills", []))
     company = clone_json(state["company"])
     profile["id"] = OWN_CANDIDATE_ID
     company["id"] = OWN_COMPANY_ID
@@ -390,7 +400,8 @@ def contacts(session: Session, owner: str, candidate_id: str) -> dict[str, str]:
         )
         if not profile.get("consent") or not accepted:
             raise ApiError(403, "Контакты доступны после принятия приглашения и при действующем согласии.")
-    return {"email": str(profile.get("email", "")), "phone": str(profile.get("phone", ""))}
+    return {"email": str(profile.get("email", "")), "phone": str(profile.get("phone", "")),
+            **({"portfolio": str(profile["portfolio"])} if profile.get("portfolio") else {})}
 
 
 def erase_owner_data(session: Session, owner: str, *, include_consent_events: bool = False) -> None:
