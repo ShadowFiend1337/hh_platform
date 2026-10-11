@@ -354,7 +354,7 @@ nDCG@10 по типам потребностей, до → после: роль 
 
 ### Повторение
 
-Веса опубликованы в GitHub Release `search-model-task-v2`: дообученный энкодер с калибровками и cross-encoder mMARCO (Apache-2.0). `npm run fetch:search-model` скачивает их, сверяет SHA-256 каждого файла весов и токенизатора с `metadata.json` и активирует модель; Python-зависимости ставит `npm run setup:search`. Пока репозиторий закрыт, файлы релиза доступны только участникам с доступом к нему.
+Веса опубликованы в GitHub Release `search-model-task-v2`: дообученный энкодер с калибровками и cross-encoder mMARCO (Apache-2.0). `npm run fetch:search-model` скачивает их, сверяет SHA-256 каждого файла весов и токенизатора с `metadata.json` и активирует модель; Python-зависимости ставит `npm run setup:search`.
 
 ```bash
 npm run fetch:search-model
