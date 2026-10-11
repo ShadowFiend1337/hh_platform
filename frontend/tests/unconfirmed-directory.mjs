@@ -104,6 +104,8 @@ try {
   assert.match(await dialog.innerText(), /(?:Желаемый|Предполагаемый)\s*(?:грейд)?\s*[·:]?\s*Senior/i);
   assert.equal(await dialog.locator('a[href^="mailto:"],a[href^="tel:"]').count(), 0);
   await dialog.getByRole('button', { name: 'Закрыть', exact: true }).click();
+  await change(page, () => page.getByLabel('Только анкеты без подтверждённого теста').uncheck(),
+    url => JSON.parse(url.searchParams.get('filters')).unconfirmed !== true);
   const grade = page.getByRole('group', { name: 'Грейд', exact: true });
   const filtered = await change(page, () => grade.getByRole('button', { name: 'Junior', exact: true }).click(),
     url => JSON.parse(url.searchParams.get('filters')).grade === 'Junior');
@@ -114,10 +116,12 @@ try {
   await page.getByRole('textbox', { name: 'Потребность работодателя' }).fill('Создавать пользовательские формы');
   const semantic = await change(page, () => page.getByRole('button', { name: 'Подобрать', exact: true }).click(),
     url => url.searchParams.get('q') === 'Создавать пользовательские формы');
-  assert.equal(semantic.total, 2); assert.equal(semantic.items[0].person.name, confirmed.account.name);
-  assert.equal(semantic.items[1].person.name, candidate.account.name);
-  assert(semantic.items[1].semanticScore > semantic.items[0].semanticScore);
+  assert.equal(semantic.total, 1, 'A closer unconfirmed questionnaire stays out of the main selection');
+  assert.equal(semantic.items[0].person.name, confirmed.account.name);
   assert.equal(semantic.categories[0].count, 1);
+  const separate = await change(page, () => page.getByLabel('Только анкеты без подтверждённого теста').check(),
+    url => JSON.parse(url.searchParams.get('filters')).unconfirmed === true);
+  assert.equal(separate.total, 1); assert.equal(separate.items[0].person.name, candidate.account.name);
   await mkdir(artifacts, { recursive: true });
   await page.screenshot({ path: artifacts + 'employer-unconfirmed.png', fullPage: true });
   const candidatePage = await candidate.context.newPage(); candidatePage.on('pageerror', error => errors.push(error.message));
