@@ -50,7 +50,14 @@ async function setup(t, llm) {
     assert.equal(verified.status, 201);
     return Object.assign(request, { account: verified.data.account });
   };
-  return { service, login, register };
+  const moderatorAccount = async () => {
+    const name = 'staff.' + randomUUID().slice(0, 8);
+    await service.auth.createModerator({ login: name, email: name + '@example.test', password: 'OpenFixture2026!', actor: 'test' });
+    const request = client();
+    assert.equal((await request('/api/auth/login', 'POST', { loginOrEmail: name, password: 'OpenFixture2026!' })).status, 200);
+    return request;
+  };
+  return { service, login, register, moderatorAccount };
 }
 
 /** Answers the sequential attempt through the API: closed items by `correct`, open tasks with text. */
@@ -80,8 +87,14 @@ test('open tasks follow a passed closed part, wait for a moderator and confirm t
     const json = { tasks: tasks.map(task => ({ questionId: task.questionId, comment: 'Подсказка.', criteria: task.criteria.map(item => ({ id: item.id, score: 2, reason: 'Есть в ответе.' })) })) };
     return { content: JSON.stringify(json), model: 'qwen/mock', json };
   } };
-  const { service, login, register } = await setup(t, llm);
+  const { service, login, register, moderatorAccount } = await setup(t, llm);
   const moderator = await login('local_moderator'), employer = await login('local_employer');
+  // The moderator account has no hiring or candidate cabinet of its own.
+  assert.equal((await moderator('/api/auth/me')).data.account.role, 'moderator');
+  for (const path of ['/api/platform/state', '/api/directory/search?q=react', '/api/companies', '/api/tasks', '/api/vacancies?own=1']) {
+    assert.equal((await moderator(path)).status, 403, path);
+  }
+  assert.equal((await moderator('/api/assessment/attempts', 'POST', { survey: survey('Junior') })).status, 403);
 
   // The seeded fixture attempt is on review; only moderators open the queue.
   assert.equal((await employer('/api/moderation/assessments')).status, 403);
@@ -141,8 +154,10 @@ test('open tasks follow a passed closed part, wait for a moderator and confirm t
 
   // Realms are separate: the test moderator does not see a real candidate, a real moderator does.
   assert.ok(!(await moderator('/api/moderation/assessments')).data.items.some(item => item.id === attempt.id));
-  const staff = await register('employer');
-  service.auth.store.setModerator(staff.account.id, true, 'test');
+  const hiring = await register('employer');
+  assert.throws(() => service.auth.store.setModerator(hiring.account.id, true, 'test'), error => error.status === 409, 'An employer never moderates');
+  assert.equal((await hiring('/api/moderation/assessments')).status, 403);
+  const staff = await moderatorAccount();
   const realQueue = await staff('/api/moderation/assessments');
   assert.deepEqual(realQueue.data.items.map(item => item.id), [attempt.id]);
   const realDetail = (await staff('/api/moderation/assessments/' + attempt.id)).data;

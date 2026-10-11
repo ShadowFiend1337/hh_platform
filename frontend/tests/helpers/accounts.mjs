@@ -13,6 +13,15 @@ export async function register(context, { base, codes }, role, login, extra = {}
   return (await verified.json()).account;
 }
 
+/** Creates a separate moderator account (as `npm run moderator -- create` does) and signs it in inside the context. */
+export async function moderator(context, { base, service }, login) {
+  const password = 'IsolatedFixture927!';
+  const account = await service.auth.createModerator({ login, email: `${login}@example.invalid`, password, actor: 'browser-fixture' });
+  const signedIn = await context.request.post(base + '/api/auth/login', { data: { loginOrEmail: login, password } });
+  assert.equal(signedIn.status(), 200, await signedIn.text());
+  return account;
+}
+
 /** A fixed encoder: every profile passes semantic admission, so UI tests do not depend on model weights. */
 export function useFixedEncoder(service) {
   service.directory.encoder.close();

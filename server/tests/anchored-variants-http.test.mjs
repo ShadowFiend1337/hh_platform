@@ -35,9 +35,10 @@ test('author API keeps keys private, denies spoofed privileges and spends one ca
   }
   const guest = client(), ordinary = client(), moderator = client(), path = '/api/review-bank/variants';
   assert.equal((await guest(path)).status, 401);
-  await register(ordinary, 'variant.ordinary'); const expert = await register(moderator, 'variant.expert');
+  await register(ordinary, 'variant.ordinary');
   assert.equal((await ordinary(path + '/generate', 'POST', { anchorId: fixtureAnchorId, canModerate: true })).status, 403);
-  service.auth.store.setModerator(expert.id, true, 'fixture');
+  const expert = await service.auth.createModerator({ login: 'variant.expert', email: 'variant.expert@example.invalid', password: 'Authoring fixture password 2026', actor: 'fixture' });
+  assert.equal((await moderator('/api/auth/login', 'POST', { loginOrEmail: 'variant.expert', password: 'Authoring fixture password 2026' })).status, 200);
   assert.equal((await moderator(path)).data.generator.llmCallsPerVariant, 1);
   for (const input of [{ anchorId: 'bad' }, { anchorId: fixtureAnchorId, grade: 'Lead' }, { anchorId: fixtureAnchorId, mode: 'novel' }]) {
     assert.equal((await moderator(path + '/generate', 'POST', input)).status, 400);

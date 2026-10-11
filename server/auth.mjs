@@ -135,6 +135,21 @@ function accountPayload(row, canModerate = false) {
 
 function timestamp(now) { return new Date(now()).toISOString(); }
 
+// A moderator is a separate staff account: it is created by the server operator, never by signup.
+const accountsTable = name => `CREATE TABLE IF NOT EXISTS ${name} (
+        id TEXT PRIMARY KEY,
+        email TEXT NOT NULL UNIQUE,
+        login TEXT NOT NULL,
+        login_normalized TEXT NOT NULL UNIQUE,
+        role TEXT NOT NULL CHECK(role IN ('candidate','employer','moderator')),
+        name TEXT NOT NULL,
+        company_name TEXT NOT NULL,
+        password_hash TEXT NOT NULL,
+        platform_owner TEXT NOT NULL UNIQUE,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      ) STRICT;`;
+
 export class AuthStore {
   constructor(path, { database } = {}) {
     this.ownsDatabase = !database;
@@ -143,19 +158,7 @@ export class AuthStore {
     this.db.exec(`
       PRAGMA journal_mode = WAL;
       PRAGMA foreign_keys = ON;
-      CREATE TABLE IF NOT EXISTS auth_accounts (
-        id TEXT PRIMARY KEY,
-        email TEXT NOT NULL UNIQUE,
-        login TEXT NOT NULL,
-        login_normalized TEXT NOT NULL UNIQUE,
-        role TEXT NOT NULL CHECK(role IN ('candidate','employer')),
-        name TEXT NOT NULL,
-        company_name TEXT NOT NULL,
-        password_hash TEXT NOT NULL,
-        platform_owner TEXT NOT NULL UNIQUE,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      ) STRICT;
+      ${accountsTable('auth_accounts')}
       CREATE TABLE IF NOT EXISTS auth_moderator_grants (
         account_id TEXT PRIMARY KEY REFERENCES auth_accounts(id) ON DELETE CASCADE,
         granted_at TEXT NOT NULL, granted_by TEXT NOT NULL
@@ -205,6 +208,33 @@ export class AuthStore {
     for (const column of ['privacy_version', 'consent_at']) {
       if (!pendingColumns.has(column)) this.db.exec(`ALTER TABLE auth_pending_registrations ADD COLUMN ${column} TEXT`);
     }
+    const accountsSql = this.db.prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='auth_accounts'`).get().sql;
+    if (!accountsSql.includes(`'moderator'`)) this.migrateModeratorRole();
+  }
+
+  /**
+   * Earlier databases allowed only two roles and granted moderation to an employer or a
+   * candidate account. The role check is widened by rebuilding the table, and those
+   * grants end: moderation now belongs to separate moderator accounts.
+   */
+  migrateModeratorRole() {
+    this.db.exec('PRAGMA foreign_keys = OFF');
+    try {
+      this.transaction(() => {
+        this.db.exec(`${accountsTable('auth_accounts_next')}
+          INSERT INTO auth_accounts_next SELECT id,email,login,login_normalized,role,name,company_name,password_hash,platform_owner,created_at,updated_at FROM auth_accounts;
+          DROP TABLE auth_accounts;
+          ALTER TABLE auth_accounts_next RENAME TO auth_accounts;`);
+        if (this.db.prepare('PRAGMA foreign_key_check').all().length) throw new Error('auth_accounts migration broke a foreign key.');
+        const nowText = new Date().toISOString();
+        const ended = this.db.prepare(`SELECT account_id FROM auth_moderator_grants`).all();
+        for (const { account_id: accountId } of ended) {
+          this.db.prepare('INSERT INTO auth_moderator_audit(account_id,action,actor,created_at) VALUES(?,?,?,?)').run(accountId, 'revoke', 'moderator-role-migration', nowText);
+        }
+        this.db.exec('DELETE FROM auth_moderator_grants');
+        if (ended.length) console.warn(`Moderation rights of ${ended.length} employer/candidate account(s) ended: create moderator accounts with npm run moderator -- create.`);
+      });
+    } finally { this.db.exec('PRAGMA foreign_keys = ON'); }
   }
 
   transaction(fn) {
@@ -308,6 +338,20 @@ export class AuthStore {
     });
   }
 
+  /** A moderator account with an active grant; it has no hiring or candidate cabinet. */
+  createModerator({ email, login, loginNormalized, name, passwordHash, platformOwner, actor, nowText }) {
+    return this.transaction(() => {
+      if (this.db.prepare('SELECT 1 FROM auth_accounts WHERE email=? OR login_normalized=?').get(email, loginNormalized)
+        || this.db.prepare('SELECT 1 FROM auth_pending_registrations WHERE email=? OR login_normalized=?').get(email, loginNormalized)) return { state: 'account_exists' };
+      const id = randomBytes(16).toString('hex');
+      this.db.prepare(`INSERT INTO auth_accounts (id,email,login,login_normalized,role,name,company_name,password_hash,platform_owner,created_at,updated_at)
+        VALUES (?,?,?,?,'moderator',?,'',?,?,?,?)`).run(id, email, login, loginNormalized, name, passwordHash, platformOwner, nowText, nowText);
+      this.db.prepare('INSERT INTO auth_moderator_grants VALUES(?,?,?)').run(id, nowText, actor);
+      this.db.prepare('INSERT INTO auth_moderator_audit(account_id,action,actor,created_at) VALUES(?,?,?,?)').run(id, 'create', actor, nowText);
+      return { state: 'created', account: this.db.prepare('SELECT * FROM auth_accounts WHERE id=?').get(id) };
+    });
+  }
+
   loginTaken(loginNormalized) {
     return Boolean(this.db.prepare('SELECT 1 FROM auth_accounts WHERE login_normalized=? UNION SELECT 1 FROM auth_pending_registrations WHERE login_normalized=?').get(loginNormalized, loginNormalized));
   }
@@ -324,9 +368,15 @@ export class AuthStore {
       .run(tokenHash, accountId, createdAt, expiresAt);
   }
 
-  canModerate(accountId) { return Boolean(this.db.prepare('SELECT 1 FROM auth_moderator_grants WHERE account_id=?').get(accountId)); }
+  canModerate(accountId) {
+    return Boolean(this.db.prepare(`SELECT 1 FROM auth_moderator_grants g JOIN auth_accounts a ON a.id=g.account_id
+      WHERE g.account_id=? AND a.role='moderator'`).get(accountId));
+  }
+  /** Suspends or restores a moderator account; employers and candidates never moderate. */
   setModerator(accountId, enabled, actor = 'local-operator', nowText = new Date().toISOString()) {
-    if (!this.db.prepare('SELECT 1 FROM auth_accounts WHERE id=?').get(accountId)) throw new AuthError(404, 'Аккаунт не найден.');
+    const account = this.db.prepare('SELECT role FROM auth_accounts WHERE id=?').get(accountId);
+    if (!account) throw new AuthError(404, 'Аккаунт не найден.');
+    if (enabled && account.role !== 'moderator') throw new AuthError(409, 'Право модератора есть только у отдельного аккаунта модератора.');
     this.transaction(() => {
       if (enabled) this.db.prepare('INSERT INTO auth_moderator_grants VALUES(?,?,?) ON CONFLICT(account_id) DO NOTHING').run(accountId,nowText,actor);
       else this.db.prepare('DELETE FROM auth_moderator_grants WHERE account_id=?').run(accountId);
@@ -657,6 +707,16 @@ export class AuthService {
       passwordHash: await hashPassword(randomBytes(32).toString('hex')), platformOwner: randomBytes(32).toString('hex'), nowText: timestamp(this.now) });
     if (result.state === 'linked') throw new AuthError(409, 'Эта учётная запись ФСП ID уже привязана. Войдите через ФСП ID.');
     if (result.state === 'account_exists') throw new AuthError(409, 'Этот e-mail или логин уже занят.');
+    return result.account;
+  }
+
+  /** Created by the server operator (npm run moderator -- create) or the local fixture setup. */
+  async createModerator({ login, email, name = 'Модератор', password: secret, actor = 'local-operator' }) {
+    const parsedLogin = normalizeLogin(login);
+    const result = this.store.createModerator({ email: normalizeEmail(email), login: parsedLogin.login, loginNormalized: parsedLogin.normalized,
+      name: asText(name, 'имя', 100), passwordHash: await hashPassword(password(secret)), platformOwner: randomBytes(32).toString('hex'),
+      actor, nowText: timestamp(this.now) });
+    if (result.state === 'account_exists') throw new AuthError(409, 'Этот e-mail или логин уже зарегистрирован.');
     return result.account;
   }
 

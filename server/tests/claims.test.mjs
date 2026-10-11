@@ -120,16 +120,24 @@ async function httpFixture(t) {
     if(role==='candidate'){const state=createInitialState();state.profile.name='Ромашов Фёдор Викторович';state.profile.consent=true;const old=await client('/api/platform/state');assert.equal((await client('/api/platform/state','PUT',{state,baseRevision:old.data.revision})).status,200);}
     return registered.data.account;
   }
-  return {...app,base,browser,register};
+  async function moderator(client,login){
+    const account=await app.auth.createModerator({login,email:login+'@example.invalid',password:'integration test password',actor:'fixture'});
+    assert.equal((await client('/api/auth/login','POST',{loginOrEmail:login,password:'integration test password'})).status,200);return account;
+  }
+  return {...app,base,browser,register,moderator};
 }
 test('HTTP moderation privileges are server-granted, revoked immediately, and private files stay owner/moderator only',async t=>{
-  const {browser,register,auth}=await httpFixture(t);
-  const guest=browser(),candidate=browser(),other=browser(),reviewer=browser();
-  const account=await register(candidate,'claim-candidate'),mod=await register(reviewer,'claim-moderator','employer');await register(other,'claim-other');
+  const {browser,register,moderator,auth}=await httpFixture(t);
+  const guest=browser(),candidate=browser(),other=browser(),employer=browser(),reviewer=browser();
+  const account=await register(candidate,'claim-candidate'),hiring=await register(employer,'claim-employer','employer');await register(other,'claim-other');
   assert.equal(account.canModerate,false);
   assert.equal((await guest('/api/achievement-claims')).status,401);
-  assert.equal((await reviewer('/api/moderation/claims')).status,403);
-  auth.store.setModerator(mod.id,true,'fixture');assert.equal((await reviewer('/api/auth/me')).data.account.canModerate,true);
+  // An employer never moderates, even when the operator tries to grant it.
+  assert.equal((await employer('/api/moderation/claims')).status,403);
+  assert.throws(()=>auth.store.setModerator(hiring.id,true,'fixture'),status(409));
+  const mod=await moderator(reviewer,'claim-moderator');
+  assert.equal((await reviewer('/api/auth/me')).data.account.role,'moderator');assert.equal((await reviewer('/api/auth/me')).data.account.canModerate,true);
+  assert.equal((await reviewer('/api/achievement-claims')).status,403);
   const bytes=Buffer.from('%PDF-1.4\nprivate-fixture\n%%EOF'),doc={name:'certificate.pdf',mediaType:'application/pdf',dataBase64:bytes.toString('base64')};
   const created=await candidate('/api/achievement-claims','POST',{...support,document:doc});assert.equal(created.status,201);
   const id=created.data.id;

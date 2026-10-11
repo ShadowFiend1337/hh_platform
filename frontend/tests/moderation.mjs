@@ -19,8 +19,11 @@ try {
     assert.equal((await api.post(base+'/api/auth/register/request-code',{data:{email,login,role,password:'browser fixture password',consent:true,privacyVersion:PRIVACY_POLICY_VERSION,...(role==='candidate'?{name:'Ромашов Фёдор Викторович'}:{companyName:'Модерация'})}})).status(),202);
     const verified=await api.post(base+'/api/auth/register/verify',{data:{email,code:codes.get(email)}});assert.equal(verified.status(),201);return (await verified.json()).account;
   }
-  const account=await register(candidate,'moderation-candidate','candidate'),reviewer=await register(moderator,'moderation-reviewer','employer');
-  app.auth.store.setModerator(reviewer.id,true,'browser-fixture');
+  const hiring=await browser.newContext({viewport:{width:1440,height:1100}});
+  const account=await register(candidate,'moderation-candidate','candidate');await register(hiring,'moderation-employer','employer');
+  // The moderator is a separate account, not an employer with an extra right.
+  await app.auth.createModerator({login:'moderation-reviewer',email:'moderation-reviewer@example.invalid',password:'browser fixture password',actor:'browser-fixture'});
+  assert.equal((await moderator.request.post(base+'/api/auth/login',{data:{loginOrEmail:'moderation-reviewer',password:'browser fixture password'}})).status(),200);
   const state=createInitialState(),survey={id:'claim-browser-survey',date:new Date().toISOString(),industry:'ИТ',professionalRole:'Frontend разработчик',specialization:'Frontend',desiredGrade:'Junior',experience:'1 год',stack:['React'],softSkills:[]};
   Object.assign(state.profile,survey,{id:'candidate-anna',name:'Ромашов Фёдор Викторович',email:account.email,consent:true,visible:true,surveyCompletedAt:survey.date});state.surveys=[survey];
   async function save(){const snapshot=await candidate.request.get(base+'/api/platform/state'),payload=await snapshot.json();const saved=await candidate.request.put(base+'/api/platform/state',{headers:{'X-Platform-Identity':snapshot.headers()['x-platform-identity']},data:{state,baseRevision:payload.revision}});assert.equal(saved.status(),200,await saved.text());}
@@ -42,7 +45,7 @@ try {
   const claim=(await (await candidate.request.get(base+'/api/achievement-claims')).json()).claims[0];
   const owner=app.integrations.claims.get(claim.id).owner;assert.equal(app.directory.store.forOwner(owner).fsp,0);
   assert.deepEqual((await (await candidate.request.get(base+'/api/profile/evidence')).json()).items,[]);
-  await reviewPage.goto(base+'/moderation');await reviewPage.getByRole('button',{name:'Рассмотреть заявку'}).click();
+  await reviewPage.goto(base+'/moderation#claims');await reviewPage.getByRole('button',{name:'Рассмотреть заявку'}).click();
   const detail=reviewPage.locator('.moderation-detail');await detail.getByText('Материалы кандидата',{exact:true}).waitFor();
   await detail.getByRole('combobox',{name:/^Решение/u}).selectOption('request_information');await detail.getByLabel('Обоснование решения для кандидата').fill('Пожалуйста, дополните описание роли в соревновании.');await detail.getByRole('button',{name:'Сохранить решение'}).click();
   await reviewPage.getByText('Всего заявок: 0',{exact:true}).waitFor();
@@ -55,7 +58,7 @@ try {
   await detail.getByRole('checkbox',{name:/Проверил материалы/u}).check();await reviewPage.screenshot({path:'/tmp/hh-moderation-review.png',fullPage:true});
   await detail.getByRole('button',{name:'Сохранить решение'}).click();await reviewPage.getByText('Всего заявок: 0',{exact:true}).waitFor();
   await page.reload();await claims.getByText('Одобрено',{exact:true}).waitFor();await page.getByText(/^Подтверждено модератором ·/u).waitFor();assert.equal(app.directory.store.forOwner(owner).fsp,1);
-  const publicId=app.directory.store.forOwner(owner).id,response=await moderator.request.get(base+'/api/directory/'+publicId+'/evidence');assert.equal(response.status(),200);
+  const publicId=app.directory.store.forOwner(owner).id,response=await hiring.request.get(base+'/api/directory/'+publicId+'/evidence');assert.equal(response.status(),200);
   const publicItems=(await response.json()).items;assert.equal(publicItems[0].verificationMethod,'manual_review');assert(!JSON.stringify(publicItems).includes('Подтверждающий документ'));assert(!JSON.stringify(publicItems).includes('certificate.png'));
   assert.equal((await (await candidate.request.get(base+'/api/platform/state')).json()).state.profile.confirmed.grade,'Junior');
   await page.screenshot({path:'/tmp/hh-achievement-approved.png',fullPage:true});

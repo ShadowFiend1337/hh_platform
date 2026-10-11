@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { ArrowLeft, ArrowRight, BriefcaseBusiness, Check, ClipboardCheck, FlaskConical, KeyRound, LockKeyhole, Mail, Medal, UserRound } from 'lucide-react';
 import { Brand } from '../components/Brand';
-import type { Role } from '../model';
+import type { AccountRole, Role } from '../model';
 import { PRIVACY_POLICY_VERSION } from '../../../shared/privacy';
 
 export type AuthMode = 'login' | 'register';
@@ -11,12 +11,12 @@ type Account = {
   id: string;
   email: string;
   login: string;
-  role: Role;
+  role: AccountRole;
   name?: string;
   companyName?: string;
 };
 
-type AuthResponse = { account?: Account; role?: Role; message?: string; delivery?: 'development' | 'email' };
+type AuthResponse = { account?: Account; role?: AccountRole; message?: string; delivery?: 'development' | 'email' };
 
 class AuthRequestError extends Error {
   constructor(message: string, readonly status: number) {
@@ -34,15 +34,14 @@ async function authRequest(path: string, body: Record<string, unknown>): Promise
   return payload;
 }
 
-type DemoAccount = { role: Role; login: string; password: string; moderator?: boolean };
+type DemoAccount = { role: AccountRole; login: string; password: string };
 type FspTicket = { name: string; email: string; fspId: string | null; city: string; achievements: { title: string; result: string; year: string }[]; suggestedLogin: string };
 
-const demoCopy: Record<Role, { title: string; about: string }> = {
+const demoCopy: Record<AccountRole, { title: string; about: string }> = {
   employer: { title: 'Работодатель', about: 'Каталог кандидатов, потребности команды, процент совпадения, приглашения и вакансии' },
   candidate: { title: 'Кандидат', about: 'Подтверждённый грейд, достижения ФСП, предложения работодателя и каталог компаний' },
+  moderator: { title: 'Модератор', about: 'Отдельный кабинет: проверка тестов и открытых задач по рубрикам, ключи, происхождение вопросов и банк заданий' },
 };
-const moderatorCopy = { title: 'Модератор', about: 'Итоги тестов: ответы, ключи и рубрики, проверка открытых задач, происхождение вопросов и банк заданий' };
-const copyFor = (account: DemoAccount) => account.moderator ? moderatorCopy : demoCopy[account.role];
 const fspMessages: Record<string, string> = {
   exists: 'Аккаунт с почтой из ФСП ID уже есть. Войдите логином и паролем.',
   failed: 'Не удалось завершить вход через ФСП ID. Попробуйте ещё раз.',
@@ -69,7 +68,7 @@ export function Auth({
   onBack: () => void;
   onSwitchMode: (mode: AuthMode) => void;
   onRoleChange: (role: Role) => void;
-  onAuthenticated: (role: Role) => void;
+  onAuthenticated: (role: AccountRole) => void;
 }) {
   const [role, setRole] = useState<Role>(initialRole);
   const [name, setName] = useState('');
@@ -112,8 +111,6 @@ export function Auth({
     setError(''); setNotice(''); setBusy(true);
     try {
       const response = await authRequest('/api/auth/login', { loginOrEmail: account.login, password: account.password });
-      // The moderator opens the review workspace instead of a cabinet.
-      if (account.moderator && response.account?.canModerate) { window.location.assign('/moderation#tests'); return; }
       onAuthenticated(response.account?.role || account.role);
     } catch (cause) { setError(authErrorMessage(cause)); } finally { setBusy(false); }
   }
@@ -202,7 +199,7 @@ export function Auth({
     try {
       const response = await authRequest('/api/auth/login', { loginOrEmail: loginOrEmail.trim(), password });
       const accountRole = response.account?.role || response.role;
-      if (!accountRole || !['candidate', 'employer'].includes(accountRole)) throw new AuthRequestError('Не удалось определить тип аккаунта. Попробуйте войти ещё раз.', 500);
+      if (!accountRole || !['candidate', 'employer', 'moderator'].includes(accountRole)) throw new AuthRequestError('Не удалось определить тип аккаунта. Попробуйте войти ещё раз.', 500);
       onAuthenticated(accountRole);
     } catch (cause) {
       setError(authErrorMessage(cause));
@@ -275,8 +272,8 @@ export function Auth({
         {demo.accounts.length > 0 && !fspTicket && <section className="demo-accounts" aria-label="Тестовые аккаунты">
           <h2><FlaskConical size={16} />Тестовые аккаунты для проверки</h2>
           {demo.accounts.map(account => <div className="demo-account" key={account.login}>
-            <span className="demo-account-icon" aria-hidden="true">{account.moderator ? <ClipboardCheck size={18} /> : account.role === 'employer' ? <BriefcaseBusiness size={18} /> : <UserRound size={18} />}</span>
-            <div className="demo-account-body"><strong>{copyFor(account).title}</strong><span>{copyFor(account).about}</span>
+            <span className="demo-account-icon" aria-hidden="true">{account.role === 'moderator' ? <ClipboardCheck size={18} /> : account.role === 'employer' ? <BriefcaseBusiness size={18} /> : <UserRound size={18} />}</span>
+            <div className="demo-account-body"><strong>{demoCopy[account.role].title}</strong><span>{demoCopy[account.role].about}</span>
               <code>{account.login} · {account.password}</code></div>
             <button className="button secondary compact" type="button" disabled={busy} onClick={() => void demoLogin(account)}>Войти</button>
           </div>)}

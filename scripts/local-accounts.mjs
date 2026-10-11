@@ -21,7 +21,7 @@ export const localAccountPassword = localFixturePassword;
 export const localAccountFixtures = [
   { role: 'candidate', login: 'local_candidate', email: 'candidate@local.example.test', name: 'Тестовый кандидат' },
   { role: 'employer', login: 'local_employer', email: 'employer@local.example.test', companyName: 'Тестовая компания' },
-  { role: 'employer', login: 'local_moderator', email: 'moderator@local.example.test', companyName: 'Экспертная проверка', moderator: true },
+  { role: 'moderator', login: 'local_moderator', email: 'moderator@local.example.test', name: 'Тестовый модератор' },
 ];
 
 // Two practical answers of the test candidate waiting for the moderator: a complete one and a partial one.
@@ -142,14 +142,21 @@ export async function prepareLocalAccounts(dbPath = resolve(root, 'server/data/a
     const accounts = [];
     for (const fixture of localAccountFixtures) {
       let account = auth.store.accountByIdentifier(fixture.login);
-      if (!account) {
-        const { moderator, ...registration } = fixture;
-        await auth.requestRegistration({ ...registration, password: localAccountPassword, consent: true, privacyVersion: PRIVACY_POLICY_VERSION }, randomBytes(32).toString('hex'));
+      // Earlier setups made the test moderator an employer; it is replaced by a separate moderator account.
+      if (account && fixture.role === 'moderator' && account.role === 'employer' && account.email === fixture.email) {
+        directory.db.prepare('DELETE FROM fsp_demo_connections WHERE owner=?').run(account.platform_owner);
+        platform.delete(account.platform_owner, { deleteAssessmentRecords: true });
+        auth.store.transaction(() => auth.store.eraseAccount(account.platform_owner, auth.store.db, new Date().toISOString()));
+        account = null;
+      }
+      if (!account && fixture.role === 'moderator') {
+        account = await auth.createModerator({ login: fixture.login, email: fixture.email, name: fixture.name, password: localAccountPassword, actor: 'local-fixture' });
+      } else if (!account) {
+        await auth.requestRegistration({ ...fixture, password: localAccountPassword, consent: true, privacyVersion: PRIVACY_POLICY_VERSION }, randomBytes(32).toString('hex'));
         account = auth.verifyRegistration({ email: fixture.email, code: codes.get(fixture.email) });
       }
       await auth.login({ loginOrEmail: fixture.login, password: localAccountPassword });
       if (account.email !== fixture.email || account.role !== fixture.role) throw new Error('Fixture login belongs to another account.');
-      if (fixture.moderator && !auth.store.canModerate(account.id)) auth.store.setModerator(account.id, true, 'local-fixture');
       accounts.push(account);
     }
     const [candidate, employer] = accounts;
@@ -157,7 +164,7 @@ export async function prepareLocalAccounts(dbPath = resolve(root, 'server/data/a
     // revision number must get a conflict instead of overwriting the fresh fixture.
     const previousRevisions = new Map();
     if (reset) {
-      for (const account of accounts) {
+      for (const account of [candidate, employer]) {
         previousRevisions.set(account.platform_owner, directory.db.prepare('SELECT revision FROM platform_accounts WHERE owner=?').get(account.platform_owner)?.revision || 0);
         directory.db.prepare('DELETE FROM fsp_demo_connections WHERE owner=?').run(account.platform_owner);
         platform.delete(account.platform_owner, { deleteAssessmentRecords: true });
@@ -193,7 +200,7 @@ export async function prepareLocalAccounts(dbPath = resolve(root, 'server/data/a
     for (const [owner, revision] of previousRevisions) {
       directory.db.prepare('UPDATE platform_accounts SET revision=revision+? WHERE owner=?').run(revision + 1, owner);
     }
-    return localAccountFixtures.map(({ role, login, moderator }) => ({ role, login, password: localAccountPassword, ...(moderator ? { moderator } : {}) }));
+    return localAccountFixtures.map(({ role, login }) => ({ role, login, password: localAccountPassword }));
   } finally {
     auth?.close(); assessments?.close(); directory?.close();
   }

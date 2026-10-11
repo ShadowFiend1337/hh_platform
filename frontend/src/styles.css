@@ -686,6 +686,8 @@ fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
 .claim-card { border-top: 1px solid var(--line, #e4e7eb); padding: 16px 0; }
 .claim-statement { white-space: pre-wrap; overflow-wrap: anywhere; }
 .claim-panel details { margin: 12px 0; }
+.moderation-lead { max-width: 860px; margin: 8px 0 4px; }
+.moderator-role svg { flex: none; color: var(--accent); }
 .moderation-layout { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(360px, 2fr); gap: 24px; align-items: start; }
 .moderation-detail .field { margin-top: 12px; }
 @media (max-width: 800px) { .moderation-layout { grid-template-columns: 1fr; } }

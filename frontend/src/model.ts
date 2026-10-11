@@ -10,6 +10,8 @@ export { defaultStackOptions, industryOptions, isSpecialization, professionalRol
 export { stackOptions } from '../../shared/catalog.ts';
 export type { Specialization } from '../../shared/catalog.ts';
 export type Role = 'employer' | 'candidate';
+/** A moderator account has its own cabinet and never opens the hiring or candidate workspace. */
+export type AccountRole = Role | 'moderator';
 export type InvitationStatus = 'sent' | 'viewed' | 'accepted' | 'rejected';
 export type Page = 'candidates' | 'invitations' | 'company' | 'profile' | 'assessment' | 'onboarding';
 

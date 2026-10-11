@@ -21,7 +21,7 @@ const nullable = schema => ({ anyOf: [schema, { type: 'null' }] });
 const path = (name, description, schema = string()) => ({ name, in: 'path', required: true, description, schema });
 const query = (name, description, schema = string()) => ({ name, in: 'query', required: false, description, schema });
 
-const roles = { candidate: 'Соискатель', employer: 'Работодатель', moderator: 'Модератор (право выдаётся командой `npm run moderator`)', any: 'Любой вошедший пользователь' };
+const roles = { candidate: 'Соискатель', employer: 'Работодатель', moderator: 'Модератор — отдельный аккаунт, создаётся командой `npm run moderator -- create`; работодатель и соискатель не модерируют', any: 'Любой вошедший пользователь' };
 /** One operation: `role` adds the session requirement and the x-role note; `public` operations need no session. */
 function op({ tag, summary, description, role, body, params = [], ok = 200, response, codes = [], okDescription = 'Успешно', bodyRequired = true }) {
   const signedIn = Boolean(role);
@@ -39,8 +39,8 @@ const redirect = (summary, description, params = []) => ({ tags: ['ФСП ID'], 
 const schemas = {
   Health: object({ status: string('', { const: 'ok' }) }, ['status']),
   Account: object({ id: string('Идентификатор аккаунта'), login: string(), email: string('', { format: 'email' }),
-    role: string('', { enum: ['candidate', 'employer'] }), name: string('Имя соискателя'), companyName: string('Название компании'),
-    canModerate: boolean('Есть право модератора'), testAccount: boolean('Командный тестовый аккаунт (изолирован от реальных)') },
+    role: string('', { enum: ['candidate', 'employer', 'moderator'] }), name: string('Имя соискателя или модератора'), companyName: string('Название компании'),
+    canModerate: boolean('Аккаунт модератора с действующим правом'), testAccount: boolean('Командный тестовый аккаунт (изолирован от реальных)') },
   ['id', 'login', 'email', 'role', 'canModerate']),
   AccountResponse: object({ account: ref('Account') }, ['account']),
   RegisterRequest: object({ role: string('', { enum: ['candidate', 'employer'] }), login: string('3–32 символа: латиница, цифры, точка, дефис, подчёркивание'),
@@ -53,7 +53,7 @@ const schemas = {
   LoginRequest: object({ loginOrEmail: string(), password: string() }, ['loginOrEmail', 'password']),
   SignedOut: object({ status: string('', { const: 'signed_out' }) }, ['status']),
   Deleted: object({ status: string('', { const: 'deleted' }), deletedAt: string('', { format: 'date-time' }) }, ['status', 'deletedAt']),
-  DemoAccounts: object({ accounts: array(object({ role: string('', { enum: ['candidate', 'employer'] }), login: string(), password: string() })),
+  DemoAccounts: object({ accounts: array(object({ role: string('', { enum: ['candidate', 'employer', 'moderator'] }), login: string(), password: string() })),
     fspId: object({ enabled: boolean(), mode: string('', { enum: ['keycloak', 'demo', 'off'] }) }) }, ['accounts', 'fspId']),
   FspTicket: object({ name: string(), email: string(), fspId: nullable(string('Номер участника ФСП')), city: string(),
     achievements: array(object({ title: string(), result: string(), year: integer() })), suggestedLogin: string() }),

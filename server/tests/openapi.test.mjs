@@ -67,10 +67,8 @@ test('each documented operation reaches a real handler, never the generic 404 or
     if (login) assert.equal((await call('/api/auth/login', 'POST', JSON.stringify({ loginOrEmail: login, password: localAccountPassword }))).status, 200);
     return call;
   }
-  const employer = service.auth.store.accountByIdentifier('local_employer');
-  service.auth.store.setModerator(employer.id, true, 'openapi-test');
-  const clients = { guest: await client(), candidate: await client('local_candidate'), employer: await client('local_employer') };
-  clients.moderator = clients.employer; clients.any = clients.candidate;
+  const clients = { guest: await client(), candidate: await client('local_candidate'), employer: await client('local_employer'), moderator: await client('local_moderator') };
+  clients.any = clients.candidate;
   const sample = path => path.replace('{id}', path.includes('/attempts/') || path.includes('/assessments/') ? '00000000-0000-4000-8000-000000000000'
     : path.includes('/item-bank/') ? 'gen-00000000-0000-4000-8000-000000000000'
       : path.includes('/review-bank/') ? 'variant-00000000-0000-4000-8000-000000000000' : 'unknown')

@@ -13,6 +13,7 @@ import { Dialog } from './components/Dialog';
 import { CandidateDetails } from './components/CandidateDetails';
 import { InviteForm } from './components/InviteForm';
 import { Brand } from './components/Brand';
+import { SiteFooter } from './components/SiteFooter';
 import { AssistantWidget } from './components/AssistantWidget';
 import { readinessFor } from './components/ReadinessPanel';
 import { Landing } from './pages/Landing';
@@ -20,7 +21,7 @@ import { Auth, type AuthMode } from './pages/Auth';
 import { readCandidateContacts, syncCacheKey, usePlatformPersistence } from './platform-api';
 import {
   currentSurvey, emptyFilters, ownCandidateId, readState, saveState, storageKey,
-  type Candidate, type Page, type Role,
+  type AccountRole, type Candidate, type Page, type Role,
 } from './model';
 
 const navigation: Record<Role, { page: Page; label: string }[]> = {
@@ -29,7 +30,9 @@ const navigation: Record<Role, { page: Page; label: string }[]> = {
 };
 
 type AppRoute = { role: Role; page: Page; home: boolean; privacy: boolean; auth: AuthMode | null };
-type AuthAccount = { canModerate?: boolean; id: string; login: string; email: string; role: Role; name?: string; companyName?: string; testAccount?: boolean };
+type AccountBase = { canModerate?: boolean; id: string; login: string; email: string; name?: string; companyName?: string; testAccount?: boolean };
+type AuthAccount = AccountBase & { role: Role };
+type SignedInAccount = AuthAccount | AccountBase & { role: 'moderator' };
 const accountCacheKey = 'predel:account:v1';
 const pendingSearchKey = 'predel:pending-search';
 
@@ -53,7 +56,7 @@ function routeFromLocation(): AppRoute {
 }
 
 export function App() {
-  const [identity, setIdentity] = useState<{ ready: boolean; account: AuthAccount | null; error: string }>({ ready: false, account: null, error: '' });
+  const [identity, setIdentity] = useState<{ ready: boolean; account: SignedInAccount | null; error: string }>({ ready: false, account: null, error: '' });
   const [retry, setRetry] = useState(0);
   useEffect(() => {
     let active = true;
@@ -61,9 +64,9 @@ export function App() {
     const timer = window.setTimeout(() => controller.abort(), 15000);
     void fetch('/api/auth/me', { credentials: 'same-origin', cache: 'no-store', signal: controller.signal }).then(async response => {
       if (response.status !== 401 && !response.ok) throw new Error('Не удалось проверить сессию.');
-      const payload = response.status === 401 ? {} : await response.json() as { account?: AuthAccount };
+      const payload = response.status === 401 ? {} : await response.json() as { account?: SignedInAccount };
       const account = payload.account || null;
-      if (account && (!account.id || !['candidate', 'employer'].includes(account.role))) throw new Error('Не удалось проверить сессию.');
+      if (account && (!account.id || !['candidate', 'employer', 'moderator'].includes(account.role))) throw new Error('Не удалось проверить сессию.');
       if (!active) return;
       const scope = account?.id || 'anonymous';
       try {
@@ -93,10 +96,14 @@ export function App() {
   if (!identity.ready) return <main className="main-content"><div className="panel empty-state">
     {identity.error ? <><p role="alert">{identity.error}</p><button className="button secondary" onClick={() => setRetry(value => value + 1)}>Повторить</button></> : <p role="status">Загружаем…</p>}
   </div></main>;
-  if (location.pathname === '/moderation') return identity.account?.canModerate
-    ? <Moderation accountId={identity.account.id} role={identity.account.role} testAccount={Boolean(identity.account.testAccount)} />
-    : <main className="main-content"><div className="panel empty-state"><h1>Модерация</h1><p>Для доступа требуется назначенное право модератора.</p><a href={identity.account ? '/app?role='+identity.account.role : '/auth?mode=login'}>Вернуться в кабинет</a></div></main>;
-  return <Workspace key={identity.account?.id || 'anonymous'} authAccount={identity.account} />;
+  const account = identity.account;
+  // The moderator works only in a separate cabinet; it never opens the hiring or candidate workspace.
+  if (account?.role === 'moderator') return location.pathname === '/privacy'
+    ? <Privacy onHome={() => window.location.assign('/moderation')} /> : <Moderation account={account} />;
+  if (location.pathname === '/moderation') return <main className="main-content"><div className="panel empty-state"><h1>Кабинет модератора</h1>
+    <p>Проверка тестов, банк заданий и достижения — в отдельном кабинете модератора. Войдите под аккаунтом модератора.</p>
+    <a href={account ? '/app?role=' + account.role : '/auth?mode=login'}>{account ? 'Вернуться в кабинет' : 'Войти'}</a></div></main>;
+  return <Workspace key={account?.id || 'anonymous'} authAccount={account} />;
 }
 
 function Workspace({ authAccount: initialAccount }: { authAccount: AuthAccount | null }) {
@@ -279,10 +286,10 @@ function Workspace({ authAccount: initialAccount }: { authAccount: AuthAccount |
     history.replaceState(null, '', '/auth?mode=' + route.auth + '&role=' + role);
     setRoute(previous => ({ ...previous, role, page: navigation[role][0].page }));
   }
-  function completeAuthentication(role: Role) {
-    const page = role === 'candidate' ? 'onboarding' : 'candidates';
+  function completeAuthentication(role: AccountRole) {
     clearLocalPlatformCache();
-    window.location.assign('/app?role=' + role + '&tab=' + page);
+    if (role === 'moderator') { window.location.assign('/moderation'); return; }
+    window.location.assign('/app?role=' + role + '&tab=' + (role === 'candidate' ? 'onboarding' : 'candidates'));
   }
   async function signOut() {
     if (assessmentActiveRef.current) { setToast('Сначала завершите тест.'); return; }
@@ -331,7 +338,7 @@ function Workspace({ authAccount: initialAccount }: { authAccount: AuthAccount |
         <a href={'?role=' + route.role + '&tab=' + item.page} key={item.page} aria-current={page === item.page ? 'page' : undefined}
           aria-disabled={assessmentActive && item.page !== 'assessment' ? true : undefined}
           onClick={event => { event.preventDefault(); navigate(route.role, item.page); }}>{item.label}{item.page === 'invitations' && pending > 0 && <span className="nav-count">{pending}</span>}</a>,
-      )}{authAccount?.canModerate && <a href="/moderation">Модерация</a>}</nav>
+      )}</nav>
       <div className="header-account">{authAccount ? <>
         <span className="app-account-name" title={authAccount.login}>{authAccount.companyName || authAccount.name || authAccount.login}</span>
         {authAccount.testAccount && <span className="role-static">Учебный аккаунт</span>}
@@ -361,10 +368,7 @@ function Workspace({ authAccount: initialAccount }: { authAccount: AuthAccount |
       </>}
       </PageBoundary>
     </main>
-    <footer className="site-footer"><div className="footer-inner"><span className="footer-brand">predel</span><div className="partner-logos">
-      <img className="fsp-logo" src="/brand/fsp.png" alt="Федерация спортивного программирования России" />
-      <img className="partners-logo" src="/brand/partners.png" alt="Проект мэра Москвы, Бизнес Москвы, Развитие человеческого капитала, Лидеры цифровой трансформации" />
-    </div><a className="footer-year" href="/privacy" target="_blank" rel="noopener noreferrer">Конфиденциальность</a><span className="footer-year">2026</span></div></footer>
+    <SiteFooter />
     {authAccount && persistence.ready && !assessmentActive && <AssistantWidget role={authAccount.role} accountId={authAccount.id} page={page}
       context={authAccount.role === 'candidate' ? (() => {
         const readiness = readinessFor(state);

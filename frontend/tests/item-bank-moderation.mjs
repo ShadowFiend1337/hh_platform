@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { programs } from '../../server/bank.mjs';
 import { startIsolatedService } from './helpers/isolated-service.mjs';
+import { moderator } from './helpers/accounts.mjs';
 
 // A disposable database with two generated pilot items; no model is called.
 const isolated = await startIsolatedService();
@@ -28,9 +29,12 @@ try {
   page.on('pageerror', error => errors.push(error.message));
   page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
   await page.goto(base + '/moderation#bank');
-  assert.notEqual(await page.locator('.bank-moderation').count(), 1, 'Without the grant the page is closed');
+  await page.getByRole('heading', { name: 'Кабинет модератора' }).waitFor();
+  assert.equal(await page.locator('.bank-moderation').count(), 0, 'An employer has no moderation');
+  assert.throws(() => service.auth.store.setModerator(service.auth.store.accountByIdentifier('bank-reviewer').id, true, 'browser-fixture'),
+    /отдельного аккаунта модератора/u, 'Moderation is never granted to an employer');
 
-  service.auth.store.setModerator((await verified.json()).account.id, true, 'browser-fixture');
+  await moderator(context, isolated, 'bank-moderator');
   await page.reload();
   await page.getByRole('heading', { name: 'Банк заданий' }).waitFor();
   const items = page.locator('.bank-item');
@@ -50,7 +54,7 @@ try {
   await items.first().waitFor();
   assert.match(await items.first().innerText(), /В зачёте/u);
   assert.equal(await page.getByRole('button', { name: 'Сгенерировать' }).isDisabled(), true, 'No key and no program selected');
-  await page.getByRole('tab', { name: 'Достижения' }).click();
+  await page.getByRole('link', { name: 'Достижения' }).click();
   await page.getByRole('heading', { name: 'Модерация достижений' }).waitFor();
   assert.deepEqual(errors.filter(text => !/403/u.test(text)), []);
   console.log('Item bank moderation: pilot list with keys, approve to scoring, reject, status filter.');

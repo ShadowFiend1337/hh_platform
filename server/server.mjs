@@ -34,6 +34,8 @@ import { callbackPage, readWebhook, integrationRoutes } from './integrations/htt
 const root = fileURLToPath(new URL('../', import.meta.url));
 const cookieName = 'predel_session';
 const authCookieName = 'predel_account_session';
+// Everything a moderator account may call: its own session and the moderation workspace.
+const moderatorApi = ['/api/auth/', '/api/moderation/', '/api/item-bank/', '/api/review-bank/'];
 const mime = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml', '.woff2': 'font/woff2',
@@ -197,7 +199,7 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
         if (url.pathname === '/api/auth/demo-accounts' && request.method === 'GET') {
           // Team test accounts for reviewers; the list exists only outside production.
           const accounts = production || authEnv.DEMO_ACCOUNTS === '0' ? [] : localFixtureLogins
-            .filter(item => auth.store.accountByIdentifier(item.login.toLocaleLowerCase('ru-RU')))
+            .filter(item => auth.store.accountByIdentifier(item.login.toLocaleLowerCase('ru-RU'))?.role === item.role)
             .map(item => ({ ...item, password: localFixturePassword }));
           return send(response, 200, { accounts, fspId: fspId.info() });
         }
@@ -276,6 +278,10 @@ export function createAssessmentServer({ dbPath = resolve(root, 'server/data/ass
         }
         const identity = owner(request, response);
         const session = identity.owner;
+        // The moderator cabinet is separate from hiring: no search, invitations, vacancies, tasks or tests of its own.
+        if (identity.account?.role === 'moderator' && !moderatorApi.some(prefix => url.pathname.startsWith(prefix))) {
+          throw new RequestError(403, 'Аккаунт модератора работает только в кабинете модерации.');
+        }
         if (await claimRoutes({ request, response, url, identity, integrations, body, send, limit })) return;
         if (await integrationRoutes({ request, response, url, identity, integrations, body, send, limit })) return;
         if (url.pathname === '/api/auth/register/request-code') {

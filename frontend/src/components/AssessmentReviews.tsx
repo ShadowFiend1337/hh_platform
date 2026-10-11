@@ -29,7 +29,7 @@ const errorText = (cause: unknown) => cause instanceof Error ? cause.message : '
 const formatLabels: Record<string, string> = { code: 'код', sql: 'SQL', calculation: 'расчёт', case: 'разбор кейса' };
 
 /** Moderator view of attempts with open tasks: answers, keys, rubrics, item provenance and the decision. */
-export function AssessmentReviews({ accountId }: { accountId: string }) {
+export function AssessmentReviews({ accountId, onDecided }: { accountId: string; onDecided?: () => void }) {
   const [status, setStatus] = useState<ReviewStatus>('pending');
   const [items, setItems] = useState<QueueItem[]>([]);
   const [selected, setSelected] = useState<Detail | null>(null);
@@ -70,7 +70,7 @@ export function AssessmentReviews({ accountId }: { accountId: string }) {
       </button>)}
     </section>
     {selected ? <ReviewCard key={selected.id + ':' + selected.version} detail={selected} accountId={accountId}
-      onDecided={next => { setSelected(next); setReload(value => value + 1); }} />
+      onDecided={next => { setSelected(next); setReload(value => value + 1); onDecided?.(); }} />
       : <section className="panel review-empty"><Hourglass size={28} /><p className="muted">Выберите попытку: здесь будут ответы кандидата, ключи, рубрики и происхождение каждого задания.</p></section>}
   </div>;
 }

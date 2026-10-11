@@ -9,7 +9,8 @@ import { DirectoryStore } from '../directory-store.mjs';
 import { openStore } from '../store.mjs';
 import { PlatformService } from '../platform.mjs';
 import { MarketplaceService } from '../marketplace.mjs';
-import { currentSurvey } from '../../frontend/src/model.ts';
+import { createInitialState, currentSurvey } from '../../frontend/src/model.ts';
+import { PRIVACY_POLICY_VERSION } from '../../shared/privacy.ts';
 
 test('local account setup prepares both cabinets on a fresh database and preserves edits on rerun', async t => {
   const directoryPath = mkdtempSync(join(tmpdir(), 'predel-local-'));
@@ -21,8 +22,7 @@ test('local account setup prepares both cabinets on a fresh database and preserv
     rmdirSync(directoryPath);
   });
   const credentials = await prepareLocalAccounts(dbPath);
-  assert.deepEqual(credentials.map(item => item.role), ['candidate', 'employer', 'employer']);
-  assert.equal(credentials.find(item => item.login === 'local_moderator').moderator, true);
+  assert.deepEqual(credentials.map(item => item.role), ['candidate', 'employer', 'moderator']);
   auth = new AuthService(dbPath);
   directory = new DirectoryStore(dbPath);
   assessments = openStore(dbPath);
@@ -59,5 +59,39 @@ test('local account setup prepares both cabinets on a fresh database and preserv
   assert.deepEqual(platform.read(employer.platform_owner), savedEmployer);
   assert.deepEqual(marketplace.vacancies(employer.platform_owner, { own: true }).items, proposal);
   assert.equal(auth.store.db.prepare('SELECT COUNT(*) AS n FROM auth_accounts').get().n, 3);
-  assert.equal(auth.store.canModerate(auth.store.accountByIdentifier('local_moderator').id), true);
+  const moderator = auth.store.accountByIdentifier('local_moderator');
+  assert.equal(moderator.role, 'moderator'); assert.equal(moderator.company_name, '');
+  assert.equal(auth.store.canModerate(moderator.id), true);
+  assert.equal(platform.read(moderator.platform_owner).state, null, 'The moderator has no cabinet state');
+});
+
+test('local account setup replaces the former employer-moderator with a separate moderator account', async t => {
+  const directoryPath = mkdtempSync(join(tmpdir(), 'predel-local-legacy-'));
+  const dbPath = join(directoryPath, 'accounts.sqlite');
+  const codes = new Map();
+  let auth = new AuthService(dbPath, { mailer: async ({ email, code }) => { codes.set(email, code); } }), directory, assessments;
+  t.after(() => {
+    auth?.close(); assessments?.close(); directory?.close();
+    for (const suffix of ['', '-wal', '-shm']) if (existsSync(dbPath + suffix)) unlinkSync(dbPath + suffix);
+    rmdirSync(directoryPath);
+  });
+  // Earlier setups registered the test moderator as an employer with a company cabinet.
+  await auth.requestRegistration({ role: 'employer', login: 'local_moderator', email: 'moderator@local.example.test', companyName: 'Экспертная проверка',
+    password: localAccountPassword, consent: true, privacyVersion: PRIVACY_POLICY_VERSION }, 'f'.repeat(64));
+  const legacy = auth.verifyRegistration({ email: 'moderator@local.example.test', code: codes.get('moderator@local.example.test') });
+  directory = new DirectoryStore(dbPath); assessments = openStore(dbPath);
+  const platform = new PlatformService(directory, assessments);
+  const state = createInitialState(); state.company.name = 'Экспертная проверка';
+  platform.save(legacy.platform_owner, state, 0, 'employer');
+  auth.close(); auth = null;
+
+  await prepareLocalAccounts(dbPath);
+  auth = new AuthService(dbPath);
+  const moderator = auth.store.accountByIdentifier('local_moderator');
+  assert.equal(moderator.role, 'moderator'); assert.notEqual(moderator.id, legacy.id);
+  assert.equal(auth.store.canModerate(moderator.id), true);
+  assert.equal(platform.read(legacy.platform_owner).state, null, 'The old employer cabinet is removed');
+  assert.equal((await auth.login({ loginOrEmail: 'local_moderator', password: localAccountPassword })).id, moderator.id);
+  await prepareLocalAccounts(dbPath);
+  assert.equal(auth.store.accountByIdentifier('local_moderator').id, moderator.id, 'A rerun keeps the moderator account');
 });

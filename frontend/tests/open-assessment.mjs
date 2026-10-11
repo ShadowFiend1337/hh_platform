@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path';
 import { chromium } from 'playwright';
 import { prepareLocalAccounts, localAccountPassword } from '../../scripts/local-accounts.mjs';
 import { answerExam, answerKey, startExam } from './helpers/exam.mjs';
-import { register } from './helpers/accounts.mjs';
+import { moderator as createModerator, register } from './helpers/accounts.mjs';
 import { startIsolatedService } from './helpers/isolated-service.mjs';
 
 // Candidate passes the closed part and solves two open tasks; a moderator grades them
@@ -55,10 +55,11 @@ try {
 
   // Moderator: queue, details, advisory scores, decision.
   const moderatorContext = await browser.newContext({ viewport: { width: 1440, height: 1100 }, reducedMotion: 'reduce' });
-  const staff = await register(moderatorContext, isolated, 'employer', 'open.moderator');
-  isolated.service.auth.store.setModerator(staff.id, true, 'browser-fixture');
+  await createModerator(moderatorContext, isolated, 'open.moderator');
   const moderator = await moderatorContext.newPage(); watch(moderator);
-  await moderator.goto(isolated.base + '/moderation#tests');
+  // The moderator opens its own cabinet from any address, never the hiring workspace.
+  await moderator.goto(isolated.base + '/app?role=employer&tab=candidates');
+  await moderator.waitForURL(/\/moderation/u);
   await moderator.getByRole('heading', { name: 'Проверка тестов' }).waitFor();
   const item = moderator.locator('.review-item').filter({ hasText: 'Вымышленный кандидат' });
   await item.click();
@@ -76,6 +77,8 @@ try {
   await card.getByRole('button', { name: 'Утвердить оценку' }).click();
   await card.locator('.review-status-completed').waitFor();
   assert.equal(llm.calls, 1);
+  assert.equal(await moderator.locator('.main-nav').getByRole('link', { name: 'Кандидаты' }).count(), 0, 'No hiring sections in the moderator cabinet');
+  assert.equal((await moderatorContext.request.get(isolated.base + '/api/directory/search?q=react')).status(), 403);
 
   // Candidate: the reviewed result confirms the grade on the server.
   await candidate.goto(isolated.base + '/app?role=candidate&tab=profile');
@@ -93,7 +96,7 @@ try {
   await fixture.getByRole('heading', { name: 'Проверка тестов' }).waitFor();
   await fixture.locator('.review-item').filter({ hasText: 'Тестовый кандидат' }).waitFor();
   assert.equal(await fixture.locator('.review-item').filter({ hasText: 'Вымышленный кандидат' }).count(), 0, 'Real candidates are not shown');
-  assert.equal(await fixture.getByRole('tab', { name: 'Достижения' }).count(), 0, 'Achievement claims stay hidden');
+  assert.equal(await fixture.getByRole('link', { name: 'Достижения' }).count(), 0, 'Achievement claims stay hidden');
   await fixture.getByRole('tab', { name: 'Все попытки' }).click();
   const automatic = fixture.locator('.review-item').filter({ hasText: 'Автоматически' }).first();
   await automatic.click();
