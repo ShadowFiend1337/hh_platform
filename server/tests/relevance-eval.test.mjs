@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { isSpecialization } from '../../shared/catalog.ts';
-import { labels, seeds, grade, metrics, pairedDifference, K } from '../../ml/relevance-eval.mjs';
+import { labels, seeds, grade, metrics, pairedDifference, orderEffect, K } from '../../ml/relevance-eval.mjs';
 
 const catalogue = new Map(seeds.map(person => [person.id, person]));
 
@@ -45,4 +45,10 @@ test('paired differences compare the same needs and keep a deterministic interva
   assert.equal(difference.ndcg10.mean, 0.25);
   assert.ok(difference.ndcg10.ci[0] >= 0 && difference.ndcg10.ci[1] <= 0.5);
   assert.deepEqual(pairedDifference(after, before), difference);
+});
+
+test('order effect counts needs and positions whose top-K order changed', () => {
+  const reference = [{ id: 'a', ids: ['x', 'y', 'z'] }, { id: 'b', ids: ['x'] }];
+  assert.deepEqual(orderEffect([{ id: 'a', ids: ['y', 'x', 'z'] }, { id: 'b', ids: ['x'] }], reference), { changedNeeds: 0.5, changedPositions: 1 });
+  assert.deepEqual(orderEffect(reference, reference), { changedNeeds: 0, changedPositions: 0 });
 });

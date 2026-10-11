@@ -12,6 +12,12 @@
  *   no-test      every confirmed test score equal, so the test cannot reorder;
  *   no-fsp       achievements removed, so there is no FSP bonus;
  *   no-test-fsp  both.
+ * The demo catalogue has only two test scores (83 and 100), so a +5 FSP bonus
+ * cannot close a 17-point gap; where the rule is meant to act, between
+ * comparable profiles with equal tests, it is measured as no-test vs no-test-fsp.
+ * Order effect: share of needs whose top-10 order differs from the reference
+ * and mean number of changed positions; labels ignore qualification, so an
+ * ordering rule can change the order without changing relevance metrics.
  * Metrics: P@5, P@10 (grade >= 2, fixed denominator), nDCG@10 (gain 2^g - 1,
  * ideal order over the whole catalogue), MRR@10 of the first exact match
  * (grade 3), share of empty results and mean number of shown profiles.
@@ -86,6 +92,14 @@ function specializationFilter(query) {
 }
 const withoutTest = list => list.map(person => ({ ...person, confirmed: { ...person.confirmed, score: 90 } }));
 const withoutFsp = list => list.map(person => ({ ...person, achievements: [] }));
+export function orderEffect(rows, reference) {
+  const lookup = new Map(reference.map(row => [row.id, row.ids]));
+  const changes = rows.map(row => {
+    const other = lookup.get(row.id) || [];
+    return Math.max(row.ids.length, other.length) ? row.ids.slice(0, K).filter((id, index) => other[index] !== id).length : 0;
+  });
+  return { changedNeeds: changes.filter(Boolean).length / rows.length, changedPositions: changes.reduce((sum, value) => sum + value, 0) / rows.length };
+}
 
 async function main() {
   const modelPath = option('--model');
@@ -115,6 +129,8 @@ async function main() {
       }));
     }
     for (const name of Object.keys(systems)) if (name !== 'pipeline') report.differences[name] = pairedDifference(perNeed[name], perNeed.pipeline);
+    report.orderEffect = { test: orderEffect(perNeed['no-test'], perNeed.pipeline), fsp: orderEffect(perNeed['no-fsp'], perNeed.pipeline),
+      'test-and-fsp': orderEffect(perNeed['no-test-fsp'], perNeed.pipeline), 'fsp-equal-test': orderEffect(perNeed['no-test-fsp'], perNeed['no-test']) };
   } catch (error) {
     if (error.status === 503) throw new Error('Модель поиска недоступна: проверьте --model и окружение Python.');
     throw error;
@@ -141,6 +157,8 @@ async function main() {
   if (report.comparison) differences.push([`pipeline − ${basename(compare)}`, report.comparison.difference]);
   console.log('\nПарные разности (среднее [95% интервал]):\n| Сравнение | P@5 | P@10 | nDCG@10 | MRR@10 |\n| --- | --- | --- | --- | --- |');
   for (const [name, values] of differences) console.log(`| ${name} | ${['p5', 'p10', 'ndcg10', 'mrr10'].map(key => cell(values, key, signed)).join(' | ')} |`);
+  console.log('\nВлияние на порядок топ-10 (доля потребностей с другим порядком; среднее число сменившихся позиций):');
+  for (const [name, values] of Object.entries(report.orderEffect)) console.log(`${name}: ${(values.changedNeeds * 100).toFixed(0)}%; ${values.changedPositions.toFixed(2)}`);
   console.log('\nnDCG@10 по типам запросов:');
   for (const [name, kinds] of Object.entries(report.byKind)) {
     console.log(`${name}: ` + Object.entries(kinds).map(([kind, values]) => `${kind} (${values.needs}) ${number(values.ndcg10)}`).join(', '));
