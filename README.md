@@ -80,3 +80,7 @@ npm run dev
 [Анкета и зависимости по ТЗ](docs/resume_tz_audit.md) · [проверки импорта и их ограничения](docs/resume_validation.md).
 
 [Навигация](docs/README.md) · [архитектура](docs/architecture.md) · [динамический банк](docs/dynamic_bank.md) · [прокторинг](docs/assessment_integrity.md) · [правила попыток](docs/assessment_policy.md) · [открытые задачи](docs/open_tasks.md) · [процент совпадения](docs/search_match.md) · [задания](docs/employer_tasks.md) · [LLM](docs/llm_usage.md) · [ФСП ID](docs/fsp_id.md) · [защита от мошенничества](docs/employer_protection.md) · [подробности реализации](docs/details.md)
+
+## Лицензия
+
+Исходный код и собственная документация проекта распространяются по [лицензии MIT](LICENSE). Сторонние зависимости, модели, шрифты, логотипы и материалы организаторов сохраняют свои лицензии и условия использования.
