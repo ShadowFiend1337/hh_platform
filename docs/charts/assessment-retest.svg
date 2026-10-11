@@ -151,38 +151,38 @@
   <!-- 3. Ошибочно подтверждены -->
   <rect
     x="426"
-    y="323.6"
+    y="292.1"
     width="28"
-    height="8.4"
+    height="39.9"
     rx="4"
     fill="#b9bec9"
   />
   <text
     x="440"
+    y="286.1"
+    font-size="11.5"
+    font-weight="600"
+    text-anchor="middle"
+    fill="#1d2129">
+    19
+  </text>
+
+  <rect
+    x="458"
+    y="323.6"
+    width="28"
+    height="8.4"
+    rx="4"
+    fill="#006ce8"
+  />
+  <text
+    x="472"
     y="317.6"
     font-size="11.5"
     font-weight="600"
     text-anchor="middle"
     fill="#1d2129">
     4
-  </text>
-
-  <rect
-    x="458"
-    y="332"
-    width="28"
-    height="0"
-    rx="4"
-    fill="#006ce8"
-  />
-  <text
-    x="472"
-    y="326"
-    font-size="11.5"
-    font-weight="600"
-    text-anchor="middle"
-    fill="#1d2129">
-    0
   </text>
 
   <text
