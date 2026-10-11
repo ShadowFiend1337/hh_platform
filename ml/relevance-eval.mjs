@@ -35,7 +35,8 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const option = name => { const index = process.argv.indexOf(name); return index > 0 ? process.argv[index + 1] : undefined; };
 export const K = 10;
 export const seeds = [...directoryCandidates, ...legacyDirectoryCandidates];
-export const labels = JSON.parse(await readFile(resolve(root, 'ml/relevance-labels.json'), 'utf8'));
+// --labels ml/relevance-labels-holdout.json selects the held-out v2 set (rubric inside the file).
+export const labels = JSON.parse(await readFile(resolve(root, option('--labels') || 'ml/relevance-labels.json'), 'utf8'));
 const byId = new Map(seeds.map(person => [person.id, person]));
 const KEYS = ['p5', 'p10', 'ndcg10', 'mrr10', 'empty', 'shown'];
 
@@ -43,6 +44,12 @@ export function grade(need, person) {
   if (Object.hasOwn(need.overrides || {}, person.id)) return need.overrides[person.id];
   if (need.exact.includes(person.id)) return 3;
   const specialization = person.confirmed?.specialization || person.specialization;
+  // Rubric v2: "relevant" needs a close working task, listed by hand; the
+  // direction alone gives at most 1.
+  if (Array.isArray(need.close)) {
+    if (need.close.includes(person.id)) return 2;
+    return need.partial?.includes(person.id) || need.specialization.includes(specialization) || need.related.includes(specialization) ? 1 : 0;
+  }
   const skills = new Set((person.stack || []).map(skill => skill.toLocaleLowerCase('ru')));
   const hasStack = !need.stackAny || need.stackAny.some(skill => skills.has(skill.toLocaleLowerCase('ru')));
   if (need.specialization.includes(specialization)) return hasStack ? 2 : 1;

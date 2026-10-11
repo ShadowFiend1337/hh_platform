@@ -1,0 +1,726 @@
+{
+ "schemaVersion": 1,
+ "suiteVersion": "graded-relevance-v2-holdout",
+ "provenance": {
+  "kind": "team-reference-labels",
+  "split": "holdout",
+  "labels": "Эталонная разметка команды по правилам v2; все оценки зафиксированы и закоммичены до первого запуска подбора на этих потребностях.",
+  "catalog": "server/directory-seed.mjs (вымышленные демопрофили)",
+  "notEvidenceOf": [
+   "качества на реальных резюме",
+   "реальных наймов"
+  ]
+ },
+ "rubric": {
+  "3": "Описанная в профиле задача прямо решает потребность (exact).",
+  "2": "Близкая рабочая задача: профиль делал работу того же рода и с небольшой адаптацией решит потребность (close). Одна только специализация или технология не даёт 2.",
+  "1": "Та же или смежная специализация с другой задачей, либо частично полезный профиль другой специализации (partial).",
+  "0": "Остальные профили."
+ },
+ "needs": [
+  {
+   "id": "HF1",
+   "kind": "role",
+   "query": "Фронтенд-разработчик, который соберёт библиотеку общих компонентов интерфейса: кнопки, поля, диалоги, состояния загрузки и темы",
+   "specialization": [
+    "Frontend"
+   ],
+   "related": [
+    "Fullstack"
+   ],
+   "exact": [
+    "demo-frontend-4"
+   ],
+   "close": [
+    "demo-frontend-10"
+   ],
+   "partial": [
+    "demo-uxui-3"
+   ]
+  },
+  {
+   "id": "HF2",
+   "kind": "task-only",
+   "query": "Веб-интерфейс для сотрудников, которые работают на выезде без интернета: черновики сохраняются на устройстве, есть очередь отправки и разбор конфликтов",
+   "specialization": [
+    "Frontend"
+   ],
+   "related": [
+    "Fullstack"
+   ],
+   "exact": [
+    "demo-frontend-7"
+   ],
+   "close": [],
+   "partial": []
+  },
+  {
+   "id": "HF3",
+   "kind": "role-stack",
+   "query": "Frontend на React и TypeScript: разделить большой клиентский продукт на независимые модули и постепенно перевести старые страницы",
+   "specialization": [
+    "Frontend"
+   ],
+   "related": [
+    "Fullstack"
+   ],
+   "exact": [
+    "demo-frontend-10"
+   ],
+   "close": [
+    "demo-frontend-4"
+   ],
+   "partial": []
+  },
+  {
+   "id": "HB1",
+   "kind": "task-only",
+   "query": "Сервис загрузки документов: проверка размера и типа файлов, ограниченные ссылки доступа и фоновая обработка с понятным статусом",
+   "specialization": [
+    "Backend"
+   ],
+   "related": [
+    "Fullstack"
+   ],
+   "exact": [
+    "demo-backend-8"
+   ],
+   "close": [
+    "demo-backend-1"
+   ],
+   "partial": []
+  },
+  {
+   "id": "HB2",
+   "kind": "role-stack",
+   "query": "Бэкенд на Node.js: выгрузки отчётов для бухгалтерии, чтобы тяжёлые расчёты не тормозили интерактивные запросы",
+   "specialization": [
+    "Backend"
+   ],
+   "related": [
+    "Fullstack"
+   ],
+   "exact": [
+    "demo-backend-9"
+   ],
+   "close": [
+    "demo-backend-3"
+   ],
+   "partial": []
+  },
+  {
+   "id": "HB3",
+   "kind": "task-only",
+   "query": "Обрабатывать сообщения об отгрузках так, чтобы повторная доставка была безопасной, а проблемные сообщения сохранялись для разбора",
+   "specialization": [
+    "Backend"
+   ],
+   "related": [
+    "Fullstack"
+   ],
+   "exact": [
+    "demo-backend-4"
+   ],
+   "close": [
+    "demo-backend-2",
+    "demo-backend-6"
+   ],
+   "partial": []
+  },
+  {
+   "id": "HS1",
+   "kind": "task-only",
+   "query": "Складской кабинет целиком: сканирование кодов, движение остатков и серверная проверка списаний",
+   "specialization": [
+    "Fullstack"
+   ],
+   "related": [
+    "Frontend",
+    "Backend"
+   ],
+   "exact": [
+    "demo-fullstack-2"
+   ],
+   "close": [],
+   "partial": []
+  },
+  {
+   "id": "HS2",
+   "kind": "role",
+   "query": "Fullstack-разработчик для системы согласования документов: маршрут в интерфейсе, полномочия на сервере, журнал версий",
+   "specialization": [
+    "Fullstack"
+   ],
+   "related": [
+    "Frontend",
+    "Backend"
+   ],
+   "exact": [
+    "demo-fullstack-6"
+   ],
+   "close": [
+    "demo-fullstack-5"
+   ],
+   "partial": []
+  },
+  {
+   "id": "HS3",
+   "kind": "task-only",
+   "query": "Сайт сообщества с профилями, обсуждениями, модерацией и защитой от массовых запросов",
+   "specialization": [
+    "Fullstack"
+   ],
+   "related": [
+    "Frontend",
+    "Backend"
+   ],
+   "exact": [
+    "demo-fullstack-9"
+   ],
+   "close": [],
+   "partial": []
+  },
+  {
+   "id": "HM1",
+   "kind": "role",
+   "query": "Мобильный разработчик для экрана воспроизведения видео: буферизация, пауза и продолжение с того же места",
+   "specialization": [
+    "Mobile"
+   ],
+   "related": [],
+   "exact": [
+    "demo-mobile-5"
+   ],
+   "close": [],
+   "partial": []
+  },
+  {
+   "id": "HM2",
+   "kind": "task-only",
+   "query": "Карта маршрутов курьера в приложении для телефона: геолокация и фоновые обновления без быстрого разряда батареи",
+   "specialization": [
+    "Mobile"
+   ],
+   "related": [],
+   "exact": [
+    "demo-mobile-6"
+   ],
+   "close": [],
+   "partial": []
+  },
+  {
+   "id": "HM3",
+   "kind": "role-stack",
+   "query": "iOS-разработчик на Swift: разобрать редкие падения приложения и наладить обезличенную диагностику",
+   "specialization": [
+    "Mobile"
+   ],
+   "related": [],
+   "exact": [
+    "demo-mobile-9"
+   ],
+   "close": [
+    "demo-mobile-10"
+   ],
+   "partial": []
+  },
+  {
+   "id": "HL1",
+   "kind": "task-only",
+   "query": "Подбирать покупателям товары по истории просмотров и покупок и честно проверять качество на будущем периоде",
+   "specialization": [
+    "ML"
+   ],
+   "related": [],
+   "exact": [
+    "demo-ml-1"
+   ],
+   "close": [],
+   "partial": []
+  },
+  {
+   "id": "HL2",
+   "kind": "role-stack",
+   "query": "Специалист по машинному обучению на PyTorch: находить брак на фотографиях изделий",
+   "specialization": [
+    "ML"
+   ],
+   "related": [],
+   "exact": [
+    "demo-ml-3"
+   ],
+   "close": [],
+   "partial": []
+  },
+  {
+   "id": "HL3",
+   "kind": "task-only",
+   "query": "Обучить модель на табличных данных клиентов: пропуски, утечка целевой переменной, понятная проверка качества",
+   "specialization": [
+    "ML"
+   ],
+   "related": [],
+   "exact": [
+    "demo-ml-9"
+   ],
+   "close": [
+    "demo-ml-5",
+    "demo-ml-4"
+   ],
+   "partial": []
+  },
+  {
+   "id": "HD1",
+   "kind": "role",
+   "query": "Аналитик данных: разобрать путь пользователя от посещения до оплаты и найти шаг, на котором теряются люди",
+   "specialization": [
+    "DataAnalysis"
+   ],
+   "related": [
+    "DataEngineering"
+   ],
+   "exact": [
+    "demo-dataanalysis-2"
+   ],
+   "close": [
+    "demo-dataanalysis-5"
+   ],
+   "partial": [
+    "demo-productmanagement-2"
+   ]
+  },
+  {
+   "id": "HD2",
+   "kind": "task-only",
+   "query": "Финансовый отчёт план-факт с согласованными определениями выручки и расходов и сверкой итогов",
+   "specialization": [
+    "DataAnalysis"
+   ],
+   "related": [
+    "DataEngineering"
+   ],
+   "exact": [
+    "demo-dataanalysis-4"
+   ],
+   "close": [
+    "demo-dataanalysis-10"
+   ],
+   "partial": []
+  },
+  {
+   "id": "HD3",
+   "kind": "task-only",
+   "query": "Проанализировать сроки доставки и найти причины опозданий курьеров",
+   "specialization": [
+    "DataAnalysis"
+   ],
+   "related": [
+    "DataEngineering"
+   ],
+   "exact": [
+    "demo-dataanalysis-6"
+   ],
+   "close": [
+    "demo-dataanalysis-9"
+   ],
+   "partial": []
+  },
+  {
+   "id": "HE1",
+   "kind": "role",
+   "query": "Инженер данных: спроектировать витрины продаж и клиентов в хранилище с историей изменений",
+   "specialization": [
+    "DataEngineering"
+   ],
+   "related": [
+    "DataAnalysis"
+   ],
+   "exact": [
+    "demo-dataengineering-3"
+   ],
+   "close": [
+    "demo-dataengineering-10"
+   ],
+   "partial": []
+  },
+  {
+   "id": "HE2",
+   "kind": "task-stack",
+   "query": "Передавать изменения из рабочей PostgreSQL в аналитическую базу почти в реальном времени через Kafka",
+   "specialization": [
+    "DataEngineering"
+   ],
+   "related": [
+    "DataAnalysis"
+   ],
+   "exact": [
+    "demo-dataengineering-4"
+   ],
+   "close": [
+    "demo-dataengineering-2"
+   ],
+   "partial": []
+  },
+  {
+   "id": "HE3",
+   "kind": "task-only",
+   "query": "Встроить проверки качества в ежедневные загрузки данных: уникальность ключей, свежесть, распределения",
+   "specialization": [
+    "DataEngineering"
+   ],
+   "related": [
+    "DataAnalysis"
+   ],
+   "exact": [
+    "demo-dataengineering-7"
+   ],
+   "close": [
+    "demo-dataengineering-1"
+   ],
+   "partial": [
+    "demo-dataanalysis-7"
+   ]
+  },
+  {
+   "id": "HO1",
+   "kind": "role",
+   "query": "DevOps-инженер: настроить резервное копирование баз и регулярно проверять восстановление на отдельном стенде",
+   "specialization": [
+    "DevOps"
+   ],
+   "related": [],
+   "exact": [
+    "demo-devops-5"
+   ],
+   "close": [],
+   "partial": []
+  },
+  {
+   "id": "HO2",
+   "kind": "task-only",
+   "query": "Организовать хранение и замену секретов инфраструктуры и выдать сервисам минимальные права",
+   "specialization": [
+    "DevOps"
+   ],
+   "related": [],
+   "exact": [
+    "demo-devops-7"
+   ],
+   "close": [],
+   "partial": [
+    "demo-security-9",
+    "demo-security-4"
+   ]
+  },
+  {
+   "id": "HO3",
+   "kind": "task-only",
+   "query": "Разобраться с сетевыми сбоями между сервисами: DNS, маршруты и TLS",
+   "specialization": [
+    "DevOps"
+   ],
+   "related": [],
+   "exact": [
+    "demo-devops-8"
+   ],
+   "close": [
+    "demo-devops-9"
+   ],
+   "partial": [
+    "demo-security-5"
+   ]
+  },
+  {
+   "id": "HQ1",
+   "kind": "role",
+   "query": "Тестировщик мобильного приложения на реальных устройствах: разрешения, смена сети, фоновый режим",
+   "specialization": [
+    "QA"
+   ],
+   "related": [],
+   "exact": [
+    "demo-qa-3"
+   ],
+   "close": [],
+   "partial": []
+  },
+  {
+   "id": "HQ2",
+   "kind": "task-only",
+   "query": "Подготовить воспроизводимые тестовые данные и стенды, чтобы проверки не мешали друг другу",
+   "specialization": [
+    "QA"
+   ],
+   "related": [],
+   "exact": [
+    "demo-qa-6"
+   ],
+   "close": [],
+   "partial": []
+  },
+  {
+   "id": "HQ3",
+   "kind": "task-only",
+   "query": "Исследовательское тестирование новых функций без готовых сценариев: границы значений и редкие переходы",
+   "specialization": [
+    "QA"
+   ],
+   "related": [],
+   "exact": [
+    "demo-qa-5"
+   ],
+   "close": [
+    "demo-qa-10"
+   ],
+   "partial": []
+  },
+  {
+   "id": "HX1",
+   "kind": "role",
+   "query": "Специалист по безопасности: проверить код перед выпуском на обработку входных данных и управление секретами",
+   "specialization": [
+    "Security"
+   ],
+   "related": [],
+   "exact": [
+    "demo-security-3"
+   ],
+   "close": [
+    "demo-security-8"
+   ],
+   "partial": []
+  },
+  {
+   "id": "HX2",
+   "kind": "task-only",
+   "query": "Смоделировать угрозы нового сервиса до начала разработки: активы, границы доверия, действия нарушителя",
+   "specialization": [
+    "Security"
+   ],
+   "related": [],
+   "exact": [
+    "demo-security-6"
+   ],
+   "close": [
+    "demo-security-10"
+   ],
+   "partial": []
+  },
+  {
+   "id": "HX3",
+   "kind": "task-only",
+   "query": "Контролировать уязвимости сторонних библиотек: какие версии используются и достижим ли уязвимый код",
+   "specialization": [
+    "Security"
+   ],
+   "related": [],
+   "exact": [
+    "demo-security-8"
+   ],
+   "close": [
+    "demo-security-3"
+   ],
+   "partial": []
+  },
+  {
+   "id": "HU1",
+   "kind": "role-stack",
+   "query": "UX/UI дизайнер в Figma: библиотека компонентов и дизайн-токенов для светлой и тёмной темы",
+   "specialization": [
+    "UXUI"
+   ],
+   "related": [],
+   "exact": [
+    "demo-uxui-3"
+   ],
+   "close": [],
+   "partial": [
+    "demo-frontend-4"
+   ]
+  },
+  {
+   "id": "HU2",
+   "kind": "task-only",
+   "query": "Интерфейс для операторов сложной системы: таблицы, группировка предупреждений, разные по риску действия",
+   "specialization": [
+    "UXUI"
+   ],
+   "related": [],
+   "exact": [
+    "demo-uxui-5"
+   ],
+   "close": [],
+   "partial": [
+    "demo-frontend-2"
+   ]
+  },
+  {
+   "id": "HU3",
+   "kind": "task-only",
+   "query": "Навести порядок в большом разделе помощи: категории и названия, понятные пользователям",
+   "specialization": [
+    "UXUI"
+   ],
+   "related": [],
+   "exact": [
+    "demo-uxui-7"
+   ],
+   "close": [
+    "demo-uxui-1"
+   ],
+   "partial": []
+  },
+  {
+   "id": "HA1",
+   "kind": "role",
+   "query": "Системный аналитик: описать сущности и связи системы учёта, идентификаторы и правила заполнения полей",
+   "specialization": [
+    "BusinessAnalysis"
+   ],
+   "related": [
+    "ProductManagement"
+   ],
+   "exact": [
+    "demo-businessanalysis-4"
+   ],
+   "close": [
+    "demo-businessanalysis-5"
+   ],
+   "partial": []
+  },
+  {
+   "id": "HA2",
+   "kind": "task-only",
+   "query": "Сформулировать измеримые требования к доступности, задержке и восстановлению сервиса вместо общих пожеланий",
+   "specialization": [
+    "BusinessAnalysis"
+   ],
+   "related": [
+    "ProductManagement"
+   ],
+   "exact": [
+    "demo-businessanalysis-9"
+   ],
+   "close": [],
+   "partial": []
+  },
+  {
+   "id": "HA3",
+   "kind": "task-only",
+   "query": "Описать взаимодействие систем через события: кто владеет фактом, как обрабатывать повторы и задержки",
+   "specialization": [
+    "BusinessAnalysis"
+   ],
+   "related": [
+    "ProductManagement"
+   ],
+   "exact": [
+    "demo-businessanalysis-7"
+   ],
+   "close": [
+    "demo-businessanalysis-2"
+   ],
+   "partial": []
+  },
+  {
+   "id": "HP1",
+   "kind": "role",
+   "query": "Продакт-менеджер: проверить проблему нового продукта до большого выпуска по интервью и поведению пользователей",
+   "specialization": [
+    "ProductManagement"
+   ],
+   "related": [
+    "BusinessAnalysis"
+   ],
+   "exact": [
+    "demo-productmanagement-1"
+   ],
+   "close": [],
+   "partial": [
+    "demo-uxui-1"
+   ]
+  },
+  {
+   "id": "HP2",
+   "kind": "task-only",
+   "query": "Развивать двусторонний маркетплейс: баланс спроса и предложения по сегментам",
+   "specialization": [
+    "ProductManagement"
+   ],
+   "related": [
+    "BusinessAnalysis"
+   ],
+   "exact": [
+    "demo-productmanagement-7"
+   ],
+   "close": [],
+   "partial": []
+  },
+  {
+   "id": "HP3",
+   "kind": "task-only",
+   "query": "Улучшить самообслуживание пользователей и сократить обращения в поддержку",
+   "specialization": [
+    "ProductManagement"
+   ],
+   "related": [
+    "BusinessAnalysis"
+   ],
+   "exact": [
+    "demo-productmanagement-9"
+   ],
+   "close": [],
+   "partial": [
+    "demo-uxui-9"
+   ]
+  },
+  {
+   "id": "HH1",
+   "kind": "role",
+   "query": "Инженер электроники: батарейный датчик интернета вещей, сон и пробуждение, ток в каждом режиме",
+   "specialization": [
+    "Embedded"
+   ],
+   "related": [],
+   "exact": [
+    "demo-embedded-6"
+   ],
+   "close": [
+    "demo-embedded-3"
+   ],
+   "partial": []
+  },
+  {
+   "id": "HH2",
+   "kind": "task-only",
+   "query": "Управление электроприводом: сигналы PWM, измерение тока и защита от перегрузки",
+   "specialization": [
+    "Embedded"
+   ],
+   "related": [],
+   "exact": [
+    "demo-embedded-8"
+   ],
+   "close": [
+    "demo-embedded-10"
+   ],
+   "partial": []
+  },
+  {
+   "id": "HH3",
+   "kind": "task-only",
+   "query": "Найти неисправный узел на низковольтной плате и задокументировать измерения до и после ремонта",
+   "specialization": [
+    "Embedded"
+   ],
+   "related": [],
+   "exact": [
+    "demo-embedded-9"
+   ],
+   "close": [
+    "demo-embedded-1"
+   ],
+   "partial": []
+  }
+ ]
+}

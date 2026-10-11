@@ -66,3 +66,19 @@ test('agreement tooling samples a fixed blind set and computes weighted kappa', 
   assert.equal(report.exactMatchKappa, 1);
   assert.deepEqual(parseCsv('"a","b"\n"1","x, ""y"""\n'), [['a', 'b'], ['1', 'x, "y"']]);
 });
+
+test('the held-out v2 set is separate from the development set and grades only close tasks as relevant', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const holdout = JSON.parse(await readFile(new URL('../../ml/relevance-labels-holdout.json', import.meta.url), 'utf8'));
+  assert.ok(holdout.needs.length >= 40 && holdout.needs.length <= 60);
+  const devQueries = new Set(labels.needs.map(need => need.query));
+  for (const need of holdout.needs) {
+    assert.ok(!devQueries.has(need.query), need.id);
+    for (const id of [...need.exact, ...need.close, ...need.partial]) assert.ok(catalogue.has(id), `${need.id}: ${id}`);
+    assert.ok(need.exact.every(id => grade(need, catalogue.get(id)) === 3));
+    assert.ok(need.close.every(id => grade(need, catalogue.get(id)) === 2));
+    const sameDirection = seeds.filter(person => need.specialization.includes(person.confirmed?.specialization)
+      && !need.exact.includes(person.id) && !need.close.includes(person.id));
+    assert.ok(sameDirection.every(person => grade(need, person) === 1), 'The same direction without a close task is not relevant');
+  }
+});
