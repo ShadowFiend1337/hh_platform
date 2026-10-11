@@ -44,10 +44,10 @@ try {
   }
   assert.equal(await page.getByLabel('Самоорганизация', { exact: true }).isChecked(), false);
   assert.equal(await page.getByLabel('Согласен на обработку персональных данных', { exact: true }).isChecked(), false);
-  assert.match(await page.locator('textarea[name="workHistory"]').inputValue(), /Сервис расписания/);
-  assert.match(await page.locator('textarea[name="bio"]').inputValue(), /Обучаю начинающих разработчиков/);
-  assert.equal(await page.locator('#onboarding-team-roles option[value="ML-инженер"]').count(), 1);
-  await page.getByLabel('Роль в команде', { exact: true }).fill('Разработчик интерфейсов');
+  assert.equal(await page.getByLabel('Название проекта 1', { exact: true }).inputValue(), 'Сервис расписания');
+  assert.match(await page.getByRole('region', { name: 'Интересы / дополнительно', exact: true }).textContent(), /Обучаю начинающих разработчиков/);
+  assert.equal(await page.locator('select[name="professionalRole"] option').filter({ hasText: /^Специалист по машинному обучению$/ }).count(), 1);
+  await page.getByLabel('Роль в команде', { exact: true }).selectOption('Frontend-разработчик');
   await page.getByLabel('Согласен на обработку персональных данных', { exact: true }).check();
   await page.getByRole('button', { name: 'К тесту', exact: true }).click();
   await page.getByRole('button', { name: 'Начать тест', exact: true }).waitFor();
@@ -56,8 +56,9 @@ try {
   let current = await state();
   assert.deepEqual([...current.profile.softSkills].sort(), expected);
   assert.deepEqual([...current.surveys[0].softSkills].sort(), expected);
-  assert.match(current.profile.workHistory, /Сервис расписания/);
-  assert.match(current.profile.bio, /Обучаю начинающих разработчиков/);
+  assert.equal(current.profile.petProjects[0].name, 'Сервис расписания');
+  assert.match(current.profile.interests.join('\n'), /Обучаю начинающих разработчиков/);
+  assert.equal(current.profile.bio.includes('Обучаю начинающих разработчиков'), false);
   await page.reload();
   await page.getByRole('button', { name: 'Начать тест', exact: true }).waitFor();
   const requestPromise = page.waitForRequest(request => request.url().endsWith('/api/assessment/attempts') && request.method() === 'POST');

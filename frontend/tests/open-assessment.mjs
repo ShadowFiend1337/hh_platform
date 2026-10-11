@@ -1,3 +1,4 @@
+import { fillResumeStack } from './helpers/resume-form.mjs';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -34,11 +35,10 @@ try {
   await register(candidateContext, isolated, 'candidate', 'open.candidate');
   const candidate = await candidateContext.newPage(); watch(candidate);
   await candidate.goto(isolated.base + '/app?role=candidate&tab=onboarding');
-  await candidate.locator('.onboarding-form [name="industry"]').selectOption('ИТ');
-  await candidate.locator('.onboarding-form [name="professionalRole"]').fill('Frontend-разработчик');
+  await candidate.locator('.onboarding-form [name="professionalRole"]').selectOption('Frontend-разработчик');
   await candidate.locator('.onboarding-form [name="specialization"]').selectOption('Frontend');
   await candidate.locator('.onboarding-form [name="desiredGrade"]').selectOption('Junior');
-  await candidate.locator('.onboarding-form [name="stack"]').fill('React, TypeScript');
+  await fillResumeStack(candidate, ['React', 'TypeScript']);
   await candidate.locator('.onboarding-form [name="experience"]').fill('1 год');
   await candidate.getByLabel('Согласен на обработку персональных данных', { exact: true }).check();
   await candidate.getByRole('button', { name: 'К тесту', exact: true }).click();

@@ -1,3 +1,4 @@
+import { fillResumeStack, fillResumeWork } from './helpers/resume-form.mjs';
 import { PRIVACY_POLICY_VERSION } from '../../shared/privacy.ts';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -139,14 +140,13 @@ async function state(target = page) {
 async function fillSurvey(target = page, name = candidateName, email = 'anna@example.com') {
   await target.getByLabel('Имя и фамилия', { exact: true }).fill(name);
   await target.getByLabel('Email', { exact: true }).fill(email);
-  await target.getByRole('combobox', { name: 'Отрасль', exact: true }).selectOption('ИТ');
-  await target.getByLabel('Роль в команде', { exact: true }).fill('Разработчик');
+  await target.getByLabel('Роль в команде', { exact: true }).selectOption('Frontend-разработчик');
   await target.getByRole('combobox', { name: 'Специализация', exact: true }).selectOption('Frontend');
   await target.getByRole('combobox', { name: 'Предполагаемый грейд', exact: true }).selectOption('Middle');
-  await target.getByLabel('Стек', { exact: true }).fill('React, TypeScript, CSS');
+  await fillResumeStack(target, ['React', 'TypeScript', 'CSS']);
   await target.getByLabel('Общий стаж', { exact: true }).fill('3 года');
   await target.getByLabel('Город', { exact: true }).fill('Москва');
-  await target.getByLabel('Места работы и проекты', { exact: true }).fill('Разработка веб-приложений на React и TypeScript. Адаптивная HTML и CSS верстка, доступные формы, дизайн-система компонентов и оптимизация загрузки страниц.');
+  await fillResumeWork(target, 'Разработка веб-приложений на React и TypeScript. Адаптивная HTML и CSS верстка, доступные формы, дизайн-система компонентов и оптимизация загрузки страниц.');
   await target.locator('.onboarding-details summary').click();
   await target.getByLabel('О себе', { exact: true }).fill('Frontend-разработчик. Создаю интерфейсы веб-приложений на React и TypeScript, доступные формы и адаптивную CSS верстку.');
   await target.locator('.onboarding-details summary').click();
@@ -411,7 +411,7 @@ try {
   const surveyDate = current.profile.surveyCompletedAt;
   await page.getByRole('button', { name: 'К профилю', exact: true }).click();
   assert.equal(await page.locator('input[name="softSkills"]:visible').count(), 5, 'Common self-reported skills can be edited in the profile');
-  assert.equal(await page.getByRole('combobox', { name: 'Отрасль', exact: true }).inputValue(), 'ИТ');
+  assert.equal(await page.getByRole('combobox', { name: 'Отрасль', exact: true }).count(), 0);
   assert.equal(await page.getByLabel('Роль в команде', { exact: true }).inputValue(), 'Разработчик');
   await role('Работодатель');
   await directoryResults(page, baseline.total);

@@ -3,7 +3,7 @@ import { mkdir, readFile, readdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { createRequire } from 'node:module';
 import { chromium } from 'playwright';
-import { specializationOptions, industryOptions } from '../../shared/catalog.ts';
+import { specializationOptions } from '../../shared/catalog.ts';
 import { gradeOptions } from '../../shared/grading.ts';
 import { answerExam, answerKey, startExam } from './helpers/exam.mjs';
 import { register, useFixedEncoder } from './helpers/accounts.mjs';
@@ -36,10 +36,9 @@ try {
   page.on('dialog', dialog => dialog.type() === 'beforeunload' ? dialog.accept() : dialog.dismiss());
   await page.goto(base + '/app?role=candidate&tab=onboarding');
   const specialization = page.getByRole('combobox', { name: 'Специализация', exact: true });
-  const industry = page.getByRole('combobox', { name: 'Отрасль', exact: true });
   await specialization.waitFor();
   assert.equal(await specialization.locator('option').count(), specializationOptions.length + 1);
-  assert.equal(await industry.locator('option').count(), industryOptions.length + 1);
+  assert.equal(await page.getByLabel('Отрасль', { exact: true }).count(), 0);
   assert.deepEqual(await page.getByLabel('Предполагаемый грейд').locator('option').evaluateAll(options => options.slice(1)
     .map(option => ({ value: option.value, label: option.textContent }))), gradeOptions);
   for (const { value } of specializationOptions) for (const { value: grade } of gradeOptions) {
@@ -70,16 +69,14 @@ try {
   await page.getByLabel('Файл резюме').setInputFiles({ name: 'ml-resume.txt', mimeType: 'text/plain',
     buffer: Buffer.from('Иван Соколов\nML Engineer Middle\nivan.ml@example.com\nОтрасль: Наука\nОпыт работы: 2 года\nНавыки: Python, PyTorch\nСофт-скиллы: Коммуникация') });
   await page.waitForFunction(() => document.querySelector('[name="specialization"]')?.value === 'ML');
-  assert.equal(await industry.inputValue(), 'Наука');
+  assert.equal(await page.getByLabel('Отрасль', { exact: true }).count(), 0);
   assert.equal(await page.getByLabel('Предполагаемый грейд').inputValue(), 'Middle');
   assert.equal(await page.getByLabel('Согласен на обработку персональных данных', { exact: true }).isChecked(), false, 'Consent is never pre-filled');
   await page.screenshot({ path: resolve('test-results/directions-desktop.png'), fullPage: true });
   await specialization.selectOption('Security');
-  await industry.selectOption('Транспорт и логистика');
   await auditMobile(page);
   await page.screenshot({ path: resolve('test-results/directions-mobile.png'), fullPage: true });
   await specialization.selectOption('ML');
-  await industry.selectOption('Наука');
   await page.setViewportSize({ width: 1440, height: 1050 });
   await page.getByLabel('Согласен на обработку персональных данных', { exact: true }).check();
   await page.getByLabel('Показывать профиль работодателям', { exact: true }).check();
@@ -98,7 +95,7 @@ try {
   await page.getByRole('heading', { name: 'Мой профиль', exact: true }).waitFor();
   await page.locator('.main-content[data-sync-status="saved"]').waitFor();
   await page.reload();
-  assert.equal(await page.getByRole('combobox', { name: 'Отрасль', exact: true }).inputValue(), 'Наука');
+  assert.equal(await page.getByLabel('Отрасль', { exact: true }).count(), 0);
 
   const employerContext = await browser.newContext({ viewport: { width: 1440, height: 1050 }, reducedMotion: 'reduce' });
   await register(employerContext, isolated, 'employer', 'directions.employer');

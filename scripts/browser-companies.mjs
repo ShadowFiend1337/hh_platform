@@ -1,3 +1,4 @@
+import { fillResumeStack } from '../frontend/tests/helpers/resume-form.mjs';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 
@@ -80,11 +81,10 @@ async function candidateProfile({ page, context }) {
   await page.locator('.onboarding-form').waitFor(); await synced(page);
   await page.getByLabel('Имя и фамилия', { exact: true }).fill(fixture.candidate);
   await page.getByLabel('Email', { exact: true }).fill(fixture.candidateEmail);
-  await page.getByRole('combobox', { name: 'Отрасль', exact: true }).selectOption('ИТ');
-  await page.getByLabel('Роль в команде', { exact: true }).fill('Разработчик интерфейсов');
+  await page.getByLabel('Роль в команде', { exact: true }).selectOption('Frontend-разработчик');
   await page.getByRole('combobox', { name: 'Специализация', exact: true }).selectOption('Frontend');
   await page.getByRole('combobox', { name: 'Предполагаемый грейд', exact: true }).selectOption('Junior');
-  await page.getByLabel('Стек', { exact: true }).fill('React, TypeScript');
+  await fillResumeStack(page, ['React', 'TypeScript']);
   await page.getByLabel('Общий стаж', { exact: true }).fill('Без опыта');
   await page.getByLabel('Согласен на обработку персональных данных', { exact: true }).check();
   const saved = apiResponse(page, '/api/platform/state', 'PUT', response =>

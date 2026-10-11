@@ -1,3 +1,4 @@
+import { fillResumeStack } from './helpers/resume-form.mjs';
 // Screenshot tour of both cabinets on an isolated in-memory service.
 // Usage: node frontend/tests/visual-tour.mjs [outputDir]
 import { PRIVACY_POLICY_VERSION } from '../../shared/privacy.ts';
@@ -32,11 +33,10 @@ try {
   const candidate = await actor('candidate', 'tour.candidate', { name: 'Анна Морозова' });
   let page = candidate.page;
   await page.goto(base + '/app?role=candidate&tab=onboarding');
-  await page.locator('.onboarding-form [name="industry"]').selectOption('ИТ');
-  await page.locator('.onboarding-form [name="professionalRole"]').fill('Backend-разработчик');
+  await page.locator('.onboarding-form [name="professionalRole"]').selectOption('Backend-разработчик');
   await page.locator('.onboarding-form [name="specialization"]').selectOption('Backend');
   await page.locator('.onboarding-form [name="desiredGrade"]').selectOption('Junior');
-  await page.locator('.onboarding-form [name="stack"]').fill('Python, PostgreSQL, Docker');
+  await fillResumeStack(page, ['Python', 'PostgreSQL', 'Docker']);
   await page.locator('.onboarding-form [name="experience"]').fill('1 год 6 месяцев');
   await page.getByLabel('Согласен на обработку персональных данных', { exact: true }).check();
   await page.getByLabel('Показывать профиль работодателям', { exact: true }).check();

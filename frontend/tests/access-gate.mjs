@@ -1,3 +1,4 @@
+import { fillResumeStack } from './helpers/resume-form.mjs';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { chromium } from 'playwright';
@@ -173,11 +174,10 @@ try {
   await worker.page.getByRole('heading', { name: 'Анкета', exact: true }).waitFor();
   assert.equal(await worker.page.getByLabel('Имя и фамилия', { exact: true }).inputValue(), candidate.name);
   assert.equal(await worker.page.getByLabel('Email', { exact: true }).inputValue(), candidate.email);
-  await worker.page.locator('.onboarding-form [name="industry"]').selectOption('ИТ');
-  await worker.page.locator('.onboarding-form [name="professionalRole"]').fill('Frontend-разработчик');
+  await worker.page.locator('.onboarding-form [name="professionalRole"]').selectOption('Frontend-разработчик');
   await worker.page.locator('.onboarding-form [name="specialization"]').selectOption('Frontend');
   await worker.page.locator('.onboarding-form [name="desiredGrade"]').selectOption('Junior');
-  await worker.page.locator('.onboarding-form [name="stack"]').fill('React, TypeScript');
+  await fillResumeStack(worker.page, ['React', 'TypeScript']);
   await worker.page.locator('.onboarding-form [name="experience"]').fill('1 год');
   await worker.page.getByLabel('Согласен на обработку персональных данных', { exact: true }).check();
   await worker.page.getByLabel('Показывать профиль работодателям', { exact: true }).check();

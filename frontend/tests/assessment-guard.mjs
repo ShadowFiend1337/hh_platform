@@ -1,3 +1,4 @@
+import { fillResumeStack } from './helpers/resume-form.mjs';
 import { PRIVACY_POLICY_VERSION } from '../../shared/privacy.ts';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
@@ -31,11 +32,10 @@ async function registeredPage(fixtureAccount = account) {
   page.on('dialog', dialog => dialog.type() === 'beforeunload' ? dialog.accept() : dialog.dismiss());
   await page.goto(base + '/app?role=candidate&tab=onboarding');
   await page.getByRole('heading', { name: 'Анкета', exact: true }).waitFor();
-  await page.locator('.onboarding-form [name="industry"]').selectOption('ИТ');
-  await page.locator('.onboarding-form [name="professionalRole"]').fill('Frontend-разработчик');
+  await page.locator('.onboarding-form [name="professionalRole"]').selectOption('Frontend-разработчик');
   await page.locator('.onboarding-form [name="specialization"]').selectOption('Frontend');
   await page.locator('.onboarding-form [name="desiredGrade"]').selectOption('Junior');
-  await page.locator('.onboarding-form [name="stack"]').fill('React, TypeScript');
+  await fillResumeStack(page, ['React', 'TypeScript']);
   await page.locator('.onboarding-form [name="experience"]').fill('1 год');
   await page.getByLabel('Согласен на обработку персональных данных', { exact: true }).check();
   await page.getByRole('button', { name: 'К тесту', exact: true }).click();

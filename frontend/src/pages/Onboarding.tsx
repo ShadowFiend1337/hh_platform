@@ -1,61 +1,29 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { Paperclip, Trash2 } from 'lucide-react';
-import { MAX_SOFT_SKILLS, MAX_STACK_SKILLS, resumeTextLimits as textLimits } from '../../../shared/resume-limits';
+import { resumeTextLimits as textLimits } from '../../../shared/resume-limits';
 import { CandidateSteps } from '../components/CandidateSteps';
 import { SoftSkillsField } from '../components/SoftSkillsField';
-import { gradeOptions, industryOptions, isGrade, isSpecialization, professionalRoleOptions, softSkillOptions, specializationOptions, type CandidateSurvey, type Grade, type PlatformState, type Specialization } from '../model';
-import type { ResumeFields } from '../resume-parser';
+import { ResumeSectionsFields, ResumeUpload, StackField } from '../components/ResumeProfileFields';
+import { gradeOptions, professionalRoleOptions, specializationOptions, type CandidateSurvey, type PlatformState } from '../model';
 import { employmentTypes } from '../../../shared/search.ts';
 import { deriveExperienceMonths, deriveLanguageCodes } from '../candidate-preferences';
-
-type Draft = {
-  name: string; email: string; phone: string; city: string; industry: string; professionalRole: string;
-  specialization: string; desiredGrade: string; stack: string; experience: string;
-  softSkills: string[];
-  bio: string; careerAchievements: string; education: string; workHistory: string; portfolio: string; languages: string; format: string;
-  salaryFrom: string; salaryTo: string; employmentType: string;
-};
-
-const workFormats = ['Удалённо', 'Гибрид', 'Офис'];
-const fieldLabels: Record<keyof ResumeFields, string> = {
-  name: 'Имя и фамилия', email: 'Email', phone: 'Телефон', city: 'Город',
-  industry: 'Отрасль', professionalRole: 'Роль в команде', specialization: 'Специализация',
-  desiredGrade: 'Предполагаемый грейд', experience: 'Общий стаж', softSkills: 'Софт-скиллы',
-  workHistory: 'Места работы и проекты', careerAchievements: 'Достижения',
-  workExperiences: 'Опыт работы', petProjects: 'Pet-проекты', achievementItems: 'Достижения', interests: 'Интересы / дополнительно',
-  education: 'Образование', stack: 'Стек', portfolio: 'Портфолио', languages: 'Языки', format: 'Формат работы',
-};
+import { createResumeDraft, mergeResumeImport, resumeDraftError, resumeDraftValues, resumeSurveyValues, workFormats, type ResumeDraft } from '../resume-form';
 
 export function Onboarding({ state, update, onComplete, accountPrefill }: {
   state: PlatformState; update: (fn: (state: PlatformState) => PlatformState) => void; onComplete: () => void;
   accountPrefill?: { name?: string; email?: string };
 }) {
   const profile = state.profile;
-  const [draft, setDraft] = useState<Draft>(() => ({
-    name: profile.name || accountPrefill?.name || '', email: profile.email || accountPrefill?.email || '', phone: profile.phone, city: profile.city,
-    industry: profile.industry, professionalRole: profile.professionalRole,
+  const [draft, setDraft] = useState<ResumeDraft>(() => ({
+    ...createResumeDraft(profile),
+    name: profile.name || accountPrefill?.name || '', email: profile.email || accountPrefill?.email || '',
     specialization: state.surveys.length || profile.confirmed ? profile.specialization : '',
     desiredGrade: state.surveys.length || profile.confirmed ? profile.desiredGrade : '',
-    stack: profile.stack.join(', '), experience: profile.experience,
-    softSkills: profile.softSkills || [],
-    bio: profile.bio || '',
-    careerAchievements: profile.careerAchievements || '', education: profile.education || '',
-    workHistory: profile.workHistory || '', portfolio: profile.portfolio || '', languages: profile.languages || '',
-    format: profile.format,
-    salaryFrom: profile.salaryFrom === null || profile.salaryFrom === undefined ? '' : String(profile.salaryFrom),
-    salaryTo: profile.salaryTo === null || profile.salaryTo === undefined ? '' : String(profile.salaryTo),
-    employmentType: profile.employmentType || '',
   }));
   const [error, setError] = useState('');
   const [consent, setConsent] = useState(profile.consent);
   const [visible, setVisible] = useState(profile.visible && profile.consent);
-  const [fileName, setFileName] = useState('');
   const [reading, setReading] = useState(false);
-  const [resumeStatus, setResumeStatus] = useState('');
-  const [resumeError, setResumeError] = useState('');
-  const fileInput = useRef<HTMLInputElement>(null);
-  const pending = useRef<AbortController | null>(null);
-  useEffect(() => () => pending.current?.abort(), []);
+  const edited = useRef(new Set<keyof ResumeDraft>());
   useEffect(() => {
     if (!accountPrefill?.name && !accountPrefill?.email) return;
     setDraft(previous => ({
@@ -65,119 +33,26 @@ export function Onboarding({ state, update, onComplete, accountPrefill }: {
     }));
   }, [accountPrefill?.name, accountPrefill?.email]);
 
-  function change<K extends keyof Draft>(field: K, value: Draft[K]) {
+  function change<K extends keyof ResumeDraft>(field: K, value: ResumeDraft[K]) {
+    edited.current.add(field);
     setDraft(previous => ({ ...previous, [field]: value }));
     setError('');
   }
-  async function attachResume(file: File) {
-    pending.current?.abort();
-    const controller = new AbortController();
-    pending.current = controller;
-    const original = draft;
-    setFileName(file.name); setReading(true); setResumeError(''); setResumeStatus('Читаем резюме…');
-    try {
-      const { readResume } = await import('../resume');
-      if (controller.signal.aborted) return;
-      const result = await readResume(file, {
-        signal: controller.signal,
-        onProgress: message => { if (!controller.signal.aborted) setResumeStatus(message); },
-      });
-      if (controller.signal.aborted) return;
-      const recognized: Partial<Draft> = {};
-      const truncated = new Set(result.truncatedFields);
-      for (const key of Object.keys(textLimits) as (keyof typeof textLimits)[]) {
-        if (key === 'stack') continue;
-        const value = result.fields[key];
-        if (typeof value !== 'string' || !value.trim()) continue;
-        if (key === 'industry' && !industryOptions.includes(value)) continue;
-        if (key === 'specialization' && !isSpecialization(value)) continue;
-        if (key === 'desiredGrade' && !isGrade(value)) continue;
-        if (key === 'format' && !workFormats.includes(value)) continue;
-        if (value.trim().length > textLimits[key]) truncated.add(key);
-        recognized[key] = value.trim().slice(0, textLimits[key]);
-      }
-      if (result.fields.stack?.length) {
-        const skills = [...new Set(result.fields.stack.map(skill => skill.trim().slice(0, 80)).filter(Boolean))].slice(0, MAX_STACK_SKILLS);
-        if (skills.length < result.fields.stack.length || skills.join(', ').length > textLimits.stack) truncated.add('stack');
-        while (skills.join(', ').length > textLimits.stack) skills.pop();
-        if (skills.length) recognized.stack = skills.join(', ');
-      }
-      if (result.fields.softSkills?.length) {
-        const skills = [...new Set(result.fields.softSkills)].filter(skill => softSkillOptions.includes(skill));
-        if (skills.length) recognized.softSkills = skills.slice(0, MAX_SOFT_SKILLS);
-        if (new Set([...original.softSkills, ...skills]).size > MAX_SOFT_SKILLS) truncated.add('softSkills');
-      }
-      if (result.fields.interests?.length) {
-        const about = result.fields.interests.join('\n').trim();
-        if (about.length > 3000) truncated.add('interests');
-        if (about) recognized.bio = about.slice(0, 3000);
-      }
-      setDraft(previous => {
-        const next = { ...previous };
-        for (const key of Object.keys(recognized) as (keyof Draft)[]) {
-          const unchanged = previous[key] === original[key];
-          if (unchanged && key === 'softSkills') next.softSkills = [...new Set([...previous.softSkills, ...recognized.softSkills!])].slice(0, MAX_SOFT_SKILLS);
-          else if (unchanged) Object.assign(next, { [key]: recognized[key] });
-        }
-        return next;
-      });
-      const status = Object.keys(recognized).length
-        ? 'Проверьте данные и заполните пустые обязательные поля.'
-        : 'Текст прочитан, но поля не распознаны. Заполните анкету.';
-      const labels = [...truncated].map(key => fieldLabels[key]);
-      const truncatedNotice = labels.length ? `Сокращены длинные поля: ${labels.join(', ')}. Проверьте их содержимое.` : '';
-      setResumeStatus([status, truncatedNotice, ...result.warnings].filter(Boolean).join(' '));
-    } catch (cause) {
-      if (controller.signal.aborted) return;
-      setResumeStatus('');
-      setResumeError(cause instanceof Error ? cause.message : 'Не удалось прочитать резюме. Попробуйте другой файл.');
-    } finally {
-      if (pending.current === controller) { pending.current = null; setReading(false); }
-    }
-  }
-  function removeResume() {
-    pending.current?.abort(); pending.current = null;
-    setReading(false); setResumeStatus(''); setResumeError(''); setFileName('');
-    if (fileInput.current) fileInput.current.value = '';
-  }
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const name = draft.name.trim(), email = draft.email.trim();
-    const specialization = draft.specialization as Specialization;
-    const desiredGrade = draft.desiredGrade as Grade;
-    const industry = draft.industry.trim(), professionalRole = draft.professionalRole.trim(), experience = draft.experience.trim();
-    const stack = [...new Set(draft.stack.split(',').map(skill => skill.trim()).filter(Boolean))];
-    const softSkills = [...new Set(draft.softSkills)].filter(skill => softSkillOptions.includes(skill));
-    const salaryFrom = draft.salaryFrom === '' ? null : Number(draft.salaryFrom);
-    const salaryTo = draft.salaryTo === '' ? null : Number(draft.salaryTo);
-    if ([salaryFrom, salaryTo].some(value => value !== null && (!Number.isInteger(value) || value < 0 || value > 10_000_000))) {
-      setError('Укажите зарплату от 0 до 10 000 000 ₽ в месяц, целым числом.'); return;
+    if ([...event.currentTarget.querySelectorAll<HTMLTextAreaElement>('.chip-editor textarea')].some(field => field.value.trim())) {
+      setError('Завершите редактирование достижений и интересов: нажмите «Добавить» или «Готово» в соответствующем разделе.'); return;
     }
-    if (salaryFrom !== null && salaryTo !== null && salaryFrom > salaryTo) {
-      setError('Нижняя граница желаемой зарплаты больше верхней. Проверьте диапазон.'); return;
-    }
-    if (draft.employmentType && !employmentTypes.includes(draft.employmentType)) { setError('Выберите занятость из списка.'); return; }
-    if (!name || !email || !industryOptions.includes(industry) || !professionalRole || !experience || !stack.length
-      || !isSpecialization(specialization) || !isGrade(desiredGrade)) {
-      setError('Заполните обязательные поля анкеты.'); return;
-    }
-    if (stack.length > MAX_STACK_SKILLS || stack.some(skill => skill.length > 80)) { setError(`Укажите до ${MAX_STACK_SKILLS} навыков, не более 80 символов каждый.`); return; }
+    const validation = resumeDraftError(draft);
+    if (validation) { setError(validation); return; }
     if (!consent) { setError('Нужно согласие на обработку персональных данных.'); return; }
-    const details = {
-      careerAchievements: draft.careerAchievements.trim(), education: draft.education.trim(),
-      workHistory: draft.workHistory.trim(), portfolio: draft.portfolio.trim(), languages: draft.languages.trim(), format: draft.format,
-    };
-    const survey: CandidateSurvey = {
-      id: crypto.randomUUID(), date: new Date().toISOString(), industry, professionalRole,
-      specialization, desiredGrade, stack, experience, softSkills, ...details,
-    };
+    const values = resumeDraftValues(draft);
+    const survey: CandidateSurvey = { id: crypto.randomUUID(), date: new Date().toISOString(), ...resumeSurveyValues(draft) };
     update(previous => ({
       ...previous, surveys: [survey, ...previous.surveys],
       profile: {
-        ...previous.profile, name, email, industry, professionalRole, specialization, desiredGrade, stack, experience, softSkills, ...details, bio: draft.bio.trim(),
-        city: draft.city.trim(), phone: draft.phone.trim(), consent, visible: visible && consent, surveyCompletedAt: survey.date,
-        salaryFrom, salaryTo, employmentType: draft.employmentType,
-        experienceMonths: deriveExperienceMonths(experience), languageCodes: deriveLanguageCodes(details.languages),
+        ...previous.profile, ...values, consent, visible: visible && consent, surveyCompletedAt: survey.date,
+        experienceMonths: deriveExperienceMonths(values.experience), languageCodes: deriveLanguageCodes(values.languages),
       },
     }));
     onComplete();
@@ -185,37 +60,18 @@ export function Onboarding({ state, update, onComplete, accountPrefill }: {
   return <div className="onboarding-layout">
     <CandidateSteps step={0} />
     <div className="page-heading"><h1>Анкета</h1></div>
-    <section className="panel resume-import" aria-labelledby="resume-heading" aria-busy={reading}>
-      <div className="resume-import-row">
-        <div><h2 id="resume-heading">Прикрепить резюме</h2><p>Анкета заполнится автоматически.</p></div>
-        <div className="resume-import-actions">
-          <button className="button secondary" type="button" onClick={() => fileInput.current?.click()}><Paperclip size={16} aria-hidden="true" />{fileName ? 'Заменить резюме' : 'Добавить резюме'}</button>
-          {fileName && !reading && <button className="button secondary" type="button" onClick={removeResume}><Trash2 size={16} aria-hidden="true" />Удалить резюме</button>}
-        </div>
-      </div>
-      <input ref={fileInput} className="sr-only" type="file" aria-label="Файл резюме" accept=".pdf,.docx,.txt,.png,.jpg,.jpeg,.webp" tabIndex={-1} onChange={event => {
-        const file = event.currentTarget.files?.[0];
-        event.currentTarget.value = '';
-        if (file) void attachResume(file);
-      }} />
-      {fileName && <div className="resume-import-status"><span className="resume-file-name">{fileName}</span>{reading && <button className="text-button" type="button" onClick={removeResume}>Отменить</button>}</div>}
-      <p className="resume-feedback" role="status" aria-live="polite">{resumeStatus}</p>
-      {resumeError && <p className="form-error resume-feedback" role="alert">{resumeError}</p>}
-    </section>
+    <ResumeUpload draft={draft} onReadingChange={setReading} onImportStart={() => edited.current.clear()} onImported={(imported, original) => setDraft(previous => mergeResumeImport(previous, original, imported, edited.current))} />
     <form className="panel onboarding-form" onSubmit={submit}>
       <div className="form-grid">
         <label className="field"><span>Имя и фамилия</span><input name="name" required maxLength={100} autoComplete="name" value={draft.name} onChange={event => change('name', event.target.value)} /></label>
         <label className="field"><span>Email</span><input name="email" type="email" required maxLength={254} autoComplete="email" value={draft.email} onChange={event => change('email', event.target.value)} /></label>
       </div>
-      <div className="form-grid">
-        <label className="field"><span>Отрасль</span><select name="industry" required value={draft.industry} onChange={event => change('industry', event.target.value)}><option value="">Выберите</option>{industryOptions.map(industry => <option key={industry}>{industry}</option>)}</select></label>
-        <label className="field"><span>Роль в команде</span><input name="professionalRole" list="onboarding-team-roles" required maxLength={100} value={draft.professionalRole} onChange={event => change('professionalRole', event.target.value)} placeholder="Разработчик" /><datalist id="onboarding-team-roles">{professionalRoleOptions.map(role => <option key={role} value={role} />)}</datalist></label>
-      </div>
+      <label className="field"><span>Роль в команде</span><select name="professionalRole" required value={draft.professionalRole} onChange={event => change('professionalRole', event.target.value)}><option value="">Выберите роль</option>{professionalRoleOptions.map(role => <option key={role}>{role}</option>)}</select></label>
       <div className="form-grid">
         <label className="field"><span>Специализация</span><select name="specialization" required value={draft.specialization} onChange={event => change('specialization', event.target.value)}><option value="">Выберите</option>{specializationOptions.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}</select></label>
         <label className="field"><span>Предполагаемый грейд</span><select name="desiredGrade" required value={draft.desiredGrade} onChange={event => change('desiredGrade', event.target.value)}><option value="">Выберите</option>{gradeOptions.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}</select></label>
       </div>
-      <label className="field"><span>Стек</span><input name="stack" required maxLength={textLimits.stack} value={draft.stack} onChange={event => change('stack', event.target.value)} placeholder="React, TypeScript, CSS" /></label>
+      <StackField value={draft.stack} onChange={value => change('stack', value)} />
       <SoftSkillsField value={draft.softSkills} onChange={value => change('softSkills', value)} />
       <div className="form-grid">
         <label className="field"><span>Общий стаж</span><input name="experience" required maxLength={100} value={draft.experience} onChange={event => change('experience', event.target.value)} placeholder="3 года 4 месяца или без опыта" aria-describedby={draft.experience.trim() && deriveExperienceMonths(draft.experience) === null ? 'onboarding-experience-help' : undefined} /></label>
@@ -229,8 +85,7 @@ export function Onboarding({ state, update, onComplete, accountPrefill }: {
         </div>
         <label className="field"><span>Занятость</span><select name="employmentType" value={draft.employmentType} onChange={event => change('employmentType', event.target.value)}><option value="">Не указана</option>{employmentTypes.map(value => <option key={value}>{value}</option>)}</select></label>
       </fieldset>
-      <label className="field"><span>Места работы и проекты</span><textarea name="workHistory" rows={6} maxLength={textLimits.workHistory} value={draft.workHistory} onChange={event => change('workHistory', event.target.value)} placeholder="Компания, период работы, роль и задачи" /></label>
-      <label className="field"><span>Достижения</span><textarea name="careerAchievements" rows={3} maxLength={textLimits.careerAchievements} value={draft.careerAchievements} onChange={event => change('careerAchievements', event.target.value)} placeholder="Результаты работы, проектов или соревнований" /></label>
+      <ResumeSectionsFields draft={draft} onChange={change} onInteracting={field => edited.current.add(field)} />
       <details className="onboarding-details">
         <summary>Подробнее о себе</summary>
         <label className="field"><span>О себе</span><textarea name="bio" rows={3} maxLength={3000} value={draft.bio} onChange={event => change('bio', event.target.value)} /></label>
