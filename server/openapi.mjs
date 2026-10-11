@@ -146,9 +146,11 @@ const schemas = {
   RetakeLocked: object({ error: string(), retryAt: string('', { format: 'date-time' }), lowerGrades: array(string()) }, ['error', 'retryAt']),
 
   DirectoryOptions: object({ cities: array(string()), industries: array(string()), languages: array(string()), employmentTypes: array(string()) }, [], { additionalProperties: true }),
-  Match: object({ policy: string(), percent: integer(), parts: array(object({ key: string('', { enum: ['tasks', 'category', 'stack', 'test', 'fsp'] }), label: string(), value: integer(), weight: integer() })) }),
+  Match: object({ policy: string(), percent: integer(), parts: array(object({ key: string('', { enum: ['tasks', 'category', 'stack', 'test', 'fsp'] }), label: string(), value: integer(), weight: integer() })),
+    confidence: object({ level: string('high — допущен моделью и закрывает все требования; medium — частичное совпадение или смежная специализация; low — ближайший профиль ниже порога модели', { enum: ['high', 'medium', 'low'] }), label: string() }, ['level', 'label']),
+    requirements: object({ matched: array(string()), missing: array(string()), total: integer(), text: string('Например: «Совпало 2 из 3 (React, TypeScript), не хватает: Figma.»') }, ['matched', 'missing', 'total', 'text'], { description: 'Технологии из запроса и фильтров; альтернатива «A или B» считается одним требованием' }) }),
   Freshness: object({ lastCompletedAt: string('', { format: 'date-time' }), source: string('', { const: 'employer_review' }) }),
-  DirectoryItem: object({ person: ref('Candidate'), rank: { type: 'number' }, reason: string('Почему подходит'), match: ref('Match'),
+  DirectoryItem: object({ person: ref('Candidate'), rank: nullable({ type: 'number', description: 'null — ближайший профиль добора, не оценённый вторым этапом модели' }), reason: string('Почему подходит'), match: ref('Match'),
     freshness: nullable(ref('Freshness')), semanticScore: nullable({ type: 'number' }), rerankerScore: { type: 'number' }, approximate: boolean(),
     evidenceKind: string('', { enum: ['professional', 'competencies'] }) }, ['person', 'reason']),
   DirectorySearch: object({ items: array(ref('DirectoryItem')), categories: array(object({ specialization: string(), grade: string(), count: integer() }, [], { additionalProperties: true })),

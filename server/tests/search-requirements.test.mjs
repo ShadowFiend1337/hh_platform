@@ -58,6 +58,12 @@ test('a universal web developer request finds Fullstack first, then frontend and
   assert.equal(ids[0], 'fullstack');
   assert.deepEqual(new Set(ids.slice(1)), new Set(['frontend', 'backend']));
   assert.equal(result.items[0].match.confidence.level, 'high');
+  assert.ok(result.items.slice(1).every(item => item.explanation.adjacentSpecialization === true
+    && /Смежная специализация к запрошенной \(Fullstack-разработчик\)/u.test(item.reason)));
+  const either = await value.search('Frontend или Backend для кабинета');
+  const fullstack = either.items.find(item => item.person.id === 'fullstack');
+  assert.equal(either.items.at(-1).person.id, 'fullstack', 'Several named roles are listed before their adjacent direction');
+  assert.match(fullstack.reason, /Смежная специализация к запрошенной \(Frontend-разработчик, Backend-разработчик\)/u);
 });
 
 test('a named role always yields top-K with the weakest marked nearest; without signals the cutoff stays strict', async t => {

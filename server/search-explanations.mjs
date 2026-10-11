@@ -96,7 +96,7 @@ function fspExplanation(person, source, contribution) {
 
 /** Annotate admitted public results; return their existing order and scores. */
 export function explainSearchResults(items, { semantic = false, scoreKind = 'logit', filters = {},
-  fspEvidence = rankingFspEvidence, related = [] } = {}) {
+  fspEvidence = rankingFspEvidence, related = [], requested = [] } = {}) {
   if (!Array.isArray(items)) throw new TypeError('Expected search results');
   if (scoreKind !== 'logit' && scoreKind !== 'cosine') throw new TypeError('Unknown semantic score kind');
   if (typeof fspEvidence !== 'function') throw new TypeError('Expected a trusted FSP evidence resolver');
@@ -141,8 +141,8 @@ export function explainSearchResults(items, { semantic = false, scoreKind = 'log
     }
     const relevance = item.approximate === true ? 'nearest' : semantic ? 'semantic' : 'filters';
     const testSummary = !category ? test.explanation : `${person.synthetic === true ? 'Учебный результат теста' : 'Серверный результат теста'}: ${category.score}/100.`;
-    const adjacent = filters.specialization && related.includes(categoryInfo.specialization)
-      ? `Смежная специализация к запрошенной (${specializationLabels[filters.specialization] || filters.specialization}).` : '';
+    const adjacent = related.includes(categoryInfo.specialization)
+      ? `Смежная специализация к запрошенной (${requested.map(value => specializationLabels[value] || value).join(', ')}).` : '';
     const parts = [`${categoryInfo.label}. ${categoryInfo.explanation}`, adjacent, item.approximate === true
       ? 'Это ближайший профиль: уверенность модели ниже порога строгого совпадения.' : '',
     item.coverage ? `Требования запроса: ${item.coverage.text}` : '',

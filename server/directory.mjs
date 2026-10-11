@@ -569,13 +569,14 @@ export class DirectoryService {
     // Category navigation narrows the current recommendation; it never changes
     // employer constraints, neural admission, or recommendations for other groups.
     items=confirmedFirst(items);
-    items=explainSearchResults(items,{semantic:Boolean(embeddingQuery),scoreKind:stage?'logit':'cosine',filters,related});
+    items=explainSearchResults(items,{semantic:Boolean(embeddingQuery),scoreKind:stage?'logit':'cosine',filters,related,requested:primary});
     items=annotateMatches(items,{semantic:Boolean(embeddingQuery),filters,related});
     const categories=recommendCategories(items,{semantic:Boolean(embeddingQuery)});
     const selected=category?items.filter(item=>item.person.confirmed?.specialization===category.specialization
       && item.person.confirmed?.grade===category.grade):items;
     return {items:selected.slice(offset,offset+limit).map(({testScore,fsp,sourceId,documentHash,publicPayload,taskSections,reasonSuffix,roleLabel,evidenceText,rankingTrace,coverage,evidenceMissing,...item})=>
-      this.freshness?{...item,freshness:this.freshness(item.person.id)}:item),
+      // A reserve profile outside the reranked shortlist has no second-stage score.
+      ({...item,rank:Number.isFinite(item.rank)?item.rank:null,...(this.freshness?{freshness:this.freshness(item.person.id)}:{})})),
       categories,selectedCategory:category,total:selected.length,offset,limit,query,interpreted,effectiveFilters:filters,
       model:{...this.encoder.info,indexPolicy:PROFILE_INDEX_POLICY,taskEvidencePolicy:TASK_EVIDENCE_POLICY,
         categoryRecommendationPolicy:CATEGORY_RECOMMENDATION_POLICY,

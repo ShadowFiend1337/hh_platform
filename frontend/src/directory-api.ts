@@ -31,7 +31,7 @@ export interface DirectoryMatch {
 }
 export interface DirectoryItem {
   person: DirectoryCandidate;
-  rank: number;
+  rank: number | null;
   reason: string;
   match?: DirectoryMatch;
   /** Last employer-approved task; marks the profile as recently active. */

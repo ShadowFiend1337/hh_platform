@@ -10607,6 +10607,58 @@
                 }
               }
             }
+          },
+          "confidence": {
+            "type": "object",
+            "properties": {
+              "level": {
+                "type": "string",
+                "description": "high — допущен моделью и закрывает все требования; medium — частичное совпадение или смежная специализация; low — ближайший профиль ниже порога модели",
+                "enum": [
+                  "high",
+                  "medium",
+                  "low"
+                ]
+              },
+              "label": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "level",
+              "label"
+            ]
+          },
+          "requirements": {
+            "type": "object",
+            "properties": {
+              "matched": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "missing": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "total": {
+                "type": "integer"
+              },
+              "text": {
+                "type": "string",
+                "description": "Например: «Совпало 2 из 3 (React, TypeScript), не хватает: Figma.»"
+              }
+            },
+            "required": [
+              "matched",
+              "missing",
+              "total",
+              "text"
+            ],
+            "description": "Технологии из запроса и фильтров; альтернатива «A или B» считается одним требованием"
           }
         }
       },
@@ -10630,7 +10682,15 @@
             "$ref": "#/components/schemas/Candidate"
           },
           "rank": {
-            "type": "number"
+            "anyOf": [
+              {
+                "type": "number",
+                "description": "null — ближайший профиль добора, не оценённый вторым этапом модели"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "reason": {
             "type": "string",
