@@ -24,6 +24,10 @@ export interface DirectoryMatch {
   policy: string;
   percent: number;
   parts: { key: 'tasks' | 'category' | 'stack' | 'test' | 'fsp'; label: string; value: number; weight: number }[];
+  /** How sure the ranking is: admitted with every requirement, partial, or nearest below the model cutoff. */
+  confidence?: { level: 'high' | 'medium' | 'low'; label: string };
+  /** Technologies named in the request: which the profile covers and which it lacks. */
+  requirements?: { matched: string[]; missing: string[]; total: number; text: string };
 }
 export interface DirectoryItem {
   person: DirectoryCandidate;

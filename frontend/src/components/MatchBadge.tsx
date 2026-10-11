@@ -6,14 +6,15 @@ const tone = (percent: number) => percent >= 80 ? 'high' : percent >= 60 ? 'medi
 export function MatchBadge({ match }: { match?: DirectoryMatch }) {
   if (!match) return null;
   return <span className={'match-pill match-' + tone(match.percent)} title={'Совпадение с запросом: ' + match.parts.map(part => `${part.label} ${part.value}%`).join(', ')}>
-    Совпадение {match.percent}%
+    Совпадение {match.percent}%{match.confidence && match.confidence.level !== 'high' ? ' · ' + (match.confidence.level === 'low' ? 'ближайший' : 'частично') : ''}
   </span>;
 }
 
 export function MatchBreakdown({ match }: { match?: DirectoryMatch }) {
   if (!match) return null;
   return <div className="match-breakdown">
-    <strong>Совпадение {match.percent}%</strong>
+    <strong>Совпадение {match.percent}%{match.confidence ? ' · ' + match.confidence.label : ''}</strong>
+    {match.requirements && <span className="match-requirements">{match.requirements.text}</span>}
     <ul>{match.parts.map(part => <li key={part.key}>
       <span>{part.label}</span>
       <span className="match-bar" aria-hidden="true"><i style={{ width: part.value + '%' }} /></span>
