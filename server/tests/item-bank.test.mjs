@@ -12,7 +12,7 @@ const survey = { id: 'bank-survey', date: new Date(time).toISOString(), industry
 const familyId = 'bm-transactions-concurrency';
 const good = {
   text: 'Два обработчика одновременно списывают бонусы с одного счёта и оба читают баланс 100. Как не допустить отрицательного остатка без глобальной блокировки таблицы?',
-  options: ['Условное обновление с проверкой баланса в одном SQL-запросе', 'Проверять баланс в коде перед каждым запросом',
+  options: ['Условное обновление с проверкой баланса в одном SQL-запросе', 'Проверять баланс в коде приложения перед каждым запросом списания',
     'Увеличить таймаут соединения с базой данных', 'Повторять списание до успеха без проверки'],
   correct: 0, explanation: 'Проверка и изменение выполняются атомарно.', skills: ['SQL', 'Транзакции'],
 };
@@ -105,10 +105,13 @@ test('local checks reject answer cues, banned options, personal data and paraphr
   const family = programs.Backend.Middle.families.find(item => item.id === familyId);
   assert(checkGeneratedItem(good, family, []).item);
   assert.match(checkGeneratedItem({ ...good, options: [...good.options.slice(0, 3), 'Все перечисленное'] }, family).error, /Запрещённая/u);
-  assert.match(checkGeneratedItem({ ...good, options: [good.options[0] + ' и дополнительно журнал аудита с подробной трассировкой каждого шага и уведомлением владельца', 'А', 'Б', 'В'] }, family).error, /длиной/u);
+  assert.match(checkGeneratedItem({ ...good, options: [good.options[0] + ' и дополнительно журнал аудита с подробной трассировкой каждого шага и уведомлением владельца', 'А', 'Б', 'В'] }, family).error, /Подсказка в вариантах/u);
   assert.match(checkGeneratedItem({ ...good, text: good.text + ' Пишите на hr@example.com.' }, family).error, /персональные/u);
   assert.match(checkGeneratedItem(good, family, [good.text.replace('бонусы', 'баллы')]).error, /похоже/u);
   assert.match(checkGeneratedItem({ ...good, options: [good.options[0], good.options[0], 'x', 'y'] }, family).error, /повторяются/u);
+  // A key longer than every wrong option, or wrong options far shorter, is a cue.
+  assert.match(checkGeneratedItem({ ...good, options: [good.options[0], 'Проверять баланс в коде', 'Увеличить таймаут', 'Повторять списание'] }, family).error, /Подсказка в вариантах/u);
+  assert.match(checkGeneratedItem({ ...good, options: [good.options[0], 'Проверять баланс в коде перед запросом', 'Увеличить таймаут соединения с базой', 'Повторять списание до успеха'] }, family).error, /длиннее всех/u);
   assert(textSimilarity(good.text, good.text) > 0.99);
   assert.equal(pointBiserial({ responses: 4, correct: 4, scoreSum: 3, scoreCorrectSum: 3, scoreSquareSum: 2.5 }), null);
 });
@@ -155,4 +158,20 @@ test('generation keeps only items the independent solver answers with the key', 
   assert(generation.examples.length >= 1 && generation.domainContext.length >= 1, 'The authored bank feeds the generator');
   assert(!requests[0].messages[1].content.includes('@'), 'No personal data in prompts');
   assert.equal(bank.list({ status: 'pilot' }).length, 1);
+});
+
+test('generation drops an item whose key a model finds from the options alone', async () => {
+  const { bank } = bankFixture();
+  const llm = { configured: true, models: { chat: 'qwen/mock', verifier: 'deepseek/mock' }, async chat(options) {
+    const shown = options.messages[1].content;
+    if (options.model === 'deepseek/mock') {
+      const line = shown.split('\n').find(row => row.includes(good.options[0]));
+      return { model: 'deepseek/mock', json: { answer: line.slice(0, 1), confidence: 0.9, ambiguous: false } };
+    }
+    if (options.messages[0].content.includes('без самого вопроса')) return { model: 'qwen/mock', json: { choice: JSON.parse(shown).options.indexOf(good.options[0]) } };
+    return { model: 'qwen/mock', json: { items: [good] } };
+  } };
+  const result = await generateFamilyItems({ llm, bank, familyId, count: 1 });
+  assert.equal(result.accepted.length, 0);
+  assert.deepEqual(result.rejected, ['Ключ угадывается по виду вариантов без условия.']);
 });

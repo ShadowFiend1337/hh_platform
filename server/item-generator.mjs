@@ -10,6 +10,7 @@ import { openFamilies } from './open-bank.mjs';
 import { gradeLabels } from '../shared/grading.ts';
 import { specializationNames } from '../shared/catalog.ts';
 import { textSimilarity } from './item-bank.mjs';
+import { blindGuessPrompt, distractorIssues } from './bank-cues.mjs';
 
 export const GENERATOR_VERSION = '2026.10.09-item-model-v1';
 const gradeMeaning = {
@@ -62,10 +63,9 @@ export function checkGeneratedItem(raw, family, existingTexts = []) {
   if (!Number.isInteger(correct) || correct < 0 || correct > 3) return { error: 'Некорректный индекс правильного ответа.' };
   if ([text, ...options].some(value => banned.some(pattern => pattern.test(value)))) return { error: 'Запрещённая формулировка варианта.' };
   if ([text, ...options].some(value => personalData.some(pattern => pattern.test(value)))) return { error: 'Похоже на персональные данные.' };
-  const others = options.filter((_, index) => index !== correct).map(option => option.length);
-  if (options[correct].length > Math.max(...others) * 1.6 && options[correct].length - Math.max(...others) > 40) {
-    return { error: 'Правильный вариант выделяется длиной.' };
-  }
+  // The same cue check as the revised authored bank (docs/bank_quality.md).
+  const cues = distractorIssues(options[correct], options.filter((_, index) => index !== correct));
+  if (cues.length) return { error: 'Подсказка в вариантах: ' + cues.join(', ') + '.' };
   if (text.toLocaleLowerCase('ru').includes(options[correct].toLocaleLowerCase('ru')) && options[correct].length > 12) {
     return { error: 'Условие содержит правильный ответ.' };
   }
@@ -92,6 +92,15 @@ function generationRequest(family, count, bank) {
     difficulty: family.difficulty === 1 ? 'базовый слот грейда: типовая ситуация' : 'повышенный слот грейда: компромиссы, сбои, нетиповые условия',
     skills: family.skills, focusSkills: sample(family.skills, Math.min(2, family.skills.length)), examples, domainContext, doNotRepeat: recent,
   };
+}
+
+/** True when a model that sees only the options, not the question, finds the key: the item gives itself away. */
+export async function blindGuessed(llm, item, { signal } = {}) {
+  const order = sample([0, 1, 2, 3], 4);
+  const reply = await llm.chat({ model: llm.models.chat, fallback: null, temperature: 0, maxTokens: 60, json: true, signal, timeoutMs: 30_000,
+    messages: [{ role: 'system', content: blindGuessPrompt }, { role: 'user', content: JSON.stringify({ options: order.map(source => item.options[source]) }) }] });
+  const choice = Number(reply.json?.choice);
+  return Number.isInteger(choice) && order[choice] === item.correct;
 }
 
 /** Independent check: a different model must solve the item without the key. */
@@ -130,6 +139,9 @@ export async function generateFamilyItems({ llm, bank, familyId, count = 3, sign
       const reason = verification.duplicateOf ? 'Пересказ существующего вопроса.' : verification.ambiguous ? 'Проверяющая модель сочла вопрос двусмысленным.' : 'Проверяющая модель выбрала другой ответ.';
       rejected.push(reason); bank.log(family.id, 'rejected', reason + (verification.issue ? ' ' + verification.issue : ''), reply.model); continue;
     }
+    let blind = false;
+    try { blind = await blindGuessed(llm, checked.item, { signal }); } catch { /* the blind check is advisory when the model is unavailable */ }
+    if (blind) { rejected.push('Ключ угадывается по виду вариантов без условия.'); bank.log(family.id, 'rejected', 'Ключ угадывается без условия.', reply.model); continue; }
     const stored = bank.addGenerated(family, { ...checked.item, derivedFrom: null },
       { generator: reply.model + ' · ' + GENERATOR_VERSION, verifier: verification.model, verification });
     if (!stored) { rejected.push('Дубликат.'); bank.log(family.id, 'rejected', 'Дубликат отпечатка.', reply.model); continue; }

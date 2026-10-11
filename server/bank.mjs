@@ -6,8 +6,9 @@ import { productPrograms } from './banks/product.mjs';
 import { engineeringLevelPrograms } from './banks/engineering-levels.mjs';
 import { dataProductLevelPrograms } from './banks/data-product-levels.mjs';
 import { embeddedPrograms } from './banks/embedded.mjs';
+import { revisedDistractors } from './banks/revised-distractors.mjs';
 
-export const bankVersion = '2026.10.4';
+export const bankVersion = '2026.10.5';
 
 // Per-task tags describe the competence actually exercised by that task.
 // They allow vacancy emphasis inside a difficulty slot without changing its
@@ -217,6 +218,20 @@ const basePrograms = {
   },
 };
 
-export const programs = { ...Object.fromEntries(Object.entries(basePrograms).map(([specialization, grades]) => [
+/** The authored bank as written, before revised distractors. */
+export const authoredPrograms = { ...Object.fromEntries(Object.entries(basePrograms).map(([specialization, grades]) => [
   specialization, { ...grades, ...engineeringLevelPrograms[specialization], ...dataProductLevelPrograms[specialization] },
 ])), ...embeddedPrograms };
+
+/** Replaces the wrong options of an item with its revision; the question and the key stay authored. */
+function revised(variant) {
+  const distractors = revisedDistractors[variant.id];
+  if (!distractors) return variant;
+  const options = [...distractors];
+  options.splice(variant.correct, 0, variant.options[variant.correct]);
+  return { ...variant, options };
+}
+
+export const programs = Object.fromEntries(Object.entries(authoredPrograms).map(([specialization, grades]) => [specialization,
+  Object.fromEntries(Object.entries(grades).map(([grade, program]) => [grade, { ...program,
+    families: program.families.map(family => ({ ...family, variants: family.variants.map(revised) })) }]))]));
