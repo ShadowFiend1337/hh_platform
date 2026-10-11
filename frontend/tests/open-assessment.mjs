@@ -14,12 +14,13 @@ import { startIsolatedService } from './helpers/isolated-service.mjs';
 // attempt from the "Оценено ИИ" tab and the category leaves the candidate's profile.
 const folder = await mkdtemp(join(tmpdir(), 'predel-open-ui-')), dbPath = join(folder, 'open.sqlite');
 await prepareLocalAccounts(dbPath);
-const llm = { configured: true, models: { chat: 'qwen/mock' }, calls: 0, async chat(options) {
+// Two mock graders agree on every criterion and quote the answer as evidence.
+const llm = { configured: true, models: { chat: 'qwen/mock', verifier: 'deepseek/mock' }, calls: 0, async chat(options) {
   this.calls++;
   const tasks = JSON.parse(options.messages[1].content).tasks;
-  const json = { tasks: tasks.map(task => ({ questionId: task.questionId, comment: 'Решение по существу верное.',
-    criteria: task.criteria.map(item => ({ id: item.id, score: 2, reason: 'Требование выполнено в ответе.' })) })) };
-  return { content: JSON.stringify(json), model: 'qwen/mock', json };
+  const json = { tasks: tasks.map(task => ({ questionId: task.questionId, comment: 'Решение по существу верное.', manipulation: false,
+    criteria: task.criteria.map(item => ({ id: item.id, score: 2, evidence: task.answer.slice(0, 30), reason: 'Требование выполнено в ответе.' })) })) };
+  return { content: JSON.stringify(json), model: options.model, json };
 } };
 const isolated = await startIsolatedService({ dbPath, llm, authEnv: { ASSESSMENT_OPEN_TASKS: '2', API_RATE_LIMIT_PER_MINUTE: '3000' } });
 const browser = await chromium.launch();
@@ -52,10 +53,10 @@ try {
   assert.equal(sawStage, true, 'Open tasks follow the passed closed part');
   await candidate.getByRole('heading', { name: 'Грейд подтверждён' }).waitFor();
   const resultText = await candidate.locator('.assessment-result').innerText();
-  assert.match(resultText, /Практические задачи оценены автоматически: ИИ проверил ответы по критериям рубрики/u);
+  assert.match(resultText, /Практические задачи оценены автоматически: две модели независимо проверили ответы/u);
   assert.match(resultText, /Эксперт может перепроверить оценку/u);
   assert.match(resultText, /Закрытая часть[\s\S]*Практика\s*100\/100/u);
-  assert.equal(llm.calls, 1, 'The practice is scored once, right after the last answer');
+  assert.equal(llm.calls, 2, 'The practice is scored once by each grader, right after the last answer');
   await candidate.screenshot({ path: resolve('test-results', 'open-assessment-ai.png'), fullPage: true });
 
   // The category is in the profile before any moderator looks at the attempt.
@@ -86,11 +87,11 @@ try {
   assert.equal(await card.locator('.review-task').count(), 2);
   assert.match(await card.locator('.review-task').first().innerText(), /Авторская задача банка|Сгенерировано/u);
   assert.match(await card.locator('.review-answer').first().innerText(), /стабильные ключи/u);
-  assert.match(await card.locator('.review-ai-note').innerText(), /Практику оценил ИИ \(qwen\/mock\)/u);
+  assert.match(await card.locator('.review-ai-note').first().innerText(), /Практику оценили две модели \(qwen\/mock \+ deepseek\/mock\)/u);
   const criteria = await card.locator('.review-criterion').count();
   assert.ok(criteria >= 2);
   assert.equal(await card.locator('.review-scale [aria-checked="true"]').count(), criteria, 'Every criterion is prefilled with the model score');
-  assert.equal(await card.locator('.review-reason').filter({ hasText: 'ИИ: Требование выполнено в ответе.' }).count(), criteria);
+  assert.equal(await card.locator('.review-reason').filter({ hasText: 'Требование выполнено в ответе.' }).count(), 2 * criteria, 'Both graders with their quotes');
   assert.match(await card.locator('.review-summary').innerText(), /пройдёт/u);
   assert.equal(await card.getByRole('button', { name: 'Утвердить оценку' }).isDisabled(), false, 'The model scores can be confirmed as they are');
   assert.equal(await card.getByRole('button', { name: 'ИИ-подсказка оценок' }).count(), 0, 'No advisory call for an attempt already scored');
@@ -101,7 +102,7 @@ try {
   await moderator.locator('.review-card .review-status-invalidated').waitFor();
   assert.match(await moderator.locator('.review-card .review-confirmation').innerText(), /Категория снята с профиля кандидата/u);
   assert.match(await moderator.locator('.review-card .review-decided').innerText(), /Аннулировано экспертом/u);
-  assert.equal(llm.calls, 1);
+  assert.equal(llm.calls, 2);
   assert.equal(await moderator.locator('.main-nav').getByRole('link', { name: 'Кандидаты' }).count(), 0, 'No hiring sections in the moderator cabinet');
   assert.equal((await moderatorContext.request.get(isolated.base + '/api/directory/search?q=react')).status(), 403);
 
@@ -123,7 +124,7 @@ try {
   await fixture.locator('.demo-account').filter({ hasText: 'Модератор' }).getByRole('button', { name: 'Войти' }).click();
   await fixture.waitForURL(/\/moderation/u);
   await fixture.getByRole('heading', { name: 'Проверка тестов' }).waitFor();
-  // The seeded attempt was graded without the model: the closed part decided, the practice waits for an expert.
+  // The seeded attempt was graded without the model: the grade waits for the expert to score the practice.
   const queued = fixture.locator('.review-item').filter({ hasText: 'Тестовый кандидат' });
   await queued.waitFor();
   assert.match(await queued.innerText(), /практика 2 ждёт оценки/u);

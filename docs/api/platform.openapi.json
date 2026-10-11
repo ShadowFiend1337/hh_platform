@@ -11922,7 +11922,7 @@
                     "anyOf": [
                       {
                         "type": "string",
-                        "description": "null — нули по правилу: ответа нет"
+                        "description": "Модели через « + »; null — нули по правилу: ответа нет"
                       },
                       {
                         "type": "null"
@@ -11932,9 +11932,35 @@
                   "at": {
                     "type": "string"
                   },
+                  "models": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Две независимые модели-оценщика"
+                  },
                   "reason": {
                     "type": "string",
-                    "description": "Почему модель не оценила: no-key, timeout, unavailable, format, incomplete"
+                    "description": "Почему грейд ждёт эксперта: no-key, timeout, unavailable, format, incomplete, manipulation (ответ обращается к проверяющему), disagreement (модели разошлись на 2 балла по критерию или в вердикте)"
+                  },
+                  "flags": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "questionId": {
+                          "type": "string"
+                        },
+                        "fragment": {
+                          "type": "string",
+                          "description": "Фрагмент ответа, обращённый к проверяющему"
+                        },
+                        "model": {
+                          "type": "string",
+                          "description": "Модель, заметившая манипуляцию"
+                        }
+                      }
+                    }
                   },
                   "marks": {
                     "type": "array",
@@ -11959,12 +11985,23 @@
                                 "type": "string"
                               },
                               "score": {
-                                "type": "integer",
-                                "enum": [
-                                  0,
-                                  1,
-                                  2
-                                ]
+                                "type": "number",
+                                "description": "Согласованный балл 0..2, среднее двух моделей (шаг 0,5)"
+                              },
+                              "scores": {
+                                "type": "array",
+                                "items": {
+                                  "type": "integer",
+                                  "enum": [
+                                    0,
+                                    1,
+                                    2
+                                  ]
+                                }
+                              },
+                              "evidence": {
+                                "type": "string",
+                                "description": "Дословная цитата из ответа, подтверждающая балл"
                               },
                               "reason": {
                                 "type": "string"
@@ -11974,12 +12011,70 @@
                         }
                       }
                     }
+                  },
+                  "graders": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "model": {
+                          "type": "string"
+                        },
+                        "marks": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "questionId": {
+                                "type": "string"
+                              },
+                              "manipulation": {
+                                "type": "boolean"
+                              },
+                              "comment": {
+                                "type": "string"
+                              },
+                              "criteria": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "id": {
+                                      "type": "string"
+                                    },
+                                    "score": {
+                                      "type": "integer",
+                                      "enum": [
+                                        0,
+                                        1,
+                                        2
+                                      ]
+                                    },
+                                    "unsupported": {
+                                      "type": "integer",
+                                      "description": "Балл модели без найденной цитаты — не засчитан"
+                                    },
+                                    "evidence": {
+                                      "type": "string"
+                                    },
+                                    "reason": {
+                                      "type": "string"
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "description": "Оценки каждой модели отдельно"
                   }
                 },
                 "required": [
                   "status"
                 ],
-                "description": "Автоматическая оценка практики при завершении попытки"
+                "description": "Автоматическая оценка практики двумя моделями при завершении попытки"
               },
               {
                 "type": "null"

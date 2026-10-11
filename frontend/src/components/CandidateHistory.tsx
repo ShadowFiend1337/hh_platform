@@ -84,8 +84,8 @@ export function CandidateHistory({ state }: { state: PlatformState }) {
           </dl></section> : null}
           {result.vacancySkills?.length ? <section><h4>Навыки вакансии</h4><div className="tags">{result.vacancySkills.map(skill => <span className="tag" key={skill}>{skill}</span>)}</div></section> : null}
           {result.pending && <p className="field-help">Закрытая часть пройдена; эксперт проверяет открытые задачи ({result.openCount}). Итог — половина закрытой и половина открытой части.</p>}
-          {result.openStatus === 'ai' && <p className="field-help">Практические задачи оценены ИИ по критериям рубрики; эксперт может перепроверить оценку.</p>}
-          {result.openStatus === 'queued' && <p className="field-help">Грейд определён по закрытой части; практические задачи ({result.openCount}) проверит эксперт.</p>}
+          {result.openStatus === 'ai' && <p className="field-help">Практические задачи оценены двумя моделями по критериям рубрики, каждый балл — с цитатой из ответа; эксперт может перепроверить оценку.</p>}
+          {result.openStatus === 'queued' && !result.pending && <p className="field-help">Грейд определён по закрытой части; практические задачи ({result.openCount}) проверит эксперт.</p>}
           {result.openTimedOut && <p className="field-help">Время истекло на практическом этапе: задачи без ответа оценены нулём.</p>}
           {result.review?.note && <section><h4>Комментарий эксперта</h4><p className="history-review-note">{result.review.note}</p></section>}
           {result.review?.marks?.some(mark => mark.comment) && <section><h4>Открытые задачи</h4><ul className="history-review-marks">

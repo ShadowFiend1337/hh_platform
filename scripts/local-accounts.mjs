@@ -9,7 +9,7 @@ import { MarketplaceService } from '../server/marketplace.mjs';
 import { FspIntegrationService } from '../server/fsp-integration.mjs';
 import { RefreshTaskService } from '../server/refresh-tasks.mjs';
 import { appendOpenTasks, authoredOpenTask } from '../server/open-tasks.mjs';
-import { AssessmentReviewService } from '../server/assessment-review.mjs';
+import { AssessmentReviewService, awaitingExpert } from '../server/assessment-review.mjs';
 import { openStore } from '../server/store.mjs';
 import { createAttempt, digest, evaluate } from '../server/assessment.mjs';
 import { createInitialState } from '../frontend/src/model.ts';
@@ -38,8 +38,8 @@ const pendingOpenAnswers = {
 };
 
 /**
- * A second attempt of the test candidate graded while the model was unavailable: the closed
- * part confirmed the grade, the open answers wait for the test moderator.
+ * A second attempt of the test candidate graded while the model was unavailable: the grade
+ * waits for the test moderator, who scores the two open answers.
  */
 function seedPendingReview(assessments, owner, survey) {
   const started = Date.now();
@@ -58,8 +58,9 @@ function seedPendingReview(assessments, owner, survey) {
   assessments.insert(attempt, owner, digest(randomBytes(32).toString('hex')));
   assessments.extend(attempt.id, attempt, progress);
   const evaluation = evaluate(attempt, undefined, started + 30 * 60000, { progress });
-  assessments.complete(attempt.id, evaluation.answerDigest, evaluation.result);
-  new AssessmentReviewService({ db: assessments.db, store: assessments, platform: null }).enqueue(attempt.id, owner);
+  assessments.complete(attempt.id, evaluation.answerDigest, awaitingExpert(evaluation.result));
+  new AssessmentReviewService({ db: assessments.db, store: assessments, platform: null })
+    .enqueue(attempt.id, owner, { aiReview: { status: 'failed', reason: 'no-key', at: new Date(started).toISOString() } });
 }
 
 function candidateState(candidate) {

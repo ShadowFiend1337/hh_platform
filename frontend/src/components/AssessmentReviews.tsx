@@ -22,24 +22,30 @@ interface Detail { id: string; candidate: string; specialization: Specialization
     openStatus?: 'ai' | 'queued' | 'expert'; openTimedOut?: boolean; reviewedByExpert?: boolean;
     review?: { note: string; previousScore?: number; previousOpenScore?: number | null; previousStatus?: 'ai' | 'queued' };
     competencies?: { topic: string; correct: number; total: number }[] };
-  aiReview?: null | { status: 'scored'; model: string | null; at: string; marks: AiMark[] } | { status: 'failed'; reason: string; at: string };
+  aiReview?: null | { status: 'scored'; model: string | null; at: string; marks: AiMark[]; graders?: GraderOpinion[] }
+    | { status: 'failed'; reason: string; at: string; flags?: { questionId: string; fragment?: string; model?: string }[]; graders?: GraderOpinion[] };
   confirmation?: null | { applied: boolean; action?: 'confirmed' | 'revoked'; reason?: string };
   decision: { decision: string; note: string; marks?: { questionId: string; criteria: { id: string; score: number }[]; comment: string }[] } | null;
   closed: ClosedItem[]; open: OpenTask[]; policy: { threshold: number; closedWeight: number; openWeight: number } }
-interface AiMark { questionId: string; score: number; comment: string; criteria: { id: string; score: number; reason: string }[] }
+interface AiCriterion { id: string; score: number; reason: string; scores?: number[]; evidence?: string; unsupported?: number }
+interface AiMark { questionId: string; score?: number; comment: string; manipulation?: boolean; criteria: AiCriterion[] }
+/** One model's own marks, kept when two graders scored the practice. */
+interface GraderOpinion { model: string | null; marks: AiMark[] }
 interface Suggestion { model: string; tasks: { questionId: string; comment: string; criteria: { id: string; score: number; reason: string }[] }[] }
 
 const statusLabels: Record<ReviewStatus, string> = { pending: 'Ждут эксперта', ai: 'Оценено ИИ', completed: 'Проверено', invalidated: 'Аннулировано', all: 'Все попытки' };
 const itemLabels: Record<ItemStatus, string> = { pending: 'Ждёт эксперта', ai: 'Оценено ИИ', completed: 'Проверено экспертом', invalidated: 'Аннулировано экспертом', auto: 'Автоматически' };
 const failureLabels: Record<string, string> = { 'no-key': 'на сервере не задан ключ модели', timeout: 'модель не ответила вовремя', format: 'ответ модели в неожиданном формате',
-  incomplete: 'модель оценила не все критерии' };
+  incomplete: 'модель оценила не все критерии', unavailable: 'модель недоступна', invalid_response: 'ответ модели не разобран', configuration: 'модель не настроена',
+  manipulation: 'в ответе попытка повлиять на проверку', disagreement: 'две модели разошлись в оценке' };
+const modelName = (model: string | null) => model ? model.split('/').pop()!.split('-').slice(0, 2).join('-') : 'ИИ';
 const emptyLabels: Partial<Record<ReviewStatus, string>> = { pending: 'Очередь пуста: попытки, практику которых ИИ не смог оценить, появятся здесь.',
   ai: 'Пока нет попыток, оценённых ИИ: они появятся сразу после завершения теста.' };
 
 function itemMeta(item: QueueItem) {
   if (item.annulled) return 'Аннулирована: уходы со страницы';
   if (item.status === 'pending') return item.openStatus === 'queued'
-    ? `Закрытая часть ${item.closedScore}/100 · грейд ${item.passed ? 'подтверждён' : 'не подтверждён'} по ней · практика ${item.openCount} ждёт оценки`
+    ? `Закрытая часть ${item.closedScore}/100 · практика ${item.openCount} ждёт оценки · грейд ${item.passed ? 'подтверждён' : 'не подтверждён до решения'}`
     : `Закрытая часть ${item.closedScore}/100 · открытых ${item.openCount}`;
   if (item.status === 'ai') return `Итог ${item.score}/100 · ${item.passed ? 'пройден' : 'не пройден'} · практику оценил ИИ`;
   return `Итог ${item.score}/100 · ${item.passed ? 'пройден' : 'не пройден'}${item.reviewedByExpert ? ' · проверено экспертом' : ''}`;
@@ -102,11 +108,14 @@ function confirmationText(detail: Detail) {
 }
 
 function ReviewCard({ detail, accountId, onDecided }: { detail: Detail; accountId: string; onDecided: (detail: Detail) => void }) {
-  // A decision shows the expert's marks; an attempt scored by the model starts from the model's marks.
+  // A decision shows the expert's marks; an attempt scored by the models starts from their agreed marks.
+  // A criterion where the two models differ by a point stays empty: the expert chooses.
   const aiMarks = detail.aiReview?.status === 'scored' ? detail.aiReview.marks : null;
+  const graders = detail.aiReview?.graders || null;
+  const flags = detail.aiReview?.status === 'failed' ? detail.aiReview.flags || [] : [];
   const decided = detail.decision?.marks || (detail.status === 'ai' ? aiMarks : null);
   const [scores, setScores] = useState<Record<string, Record<string, number>>>(() => Object.fromEntries(detail.open.map(task => [task.id,
-    Object.fromEntries((decided?.find(mark => mark.questionId === task.id)?.criteria || []).map(item => [item.id, item.score]))])));
+    Object.fromEntries((decided?.find(mark => mark.questionId === task.id)?.criteria || []).filter(item => Number.isInteger(item.score)).map(item => [item.id, item.score]))])));
   const [comments, setComments] = useState<Record<string, string>>(() => Object.fromEntries(detail.open.map(task => [task.id, decided?.find(mark => mark.questionId === task.id)?.comment || ''])));
   const [note, setNote] = useState(detail.decision?.note || '');
   const [suggestion, setSuggestion] = useState<Suggestion | null>(null);
@@ -163,8 +172,9 @@ function ReviewCard({ detail, accountId, onDecided }: { detail: Detail; accountI
           {pending && detail.result.openStatus && ` · сейчас ${detail.result.score}/100, ${detail.result.passed ? 'грейд подтверждён' : 'не подтверждён'}`}</small></div>
       <div><span>Контроль</span><strong>{detail.integrity.departures}</strong><small>уходов · копирований {detail.integrity.blockedCopies}</small></div>
     </div>
-    {scoredByAi && <p className="review-ai-note"><Sparkles size={15} />Практику оценил ИИ{detail.aiReview?.status === 'scored' && detail.aiReview.model ? ` (${detail.aiReview.model})` : ''} по рубрике: {detail.result.openScore}/100, итог {detail.result.score}/100 — грейд {detail.result.passed ? 'подтверждён' : 'не подтверждён'}. Баллы ИИ подставлены ниже: подтвердите или измените их, либо аннулируйте попытку.{detail.result.openTimedOut ? ' Время истекло на практическом этапе.' : ''}</p>}
-    {detail.status === 'pending' && detail.result.openStatus === 'queued' && <p className="review-ai-note review-ai-failed">ИИ не оценил практику{detail.aiReview?.status === 'failed' ? `: ${failureLabels[detail.aiReview.reason] || detail.aiReview.reason}` : ''}. Грейд определён по закрытой части ({detail.result.closedScore}/100, {detail.result.passed ? 'подтверждён' : 'не подтверждён'}); оценка практики пересчитает итог.</p>}
+    {scoredByAi && <p className="review-ai-note"><Sparkles size={15} />Практику оценили {graders && graders.length > 1 ? 'две модели' : 'ИИ'}{detail.aiReview?.status === 'scored' && detail.aiReview.model ? ` (${detail.aiReview.model})` : ''} по рубрике: {detail.result.openScore}/100, итог {detail.result.score}/100 — грейд {detail.result.passed ? 'подтверждён' : 'не подтверждён'}. Каждый балл подтверждён цитатой из ответа. Согласованные баллы подставлены ниже; где модели разошлись на балл, выберите сами. Подтвердите оценку или аннулируйте попытку.{detail.result.openTimedOut ? ' Время истекло на практическом этапе.' : ''}</p>}
+    {detail.status === 'pending' && detail.result.openStatus === 'queued' && <p className="review-ai-note review-ai-failed">ИИ не выставил оценку практики{detail.aiReview?.status === 'failed' ? `: ${failureLabels[detail.aiReview.reason] || detail.aiReview.reason}` : ''}. Грейд не подтверждён до вашего решения; закрытая часть — {detail.result.closedScore}/100.</p>}
+    {flags.some(flag => flag.fragment) && <div className="review-ai-note review-ai-failed"><span>Фрагменты, обращённые к проверяющему:</span>{flags.filter(flag => flag.fragment).map(flag => <q key={flag.questionId}>{flag.fragment}</q>)}</div>}
     {detail.status === 'pending' && <div className="review-ai"><button className="button secondary" disabled={!!busy} onClick={() => void suggest()}><Sparkles size={16} />{busy === 'ai' ? 'Модель оценивает…' : 'ИИ-подсказка оценок'}</button>
       <span className="field-help">{suggestion ? `Подставлены оценки ${suggestion.model}; проверьте каждую. Имя и контакты в модель не передаются.` : 'Модель предложит баллы по рубрике; решение за вами.'}</span></div>}
 
@@ -188,14 +198,16 @@ function ReviewCard({ detail, accountId, onDecided }: { detail: Detail; accountI
           <pre className="review-reference">{task.reference}</pre>
           <ul className="review-changes">{task.criticalErrors.map(item => <li key={item}>{item}</li>)}</ul></details>
         <div className="review-rubric">{task.rubric.map(criterion => {
-          const value = scores[task.id]?.[criterion.id], reason = advice?.criteria.find(item => item.id === criterion.id)?.reason;
+          const value = scores[task.id]?.[criterion.id], advised = advice?.criteria.find(item => item.id === criterion.id) as AiCriterion | undefined;
+          const opinions = graders?.map(grader => ({ model: grader.model, item: grader.marks.find(mark => mark.questionId === task.id)?.criteria.find(item => item.id === criterion.id) })).filter(entry => entry.item);
           return <div className="review-criterion" key={criterion.id}>
             <p>{criterion.expected}</p>
             <div className="review-scale" role="radiogroup" aria-label={criterion.expected}>{[0, 1, 2].map(score => <button key={score} type="button" role="radio" aria-checked={value === score}
               title={criterion.scale[String(score)]} disabled={!pending || (score > 0 && (!task.answer?.text || task.answer.late))}
               onClick={() => setScores(previous => ({ ...previous, [task.id]: { ...previous[task.id], [criterion.id]: score } }))}>{score}</button>)}</div>
             {value !== undefined && <span className="field-help">{criterion.scale[String(value)]}</span>}
-            {reason && <span className="review-reason">ИИ: {reason}</span>}
+            {opinions?.length ? opinions.map(({ model, item }) => <span className="review-reason" key={model}>{modelName(model)}: {item!.unsupported !== undefined ? `${item!.unsupported} без цитаты → не засчитано` : item!.score}{item!.reason ? ' — ' + item!.reason : ''}{item!.evidence ? <> · <q>{item!.evidence}</q></> : null}</span>)
+              : advised?.reason && <span className="review-reason">ИИ: {advised.reason}{advised.evidence ? <> · <q>{advised.evidence}</q></> : null}</span>}
           </div>;
         })}</div>
         <label className="field"><span>Комментарий к задаче</span><textarea rows={2} maxLength={2000} disabled={!pending} value={comments[task.id] || ''}

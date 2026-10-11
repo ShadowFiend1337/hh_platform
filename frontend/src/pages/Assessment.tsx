@@ -337,10 +337,10 @@ export function Assessment({ state, update, notify, onProfile, onSurvey, onActiv
         {result.openStatus && !result.annulled && <dl className="competency-results result-parts">
           <div><dt>Закрытая часть</dt><dd>{result.closedScore}/100</dd></div>
           <div><dt>Практика</dt><dd>{result.openScore !== undefined ? result.openScore + '/100' : 'ждёт эксперта'}</dd></div>
-          <div><dt>Итог</dt><dd>{result.score}/100{result.openScore !== undefined ? ' · 50% + 50%' : ' · по закрытой части'}</dd></div>
+          <div><dt>Итог</dt><dd>{result.openScore !== undefined ? result.score + '/100 · 50% + 50%' : result.pending ? 'после проверки эксперта' : result.score + '/100 · по закрытой части'}</dd></div>
         </dl>}
-        {result.openStatus === 'ai' && !result.reviewedByExpert && <p className="result-note result-practice-note">Практические задачи оценены автоматически: ИИ проверил ответы по критериям рубрики. Итог — половина закрытой и половина практической части, порог 70. Эксперт может перепроверить оценку.</p>}
-        {result.openStatus === 'queued' && <p className="result-note result-practice-note">Грейд определён по закрытой части: автоматическая проверка практики сейчас недоступна, практические задачи ({result.openCount}) проверит эксперт. {result.passed ? 'Подтверждённый грейд сохраняется до решения эксперта.' : ''}</p>}
+        {result.openStatus === 'ai' && !result.reviewedByExpert && <p className="result-note result-practice-note">Практические задачи оценены автоматически: две модели независимо проверили ответы по критериям рубрики, каждый балл подтверждён цитатой из вашего ответа. Итог — половина закрытой и половина практической части, порог 70. Эксперт может перепроверить оценку.</p>}
+        {result.openStatus === 'queued' && !result.pending && <p className="result-note result-practice-note">Грейд определён по закрытой части: автоматическая проверка практики сейчас недоступна, практические задачи ({result.openCount}) проверит эксперт. {result.passed ? 'Подтверждённый грейд сохраняется до решения эксперта.' : ''}</p>}
         {result.reviewedByExpert && <p className="result-note result-practice-note">{result.invalidated ? 'Попытка аннулирована экспертом' : 'Проверено экспертом'}{result.review?.note ? ': ' + result.review.note : '.'}</p>}
         {result.openTimedOut && <p className="field-help">Время теста истекло на практическом этапе: задачи без ответа оценены нулём.</p>}
         {result.pending && <p className="result-note">Закрытая часть пройдена. Эксперт проверит открытые задачи ({result.openCount}) по критериям; итог — половина закрытой и половина открытой части, порог 70. Результат появится в истории и профиле.</p>}

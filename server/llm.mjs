@@ -67,7 +67,7 @@ export function createLlmClient({ env = process.env, fetchImpl = globalThis.fetc
   const usage = { requests: 0, failures: 0, promptTokens: 0, completionTokens: 0 };
 
   async function chat({ messages, model = chatModel, fallback = model === chatModel ? fallbackModel : null,
-    maxTokens = 600, temperature = 0.3, json = false, retries = maxRetries,
+    maxTokens = 600, temperature = 0.3, json = false, schema = null, retries = maxRetries, providerSort = null,
     signal: external, timeoutMs: callTimeout = timeoutMs } = {}) {
     if (!key) throw new LlmError('configuration', 'Ключ OpenRouter не настроен.');
     if (!Array.isArray(messages) || !messages.length) throw new LlmError('input', 'Пустой запрос к модели.');
@@ -82,8 +82,11 @@ export function createLlmClient({ env = process.env, fetchImpl = globalThis.fetc
       ...(models.length > 1 ? { models } : { model }),
       messages, max_tokens: maxTokens, temperature, stream: false,
       // Do not let providers retain prompts; OpenRouter routes only to compliant endpoints.
-      provider: { data_collection: 'deny' },
-      ...(json ? { response_format: { type: 'json_object' } } : {}),
+      // `providerSort: 'latency'` asks OpenRouter for the fastest compliant provider (time-bound calls).
+      // A `schema` routes only to providers that enforce it (`require_parameters`).
+      provider: { data_collection: 'deny', ...(providerSort ? { sort: providerSort } : {}), ...(schema ? { require_parameters: true } : {}) },
+      ...(schema ? { response_format: { type: 'json_schema', json_schema: { name: schema.name, strict: true, schema: schema.schema } } }
+        : json ? { response_format: { type: 'json_object' } } : {}),
     });
     try {
       for (let attempt = 0; attempt <= retries; attempt++) {
@@ -128,7 +131,7 @@ export function createLlmClient({ env = process.env, fetchImpl = globalThis.fetc
         usage.promptTokens += Number(envelope.usage?.prompt_tokens) || 0;
         usage.completionTokens += Number(envelope.usage?.completion_tokens) || 0;
         const text = content.replace(/<think>[\s\S]*?<\/think>/gu, '').trim();
-        return { content: text, model: typeof envelope.model === 'string' ? envelope.model : model, json: json ? parseJsonReply(text) : null };
+        return { content: text, model: typeof envelope.model === 'string' ? envelope.model : model, json: json || schema ? parseJsonReply(text) : null };
       }
       throw new LlmError('unavailable', 'Модель недоступна.');
     } finally {

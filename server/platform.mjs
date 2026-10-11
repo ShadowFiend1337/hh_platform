@@ -448,8 +448,9 @@ export class PlatformService {
           if (incomingSurveys.length >= 100) fail('Допустимо до 100 сохранённых анкет.');
           incomingSurveys.push(survey(proofSurvey));
         }
-      } else if (person.confirmed && [...byId.values()].some(row => row.result?.reviewedByExpert && !row.result.passed && sameConfirmation(person.confirmed, row.result))) {
-        // An expert annulled or failed the attempt behind this category: a stale copy cannot bring it back.
+      } else if (person.confirmed && [...byId.values()].some(row => (row.result?.reviewedByExpert || row.result?.pending) && !row.result.passed && sameConfirmation(person.confirmed, row.result))) {
+        // The attempt behind this category waits for an expert, or an expert annulled or failed it:
+        // a client copy cannot confirm it.
         person.confirmed = null;
       } else if (person.confirmed) {
         // Legacy or unverifiable categories may be kept privately for migration.

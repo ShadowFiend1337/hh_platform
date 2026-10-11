@@ -37,7 +37,7 @@ test('local account setup prepares both cabinets on a fresh database and preserv
   assert(currentSurvey(candidateState.state));
   assert.equal(candidateState.state.profile.confirmed.grade, 'Junior');
   assert.equal(candidateState.state.history.length, 2, 'A passed result and an attempt whose practice waits for the test moderator');
-  assert.equal(candidateState.state.history.filter(item => item.openStatus === 'queued' && item.passed).length, 1);
+  assert.equal(candidateState.state.history.filter(item => item.openStatus === 'queued' && item.pending && !item.passed).length, 1, 'Its grade waits for the expert');
   assert.ok(candidateState.state.history.every(item => assessments.get(item.id).owner === candidate.platform_owner));
   assert.equal(candidateState.state.invitations.length, 1);
   assert.equal(candidateState.state.invitations[0].status, 'sent');
