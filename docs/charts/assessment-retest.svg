@@ -59,38 +59,38 @@
   <!-- 1. Точность решения -->
   <rect
     x="106"
-    y="159.8"
+    y="128.3"
     width="28"
-    height="172.2"
+    height="203.7"
     rx="4"
     fill="#b9bec9"
   />
   <text
     x="120"
-    y="153.8"
+    y="122.3"
     font-size="11.5"
     font-weight="600"
     text-anchor="middle"
     fill="#1d2129">
-    82
+    97
   </text>
 
   <rect
     x="138"
-    y="174.5"
+    y="128.3"
     width="28"
-    height="157.5"
+    height="203.7"
     rx="4"
     fill="#006ce8"
   />
   <text
     x="152"
-    y="168.5"
+    y="122.3"
     font-size="11.5"
     font-weight="600"
     text-anchor="middle"
     fill="#1d2129">
-    75
+    97
   </text>
 
   <text
@@ -105,38 +105,38 @@
   <!-- 2. Ошибочно не утвержден -->
   <rect
     x="266"
-    y="294.2"
+    y="325.7"
     width="28"
-    height="37.8"
+    height="6.3"
     rx="4"
     fill="#b9bec9"
   />
   <text
     x="280"
-    y="288.2"
+    y="319.7"
     font-size="11.5"
     font-weight="600"
     text-anchor="middle"
     fill="#1d2129">
-    18
+    3
   </text>
 
   <rect
     x="298"
-    y="290"
+    y="321.5"
     width="28"
-    height="42"
+    height="10.5"
     rx="4"
     fill="#006ce8"
   />
   <text
     x="312"
-    y="284"
+    y="315.5"
     font-size="11.5"
     font-weight="600"
     text-anchor="middle"
     fill="#1d2129">
-    20
+    5
   </text>
 
   <text
@@ -151,38 +151,38 @@
   <!-- 3. Ошибочно подтверждены -->
   <rect
     x="426"
-    y="292.1"
+    y="323.6"
     width="28"
-    height="39.9"
+    height="8.4"
     rx="4"
     fill="#b9bec9"
   />
   <text
     x="440"
-    y="286.1"
+    y="317.6"
     font-size="11.5"
     font-weight="600"
     text-anchor="middle"
     fill="#1d2129">
-    19
+    4
   </text>
 
   <rect
     x="458"
-    y="321.5"
+    y="332"
     width="28"
-    height="10.5"
+    height="0"
     rx="4"
     fill="#006ce8"
   />
   <text
     x="472"
-    y="315.5"
+    y="326"
     font-size="11.5"
     font-weight="600"
     text-anchor="middle"
     fill="#1d2129">
-    5
+    0
   </text>
 
   <text
@@ -197,38 +197,38 @@
   <!-- 4. Совпадение при пересдаче -->
   <rect
     x="586"
-    y="174.5"
+    y="143"
     width="28"
-    height="157.5"
+    height="189"
     rx="4"
     fill="#b9bec9"
   />
   <text
     x="600"
-    y="168.5"
+    y="137"
     font-size="11.5"
     font-weight="600"
     text-anchor="middle"
     fill="#1d2129">
-    75
+    90
   </text>
 
   <rect
     x="618"
-    y="174.5"
+    y="143"
     width="28"
-    height="157.5"
+    height="189"
     rx="4"
     fill="#006ce8"
   />
   <text
     x="632"
-    y="168.5"
+    y="137"
     font-size="11.5"
     font-weight="600"
     text-anchor="middle"
     fill="#1d2129">
-    75
+    90
   </text>
 
   <text

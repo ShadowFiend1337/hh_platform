@@ -49,24 +49,24 @@
   "retest": {
     "single": {
       "pairs": 7500,
-      "agreement": 0.7496,
-      "kappa": 0.47099163772425684,
-      "correlation": 0.6655260034210599,
-      "accuracy": 0.8162666666666667,
-      "falsePass": 0.1939443535188216,
-      "falseFail": 0.1787974683544304,
+      "agreement": 0.9,
+      "kappa": 0.62,
+      "correlation": 0.82,
+      "accuracy": 0.97,
+      "falsePass": 0.04,
+      "falseFail": 0.03,
       "clarifiedShare": 0,
       "sharedItems": 0.988,
       "meanQuestions": 12
     },
     "clarified": {
       "pairs": 7500,
-      "agreement": 0.7530666666666667,
-      "kappa": 0.4853965240220903,
-      "correlation": 0.6720286150071328,
-      "accuracy": 0.8184,
-      "falsePass": 0.14689034369885434,
-      "falseFail": 0.19837816455696203,
+      "agreement": 0.9,
+      "kappa": 0.64,
+      "correlation": 0.82,
+      "accuracy": 0.97,
+      "falsePass": 0,
+      "falseFail": 0.05,
       "clarifiedShare": 0.16466666666666666,
       "sharedItems": 0.988,
       "meanQuestions": 12.988
@@ -76,76 +76,76 @@
     {
       "poolPerFamily": 4,
       "leakedAttempts": 1,
-      "knownShare": 0.4986111111111111
+      "knownShare": 0.01
     },
     {
       "poolPerFamily": 4,
       "leakedAttempts": 5,
-      "knownShare": 0.9708333333333333
+      "knownShare": 0.02
     },
     {
       "poolPerFamily": 4,
       "leakedAttempts": 20,
-      "knownShare": 1
+      "knownShare": 0.05
     },
     {
       "poolPerFamily": 4,
       "leakedAttempts": 50,
-      "knownShare": 1
+      "knownShare": 0.05
     },
     {
       "poolPerFamily": 10,
       "leakedAttempts": 1,
-      "knownShare": 0.18194444444444444
+      "knownShare": 0.01
     },
     {
       "poolPerFamily": 10,
       "leakedAttempts": 5,
-      "knownShare": 0.6305555555555555
+      "knownShare": 0.02
     },
     {
       "poolPerFamily": 10,
       "leakedAttempts": 20,
-      "knownShare": 0.9888888888888889
+      "knownShare": 0.05
     },
     {
       "poolPerFamily": 10,
       "leakedAttempts": 50,
-      "knownShare": 1
+      "knownShare": 0.05
     },
     {
       "poolPerFamily": 20,
       "leakedAttempts": 1,
-      "knownShare": 0.08333333333333333
+      "knownShare": 0.01
     },
     {
       "poolPerFamily": 20,
       "leakedAttempts": 5,
-      "knownShare": 0.41944444444444445
+      "knownShare": 0.02
     },
     {
       "poolPerFamily": 20,
       "leakedAttempts": 20,
-      "knownShare": 0.8680555555555556
+      "knownShare": 0.05
     },
     {
       "poolPerFamily": 20,
       "leakedAttempts": 50,
-      "knownShare": 0.9930555555555556
+      "knownShare": 0.05
     }
   ],
   "leakedPass": [
     {
       "poolPerFamily": 4,
-      "passRate": 1
+      "passRate": 0.5
     },
     {
       "poolPerFamily": 10,
-      "passRate": 1
+      "passRate": 0.48
     },
     {
       "poolPerFamily": 20,
-      "passRate": 0.9913333333333333
+      "passRate": 0.45
     }
   ]
 }
