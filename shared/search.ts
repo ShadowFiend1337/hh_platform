@@ -14,6 +14,8 @@ export interface SearchFilters {
   language: string;
   hasPortfolio: boolean;
   minScore: number | null;
+  /** Separate mode: published questionnaires without a successful test instead of confirmed categories. */
+  unconfirmed: boolean;
 }
 
 export const languageOptions = [
@@ -26,7 +28,7 @@ export const employmentTypes = ['Полная занятость', 'Частич
 export const defaultSearchFilters: SearchFilters = {
   specialization: '', grade: '', format: '', stack: [], fsp: false,
   city: '', industry: '', salaryMax: null, experienceMin: null, experienceMax: null,
-  employmentType: '', language: '', hasPortfolio: false, minScore: null,
+  employmentType: '', language: '', hasPortfolio: false, minScore: null, unconfirmed: false,
 };
 
 /** Restore older saved selections without inventing additional restrictions. */
@@ -42,6 +44,6 @@ export function normalizeSearchFilters(input: unknown): SearchFilters {
     fsp: value.fsp === true, city: text('city'), industry: text('industry'),
     salaryMax: number('salaryMax', 10_000_000), experienceMin: number('experienceMin', 1200), experienceMax: number('experienceMax', 1200),
     employmentType: text('employmentType'), language: text('language'),
-    hasPortfolio: value.hasPortfolio === true, minScore: number('minScore', 100),
+    hasPortfolio: value.hasPortfolio === true, minScore: number('minScore', 100), unconfirmed: value.unconfirmed === true,
   };
 }

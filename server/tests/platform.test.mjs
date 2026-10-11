@@ -132,7 +132,8 @@ test('forged history, another session proof, FSP badges and synthetic flags cann
   assert.equal(store.forOwner(ownerA).grade, '');
   assert.equal(store.forOwner(ownerA).score, 0);
   assert.equal(JSON.parse(store.forOwner(ownerA).public_payload).confirmed, null);
-  assert.equal(store.matching(defaultSearchFilters).length, 1);
+  assert.equal(store.matching(defaultSearchFilters).length, 0, 'An unconfirmed questionnaire stays out of the main selection');
+  assert.equal(store.matching({ ...defaultSearchFilters, unconfirmed: true }).length, 1);
 });
 
 test('external federation IDs persist and changing one clears server-owned evidence', t => {

@@ -84,8 +84,12 @@ try {
   page.on('pageerror', error => errors.push(error.message));
   await page.goto(base + '/?role=employer&tab=candidates'); await ready(page);
   const rows = page.locator('.candidate-row');
-  assert.equal(await rows.count(), 2);
+  assert.equal(await rows.count(), 1, 'The main selection shows only confirmed categories');
   assert.match(await rows.first().innerText(), new RegExp(confirmed.account.name));
+  await page.getByLabel('Только анкеты без подтверждённого теста').check();
+  await page.locator('.directory-warnings').getByText(/анкеты без успешного теста/u).waitFor();
+  await page.waitForFunction(name => [...document.querySelectorAll('.candidate-row')].some(row => row.innerText.includes(name)), candidate.account.name);
+  assert.equal(await rows.count(), 1, 'The separate mode shows only questionnaires without a test');
   const unconfirmed = rows.filter({ has: page.getByRole('button', { name: candidate.account.name, exact: true }) });
   assert.equal(await unconfirmed.count(), 1);
   assert.match(await unconfirmed.innerText(), /Грейд не подтверждён/);

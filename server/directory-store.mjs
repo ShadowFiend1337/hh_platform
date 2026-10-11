@@ -294,6 +294,9 @@ export class DirectoryStore {
     }
     if (filters.fsp) conditions.push('fsp=1');
     if (filters.hasPortfolio) conditions.push('has_portfolio=1');
+    // The main selection holds only categories confirmed by a successful test;
+    // published questionnaires without one form a separate, explicit mode.
+    conditions.push(filters.unconfirmed ? "grade=''" : "grade<>''");
     for (const skill of filters.stack) {
       conditions.push('EXISTS(SELECT 1 FROM directory_skills s WHERE s.candidate_id=directory_candidates.id AND s.skill=?)'); args.push(lower(skill));
     }

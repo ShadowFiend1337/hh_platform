@@ -52,9 +52,9 @@ test('registered candidate category, employer invitation and accepted contacts s
   candidateState.surveys = [survey];
   const initial = await candidate('/api/platform/state', 'PUT', { state: candidateState, baseRevision: 0 });
   assert.equal(initial.status, 200);
-  const beforeTest = await employer('/api/directory/search?filters=' + encodeURIComponent(JSON.stringify({ specialization: 'Frontend' })));
+  const beforeTest = await employer('/api/directory/search?filters=' + encodeURIComponent(JSON.stringify({ specialization: 'Frontend', unconfirmed: true })));
   const unconfirmed = beforeTest.data.items.find(item => item.person.name === 'Тестовый кандидат');
-  assert(unconfirmed, 'An explicitly published complete questionnaire is discoverable before confirmation');
+  assert(unconfirmed, 'An explicitly published complete questionnaire is discoverable in the separate mode before confirmation');
   assert.equal(unconfirmed.person.confirmed, null);
   assert.equal(unconfirmed.person.email, '');
   assert.equal(unconfirmed.explanation.category.status, 'unconfirmed');

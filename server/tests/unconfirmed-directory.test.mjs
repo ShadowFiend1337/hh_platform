@@ -84,12 +84,14 @@ function saveEmployer(service, actor) {
   return service.platform.save(actor.owner, state, 0, 'employer');
 }
 
-test('published completed questionnaire is visible to an ordinary employer without inventing a confirmed grade or test score', async t => {
+test('published completed questionnaire is visible only in the separate unconfirmed mode, without inventing a grade or test score', async t => {
   const { service, register, base } = await fixture(t);
   const candidate = await register('candidate', 'visible');
   const employer = await register('employer', 'viewer');
   const { id } = saveCandidate(service, candidate);
-  const found = await service.directory.search('', { city }, { owner: employer.owner });
+  assert.equal((await service.directory.search('', { city }, { owner: employer.owner })).total, 0, 'The main selection holds only confirmed categories');
+  const found = await service.directory.search('', { city, unconfirmed: true }, { owner: employer.owner });
+  assert.match(found.warnings[0], /анкеты без успешного теста/u);
   assert.equal(found.total, 1); assert.equal(found.items[0].person.id, id);
   assert.equal(found.items[0].person.confirmed, null); assert.equal(found.items[0].person.desiredGrade, 'Junior');
   assert.equal(found.items[0].explanation.category.status, 'unconfirmed');
@@ -100,7 +102,7 @@ test('published completed questionnaire is visible to an ordinary employer witho
   assert.equal(found.items[0].person.email, ''); assert.equal(found.items[0].person.phone, '');
   assert.equal((await fetch(base + '/api/directory/search')).status, 401);
   assert.equal((await candidate.api('/api/directory/search')).status, 403);
-  assert.equal((await employer.api('/api/directory/search?filters=' + encodeURIComponent(JSON.stringify({ city })))).status, 200);
+  assert.equal((await employer.api('/api/directory/search?filters=' + encodeURIComponent(JSON.stringify({ city, unconfirmed: true })))).status, 200);
 });
 
 test('hidden, unconsented, incomplete and anonymous legacy questionnaires stay outside results and options', async t => {
@@ -121,12 +123,12 @@ test('hidden, unconsented, incomplete and anonymous legacy questionnaires stay o
   service.platform.save(revoked.owner, snapshot.state, snapshot.revision, 'candidate');
   const legacy = candidateState(publicActor).profile;
   service.directory.store.upsert({ ...legacy, id: 'orphan-legacy-questionnaire', city: 'Анонимный город' }, 'expired-anonymous-session', true);
-  const found = await service.directory.search('', {}, { owner: employer.owner });
+  const found = await service.directory.search('', { unconfirmed: true }, { owner: employer.owner });
   assert.deepEqual(found.items.map(item => item.person.name), [publicActor.name]);
   assert.deepEqual(service.directory.options(employer.owner).cities, [city]);
 });
 
-test('confirmed profiles precede unconfirmed profiles before pagination for filter and semantic searches', async t => {
+test('the main selection holds only confirmed categories and unconfirmed questionnaires form a separate mode', async t => {
   const { service, register } = await fixture(t);
   const employer = await register('employer', 'ordering.viewer');
   const a = await register('candidate', 'a.unconfirmed');
@@ -137,29 +139,21 @@ test('confirmed profiles precede unconfirmed profiles before pagination for filt
   const cb = saveCandidate(service, b, { bio: 'ПОНИЖЕННАЯ СХОЖЕСТЬ. Создаю пользовательские формы.' }, { confirmed: true });
   const cd = saveCandidate(service, d, { bio: 'ПОНИЖЕННАЯ СХОЖЕСТЬ. Создаю пользовательские формы.' }, { confirmed: true });
   for (const query of ['', 'Создавать пользовательские формы']) {
-    const full = await service.directory.search(query, { city }, { owner: employer.owner });
-    assert.equal(full.total, 4);
-    assert(full.items.slice(0, 2).every(item => item.person.confirmed));
-    assert(full.items.slice(2).every(item => item.person.confirmed === null));
-    assert.equal(full.model.confirmationOrderPolicy.version, 'confirmed-first-stable-partition-v1');
-    for (const [position, item] of full.items.entries()) {
-      const priority = item.explanation.ordering.confirmationPriority;
-      assert.equal(priority.applied, true);
-      assert.equal(priority.mixedGroups, true);
-      assert.equal(priority.group, position < 2 ? 'confirmed' : 'unconfirmed');
-      assert.match(item.reason, position < 2 ? /подтверждённой категорией показаны первыми/u : /после кандидатов с подтверждённой/u);
-    }
-    if (query) assert(full.items.at(-1).semanticScore > full.items[0].semanticScore, 'Confirmation partition must apply even when unconfirmed cosine is higher');
+    const main = await service.directory.search(query, { city }, { owner: employer.owner });
+    assert.deepEqual(new Set(main.items.map(item => item.person.id)), new Set([cb.id, cd.id]),
+      'Even a higher similarity does not bring an unconfirmed questionnaire into the main selection');
+    assert(main.items.every(item => item.person.confirmed));
+    assert.equal(main.categories.length, 1); assert.equal(main.categories[0].count, 2);
+    const separate = await service.directory.search(query, { city, unconfirmed: true }, { owner: employer.owner });
+    assert.deepEqual(new Set(separate.items.map(item => item.person.id)), new Set([ua.id, uc.id]));
+    assert(separate.items.every(item => item.person.confirmed === null && item.explanation.category.status === 'unconfirmed'));
+    assert.deepEqual(separate.categories, []);
     const pages = [];
-    for (let offset = 0; offset < 4; offset++) {
+    for (let offset = 0; offset < 2; offset++) {
       const page = await service.directory.search(query, { city }, { owner: employer.owner, offset, limit: 1 });
-      assert.equal(page.total, 4); pages.push(page.items[0].person.id);
-      assert.deepEqual(page.items[0].explanation, full.items[offset].explanation, 'Global priority is explained before pagination');
+      assert.equal(page.total, 2); pages.push(page.items[0].person.id);
     }
-    assert.deepEqual(pages, full.items.map(item => item.person.id));
-    assert.deepEqual(new Set(full.items.map(item => item.person.id)), new Set([ua.id, uc.id, cb.id, cd.id]));
-    assert.equal(full.categories.length, 1); assert.equal(full.categories[0].count, 2);
-    assert(full.categories[0].candidateIds.every(id => [cb.id, cd.id].includes(id)));
+    assert.deepEqual(pages, main.items.map(item => item.person.id));
     const narrowed = await service.directory.search(query, { city }, { owner: employer.owner,
       category: { specialization: 'Frontend', grade: 'Junior' } });
     assert.equal(narrowed.total, 2); assert(narrowed.items.every(item => item.person.confirmed));
@@ -167,6 +161,7 @@ test('confirmed profiles precede unconfirmed profiles before pagination for filt
   for (const filter of [{ grade: 'Junior' }, { minScore: 1 }]) {
     const result = await service.directory.search('', { city, ...filter }, { owner: employer.owner });
     assert.equal(result.total, 2); assert(result.items.every(item => item.person.confirmed));
+    assert.equal((await service.directory.search('', { city, unconfirmed: true, ...filter }, { owner: employer.owner })).total, 0);
   }
 });
 
@@ -191,9 +186,11 @@ test('failed or forged test history and FSP flags never create a public confirma
   const failed = await register('candidate', 'failed.proof');
   saveCandidate(service, failed, {}, { confirmed: true, correct: false });
   const result = await service.directory.search('', { city }, { owner: employer.owner });
-  assert.equal(result.total, 3); assert(result.items.find(item => item.person.id === row.id).person.confirmed === null);
-  assert.equal(result.items.find(item => item.person.name === failed.name).person.confirmed, null);
+  assert.deepEqual(result.items.map(item => item.person.name), [actual.name], 'Forged and failed proofs never enter the confirmed selection');
   assert.equal(result.categories[0].count, 1);
+  const separate = await service.directory.search('', { city, unconfirmed: true }, { owner: employer.owner });
+  assert.equal(separate.total, 2); assert(separate.items.find(item => item.person.id === row.id).person.confirmed === null);
+  assert.equal(separate.items.find(item => item.person.name === failed.name).person.confirmed, null);
   const fsp = await service.fsp.connect(forged.owner, { baseRevision: saved.revision, consent: true });
   assert.equal(fsp.profile.fspEvidence.mode, 'demo');
   const after = service.directory.store.forOwner(forged.owner);
@@ -236,8 +233,8 @@ test('local fixture realms remain isolated when completed unconfirmed questionna
   service.auth.store.db.prepare('UPDATE auth_accounts SET login=?,login_normalized=?,email=? WHERE id=?')
     .run('local_employer', 'local_employer', 'employer@local.example.test', localEmployer.account.id);
   saveCandidate(service, localCandidate);
-  const ordinaryResult = await service.directory.search('', { city }, { owner: ordinary.owner });
-  const localResult = await service.directory.search('', { city }, { owner: localEmployer.owner });
+  const ordinaryResult = await service.directory.search('', { city, unconfirmed: true }, { owner: ordinary.owner });
+  const localResult = await service.directory.search('', { city, unconfirmed: true }, { owner: localEmployer.owner });
   assert.deepEqual(ordinaryResult.items.map(item => item.person.name), [actual.name]);
   assert.deepEqual(localResult.items.map(item => item.person.name), [localCandidate.name]);
   assert.equal(localResult.items[0].person.synthetic, true);
@@ -267,7 +264,7 @@ test('startup backfill republishes a completed questionnaire while stripping an 
   assert.equal(row.eligible, 1); assert.equal(row.score, 0); assert.equal(row.grade, '');
   assert.equal(JSON.parse(row.public_payload).confirmed, null);
   assert.deepEqual(second.service.platform.read(candidate.owner).state.profile.confirmed, privateClaim);
-  const result = await second.service.directory.search('', { city }, { owner: employer.owner });
+  const result = await second.service.directory.search('', { city, unconfirmed: true }, { owner: employer.owner });
   assert(result.items.some(item => item.person.id === id && item.person.confirmed === null));
   await second.close();
 });

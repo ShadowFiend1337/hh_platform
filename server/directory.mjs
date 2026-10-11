@@ -22,7 +22,7 @@ function validateFilters(input) {
   for (const key of ['specialization','grade','format','city','industry','employmentType','language']) {
     if (input[key]!==undefined&&(typeof input[key]!=='string'||input[key].length>100)) throw new RequestError(400,'Некорректный текстовый фильтр.');
   }
-  for (const key of ['fsp','hasPortfolio']) if (input[key]!==undefined&&typeof input[key]!=='boolean') throw new RequestError(400,'Некорректный переключатель фильтра.');
+  for (const key of ['fsp','hasPortfolio','unconfirmed']) if (input[key]!==undefined&&typeof input[key]!=='boolean') throw new RequestError(400,'Некорректный переключатель фильтра.');
   if (input.stack!==undefined&&(!Array.isArray(input.stack)||input.stack.length>100||input.stack.some(skill=>typeof skill!=='string'||!skill.trim()||skill.length>80))) throw new RequestError(400,'Некорректный фильтр навыков.');
   for (const key of ['salaryMax','experienceMin','experienceMax','minScore']) {
     if (input[key] !== undefined && input[key] !== null && (!Number.isFinite(input[key]) || !Number.isInteger(input[key]) || input[key]<0)) throw new RequestError(400,'Числовые фильтры должны быть неотрицательными целыми числами.');
@@ -571,6 +571,7 @@ export class DirectoryService {
     items=confirmedFirst(items);
     items=explainSearchResults(items,{semantic:Boolean(embeddingQuery),scoreKind:stage?'logit':'cosine',filters,related,requested:primary});
     items=annotateMatches(items,{semantic:Boolean(embeddingQuery),filters,related});
+    if (filters.unconfirmed) warnings.push('Отдельный режим: опубликованные анкеты без успешного теста. Грейд в них не подтверждён.');
     const categories=recommendCategories(items,{semantic:Boolean(embeddingQuery)});
     const selected=category?items.filter(item=>item.person.confirmed?.specialization===category.specialization
       && item.person.confirmed?.grade===category.grade):items;

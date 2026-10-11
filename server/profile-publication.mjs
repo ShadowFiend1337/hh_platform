@@ -2,7 +2,7 @@ import { industryOptions, isSpecialization } from '../shared/catalog.ts';
 import { isGrade } from '../shared/grading.ts';
 import { threshold } from './assessment.mjs';
 
-export const PROFILE_PUBLICATION_POLICY = 'consented-questionnaire-unconfirmed-last-v1';
+export const PROFILE_PUBLICATION_POLICY = 'confirmed-selection-unconfirmed-separate-mode-v2';
 export const CONFIRMATION_ORDER_POLICY = Object.freeze({
   version: 'confirmed-first-stable-partition-v1',
   admission: 'unchanged',
