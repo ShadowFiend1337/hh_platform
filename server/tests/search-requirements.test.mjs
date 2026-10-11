@@ -119,3 +119,13 @@ test('platform developer titles name the mobile direction', async t => {
   assert.equal(result.interpreted.specialization, 'Mobile');
   assert.equal(result.items[1].match.confidence.level, 'low');
 });
+
+test('a missing technology that is also an unmentioned method is explained once', async t => {
+  const value = service(t, [person('docker', 'DevOps', ['Docker', 'Linux'], { bio: 'Собираю образы и настраиваю выкладку.' })]);
+  const result = await value.search('DevOps-инженер для кластера Kubernetes');
+  assert.equal(result.items.length, 1);
+  assert.equal(result.items[0].approximate, true);
+  assert.deepEqual(result.items[0].explanation.evidenceMissing, ['Kubernetes']);
+  assert.match(result.items[0].reason, /Это ближайший профиль, а не уверенное совпадение\. .*не хватает: Kubernetes\./u);
+  assert.doesNotMatch(result.items[0].reason, /не описан опыт/u);
+});

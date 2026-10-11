@@ -143,10 +143,12 @@ export function explainSearchResults(items, { semantic = false, scoreKind = 'log
     const testSummary = !category ? test.explanation : `${person.synthetic === true ? 'Учебный результат теста' : 'Серверный результат теста'}: ${category.score}/100.`;
     const adjacent = related.includes(categoryInfo.specialization)
       ? `Смежная специализация к запрошенной (${requested.map(value => specializationLabels[value] || value).join(', ')}).` : '';
+    // A method already listed as a missing technology is not repeated.
+    const unstated = (item.evidenceMissing || []).filter(label => !(item.coverage?.missing || []).some(missing => fold(missing) === fold(label)));
     const parts = [`${categoryInfo.label}. ${categoryInfo.explanation}`, adjacent, item.approximate === true
-      ? 'Это ближайший профиль: уверенность модели ниже порога строгого совпадения.' : '',
+      ? 'Это ближайший профиль, а не уверенное совпадение.' : '',
     item.coverage ? `Требования запроса: ${item.coverage.text}` : '',
-    item.evidenceMissing?.length ? `В профиле не описан опыт: ${item.evidenceMissing.join(', ')}.` : '', evidence.text ? `${evidence.explanation} ${evidence.text}` : evidence.explanation,
+    unstated.length ? `В профиле не описан опыт: ${unstated.join(', ')}.` : '', evidence.text ? `${evidence.explanation} ${evidence.text}` : evidence.explanation,
     conditions.length ? `Условия: ${conditions.map(condition => condition.value).join('; ')}.` : '', testSummary,
     fsp.explanation, ordering.explanation];
     return { ...item, reason: parts.filter(Boolean).join(' '), explanation: { policy: SEARCH_EXPLANATION_POLICY,
