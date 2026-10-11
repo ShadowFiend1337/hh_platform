@@ -181,7 +181,7 @@ export class AssessmentReviewService {
       // The grade was confirmed at submission: the date (the profile's proof) stays, the expert's time goes to `review`.
       const recheck = { decidedAt: time, note, previousScore: current.score, previousOpenScore: current.openScore ?? null, previousStatus: current.openStatus };
       result = marks ? practiceOutcome(current, openScore, row.attempt.grade, { openStatus: 'expert', reviewedByExpert: true, review: { ...recheck, marks: reviewMarks } })
-        : { ...current, invalidated: true, passed: false, openStatus: 'expert', reviewedByExpert: true, review: recheck };
+        : { ...current, invalidated: true, passed: false, score: current.closedScore, openStatus: 'expert', reviewedByExpert: true, review: recheck };
     }
     if (!result.passed) delete result.nextGradeAvailable;
     if (!this.store.finalize(row.id, current, result)) throw new RequestError(409, 'Попытка уже проверена.');
@@ -195,7 +195,10 @@ export class AssessmentReviewService {
   /** Applies a passed reviewed result to the candidate's profile through the usual platform rules. */
   confirm(owner, row, result) {
     const snapshot = this.platform.read(owner);
-    if (!snapshot.state) return { applied: false, reason: 'Профиль кандидата не найден.' };
+    if (!snapshot.state) return { applied: false, action: 'confirmed', reason: 'Профиль кандидата не найден.' };
+    // A category confirmed by a later attempt is newer evidence and stays.
+    const current = snapshot.state.profile?.confirmed;
+    if (current && Date.parse(current.date) > Date.parse(result.date)) return { applied: false, action: 'confirmed', reason: 'В профиле категория из более поздней попытки.' };
     const state = structuredClone(snapshot.state);
     state.profile.confirmed = { specialization: result.specialization, grade: result.grade, score: result.score, date: result.date, surveyId: row.attempt.surveyId };
     return this.saveProfile(owner, state, snapshot.revision, 'confirmed');
