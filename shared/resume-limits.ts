@@ -7,4 +7,11 @@ export const resumeTextLimits = {
 } as const;
 
 export const MAX_STACK_SKILLS = 100;
-export const MAX_SOFT_SKILLS = 10;
+export const MAX_SOFT_SKILLS = 30;
+
+/** Field and projection budgets used by the importer, form and saved-profile normalization. */
+export const resumeSectionLimits = {
+  workPeriod: 100, workCompany: 200, workTasks: 4000, workHistory: 20_000,
+  projectName: 200, projectDescription: 4000, projectSkill: 80, petProjects: 20_000,
+  achievementItems: 4000, interests: 4000,
+} as const;

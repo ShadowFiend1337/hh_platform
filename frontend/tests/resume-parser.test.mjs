@@ -3,7 +3,7 @@ import test from 'node:test';
 import { parseResumeText } from '../src/resume-parser.ts';
 import { MAX_STACK_SKILLS, resumeTextLimits } from '../../shared/resume-limits.ts';
 import { professionalRoleOptions, softSkillOptions } from '../../shared/catalog.ts';
-import { resumeSections, workHistoryText, careerAchievementsText, petProjectsText, MAX_WORK_EXPERIENCES, MAX_PET_PROJECTS, MAX_RESUME_ITEMS } from '../../shared/resume-structure.ts';
+import { resumeSections, workHistoryText, careerAchievementsText, petProjectsText, isLegacyWorkMigration, MAX_WORK_EXPERIENCES, MAX_PET_PROJECTS, MAX_RESUME_ITEMS } from '../../shared/resume-structure.ts';
 
 const fixedAsOf = new Date(2026, 9, 6);
 
@@ -65,7 +65,7 @@ Example college`);
 });
 
 test('BA, PM and ML retain their stated direction instead of inferring frontend from React', () => {
-  for (const [role, specialization, canonicalRole] of [['Бизнес-аналитик / Аналитик данных', undefined, undefined], ['AI Product Manager / Product Manager', 'ProductManagement', 'Менеджер продукта'], ['ML Engineer', 'ML', 'ML-инженер']]) {
+  for (const [role, specialization, canonicalRole] of [['Бизнес-аналитик / Аналитик данных', undefined, undefined], ['AI Product Manager / Product Manager', 'ProductManagement', 'Менеджер продукта'], ['ML Engineer', 'ML', 'Специалист по машинному обучению']]) {
     const fields = parseResumeText(`Иван Соколов\n${role}\nСтек: Python, React, SQL\nОпыт работы: 5 лет`);
     assert.equal(fields.professionalRole, canonicalRole);
     assert.equal(fields.specialization, specialization);
@@ -610,8 +610,7 @@ Pet проекты
   ]);
   assert.ok(fields.stack.includes('Rust'), 'explicit project tools also appear among overall competencies');
   assert.deepEqual(fields.achievementItems, ['Финалист конкурса.']);
-  assert.match(fields.workHistory, /^Pet-проекты\nНазвание: Task Board/);
-  assert.match(fields.workHistory, /Название: Reminder Bot/);
+  assert.equal(fields.workHistory, undefined);
   assert.equal(fields.workExperiences, undefined);
   assert.equal(fields.experience, undefined);
 });
@@ -798,7 +797,7 @@ PostgreSQL`);
   assert.ok(fields.stack.includes('Rust'));
 });
 
-test('project text survives the current saved-profile field while its dates stay outside employment duration', () => {
+test('project text stays in its own saved section while its dates stay outside employment duration', () => {
   const fields = parseResumeText(`Опыт работы
 Example Company
 January 2024 - June 2024
@@ -812,15 +811,138 @@ Pet проекты
 Финалист конкурса.`, { asOf: fixedAsOf });
   assert.equal(fields.experience, '6 месяцев');
   assert.match(fields.workHistory, /Example Company/);
-  assert.match(fields.workHistory, /Pet-проекты\nНазвание: Task Board/);
-  assert.match(fields.workHistory, /Создал учебное приложение/);
+  assert.doesNotMatch(fields.workHistory, /Task Board|учебное приложение/);
+  assert.match(fields.petProjects[0].description, /Создал учебное приложение/);
   assert.equal(fields.workExperiences.length, 1);
   assert.doesNotMatch(fields.workExperiences[0].tasks, /Task Board|учебное приложение/);
   assert.equal(fields.careerAchievements, 'Финалист конкурса.');
   assert.doesNotMatch(fields.careerAchievements, /Task Board/);
   const warnings = [];
-  parseResumeText(`Опыт работы\n${'Задача.\n'.repeat(2700)}\nPet проекты\nНазвание: Task Board\nОписание: ${'Проект. '.repeat(300)}`, {
+  parseResumeText(`Опыт работы\n${'Задача.\n'.repeat(2400)}\nPet проекты\nНазвание: Task Board\nОписание: ${'Проект. '.repeat(300)}`, {
     onTruncate: field => warnings.push(field), asOf: fixedAsOf,
   });
-  assert.ok(warnings.includes('workHistory'), 'the combined stored field reports clipping');
+  assert.ok(!warnings.includes('workHistory'), 'project text uses its separate budget');
+});
+
+test('technology labels nested inside employment never hide the following employer', () => {
+  const fields = parseResumeText(`Опыт работы
+Alpha
+Январь 2023 - Декабрь 2023
+Создал сервис.
+Стек: NestJS, TS, postgres, Custom SDK
+Beta
+Январь 2024 - Декабрь 2024
+Поддерживал приложение.
+Технологии: Rust, ClickHouse
+Достижения
+Финалист конкурса.`, { asOf: fixedAsOf });
+  assert.deepEqual(fields.workExperiences.map(job => job.company), ['Alpha', 'Beta']);
+  assert.match(fields.workExperiences[0].tasks, /Создал сервис/);
+  assert.match(fields.workExperiences[1].tasks, /Поддерживал приложение/);
+  for (const skill of ['NestJS', 'TypeScript', 'PostgreSQL', 'Custom SDK', 'Rust', 'ClickHouse']) assert.ok(fields.stack.includes(skill), skill);
+  assert.doesNotMatch(fields.workHistory, /Финалист/);
+});
+
+test('English stack labels and aliases preserve custom and specific tools without duplicate selections', () => {
+  const fields = parseResumeText('Stack: TS, TypeScript, nodejs, postgres, Custom SDK, MongoDB Atlas, React Native, R, C');
+  for (const skill of ['TypeScript', 'Node.js', 'PostgreSQL', 'Custom SDK', 'MongoDB Atlas', 'React Native', 'R', 'C']) assert.ok(fields.stack.includes(skill), skill);
+  assert.equal(fields.stack.filter(skill => skill === 'TypeScript').length, 1);
+  assert.ok(!fields.stack.includes('React'), 'React Native alone does not claim React for web');
+});
+
+test('extended competencies in project descriptions and explicit stacks import without losing noncatalog tools', () => {
+  const fields = parseResumeText(`Pet projects
+Project name: Cloud tracker
+Description: Built an application with Next.js and LangChain.
+Stack: nextjs, Docker, Yandex Cloud, Custom SDK, Custom SDK
+Interests
+Робототехника`);
+  assert.deepEqual(fields.petProjects[0].stack, ['Next.js', 'Docker', 'LangChain', 'Yandex Cloud', 'Custom SDK']);
+  assert.deepEqual(fields.interests, ['Робототехника']);
+  assert.equal(fields.workHistory, undefined);
+  assert.equal(fields.careerAchievements, undefined);
+});
+
+test('ordinary words and role descriptions do not invent ambiguous programming competencies', () => {
+  const fields = parseResumeText('О себе\nCan work with people. Go to meetings. Less time on calls. Spring internship.\nОпыт работы\nR and C Company');
+  assert.equal(fields.stack, undefined);
+});
+
+test('legacy mixed work history migrates projects into their independent editable section once', () => {
+  const oldHistory = 'Example Company\n2024 - 2025\nСоздал сервис.\n\nPet-проекты\nНазвание: Task Board\n\nОписание: Доска задач.\nСтек: TS, React.js, Custom SDK\nНазвание: Bot\nОписание: Бот уведомлений.';
+  const migrated = resumeSections({ workHistory: oldHistory });
+  assert.equal(workHistoryText(migrated.workExperiences), 'Example Company\n2024 - 2025\nСоздал сервис.');
+  assert.deepEqual(migrated.petProjects, [{ name: 'Task Board', description: 'Доска задач.', stack: ['TypeScript', 'React', 'Custom SDK'] }, { name: 'Bot', description: 'Бот уведомлений.', stack: [] }]);
+  assert.deepEqual(resumeSections({ ...migrated, workHistory: oldHistory }), migrated);
+  assert.deepEqual(resumeSections({ workHistory: oldHistory, petProjects: [] }).petProjects, [], 'removing projects explicitly must not restore them');
+});
+
+test('structured project normalization deduplicates equivalent aliases and keeps specific custom skill names', () => {
+  const migrated = resumeSections({ petProjects: [{ name: 'Проект', description: '', stack: ['TS', 'typescript', 'React Native', 'MongoDB Atlas', 'Custom SDK'] }] });
+  assert.deepEqual(migrated.petProjects[0].stack, ['TypeScript', 'React Native', 'MongoDB Atlas', 'Custom SDK']);
+});
+
+test('inline project headings become separate names and descriptions instead of one merged paragraph', () => {
+  const fields = parseResumeText(`Pet projects
+• Task Board — Канбан для команды на TypeScript.
+Stack: React, TS
+2. Reminder Bot — Бот уведомлений на Python.
+Stack: Python, Custom SDK`);
+  assert.deepEqual(fields.petProjects, [
+    { name: 'Task Board', description: 'Канбан для команды на TypeScript.', stack: ['React', 'TypeScript'] },
+    { name: 'Reminder Bot', description: 'Бот уведомлений на Python.', stack: ['Python', 'Custom SDK'] },
+  ]);
+});
+
+test('explicit employer and period labels fill their own fields without becoming task text', () => {
+  const fields = parseResumeText(`Опыт работы
+Компания: Example Engineer Group
+Период: Январь 2023 - Декабрь 2023
+Задачи: Создал сервис.
+Employer: Next Company
+Period: January 2024 - June 2024
+Responsibilities: Built another service.`, { asOf: fixedAsOf });
+  assert.deepEqual(fields.workExperiences, [
+    { period: 'Январь 2023 - Декабрь 2023', company: 'Example Engineer Group', tasks: 'Создал сервис.' },
+    { period: 'January 2024 - June 2024', company: 'Next Company', tasks: 'Built another service.' },
+  ]);
+});
+
+test('long legacy project descriptions remain editable until the user corrects their field budget', () => {
+  const description = 'Описание проекта. '.repeat(300);
+  const draft = resumeSections({ workHistory: `Pet-проекты\nНазвание: Example\nОписание: ${description}` });
+  assert.equal(draft.workExperiences.length, 0);
+  assert.equal(draft.petProjects[0].description, description.trim());
+  assert.ok(draft.petProjects[0].description.length > 4000);
+  const normalized = resumeSections({ petProjects: draft.petProjects });
+  assert.equal(normalized.petProjects[0].description.length, 4000, 'explicit structured input still uses the agreed limit');
+});
+
+test('only a leading explicit task label is removed while nested text and unknown metadata survive', () => {
+  const fields = parseResumeText(`Опыт работы
+Компания: Example
+Период: Январь 2024 - Июнь 2024
+Задачи: Разработал интерфейсы каталога.
+План: Tasks: improve performance.
+Проводил анализ Responsibilities: escalation.`, { asOf: fixedAsOf });
+  assert.equal(fields.workExperiences[0].tasks, 'Разработал интерфейсы каталога.\nПлан: Tasks: improve performance.\nПроводил анализ Responsibilities: escalation.');
+  assert.match(fields.workHistory, /Задачи: Разработал интерфейсы/);
+});
+
+test('unchanged maximum-budget legacy history round-trips without generated separators or clipped source characters', () => {
+  const suffix = 'Последние исходные символы: XYZ';
+  const history = 'А'.repeat(20_000 - suffix.length) + suffix;
+  assert.equal(history.length, 20_000);
+  const draft = resumeSections({ workHistory: history });
+  assert.equal(isLegacyWorkMigration(draft.workExperiences, history), true);
+  assert.equal(workHistoryText(draft.workExperiences, history), history);
+  const restored = resumeSections({ workHistory: history, workExperiences: draft.workExperiences });
+  assert.deepEqual(restored.workExperiences, draft.workExperiences, 'reading an already migrated draft cannot cut its last separators budget');
+  assert.equal(workHistoryText(restored.workExperiences, history), history);
+  const reordered = restored.workExperiences.map(({ company, tasks, period }) => ({ company, tasks, period }));
+  assert.equal(isLegacyWorkMigration(reordered, history), true, 'JSON property order must not change recognition');
+  const edited = draft.workExperiences.map((entry, index) => ({ ...entry, tasks: index === 0 ? 'Б' + entry.tasks.slice(1) : entry.tasks }));
+  assert.equal(isLegacyWorkMigration(edited, history), false);
+  assert.notEqual(workHistoryText(edited, history), history);
+  assert.ok(workHistoryText(resumeSections({ workExperiences: edited }).workExperiences).length <= 20_000, 'edited data follows the existing structured budget');
 });
