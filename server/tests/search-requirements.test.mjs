@@ -91,3 +91,25 @@ test('splitting keeps only mandatory skills in SQL and preserves exclusions', ()
   assert.deepEqual(coverage.matched, ['React', 'Python или Go']);
   assert.equal(coverage.share, 2 / 5);
 });
+
+test('an unmentioned method keeps a named role usable as nearest, while an explicit denial still excludes', async t => {
+  const value = service(t, [person('rest', 'QA', ['Postman'], { bio: 'Проверяю REST API заказов и права доступа.' }),
+    person('silent', 'QA', ['Postman'], { bio: 'Проверяю интеграции с доставкой.' }),
+    person('denied', 'QA', ['Postman'], { bio: 'REST не использовал, проверяю только интерфейсы.' })]);
+  const result = await value.search('QA-инженер для проверки REST API в Postman');
+  assert.deepEqual(result.items.map(item => item.person.id), ['rest', 'silent']);
+  assert.equal(result.items[0].approximate, undefined);
+  assert.equal(result.items[1].approximate, true);
+  assert.deepEqual(result.items[1].explanation.evidenceMissing, ['REST']);
+  assert.match(result.items[1].reason, /В профиле не описан опыт: REST\./u);
+  const unnamed = await value.search('Проверить REST API заказов');
+  assert.deepEqual(unnamed.items.map(item => item.person.id), ['rest'], 'Without a role or skill the method stays a strict requirement');
+});
+
+test('platform developer titles name the mobile direction', async t => {
+  const value = service(t, [person('ios', 'Mobile', ['Swift', 'iOS']), person('android', 'Mobile', ['Kotlin', 'Android']), person('web', 'Frontend', ['React'])]);
+  const result = await value.search('iOS-разработчик на Swift для приложения с оплатой');
+  assert.deepEqual(result.items.map(item => item.person.id), ['ios', 'android']);
+  assert.equal(result.interpreted.specialization, 'Mobile');
+  assert.equal(result.items[1].match.confidence.level, 'low');
+});

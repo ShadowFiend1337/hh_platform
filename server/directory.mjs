@@ -1,5 +1,5 @@
 import { DirectoryStore, publicDirectoryCandidate, semanticMatch, semanticRerankingSections, semanticEvidenceSections, semanticCompetencySections, parseSemanticSegments, PROFILE_INDEX_POLICY, PROFILE_EVIDENCE_POLICY } from './directory-store.mjs';
-import { queryEvidenceRequirements, assessTaskEvidence, TASK_EVIDENCE_POLICY } from './search-evidence.mjs';
+import { queryEvidenceRequirements, assessTaskEvidence, professionalConcepts, TASK_EVIDENCE_POLICY } from './search-evidence.mjs';
 import { directoryCandidates, legacyDirectoryCandidates } from './directory-seed.mjs';
 import { SemanticWorker, validScoreCalibration } from './semantic-worker.mjs';
 import { industryOptions, isSpecialization, specializationLabels, stackOptions } from '../shared/catalog.ts';
@@ -45,7 +45,7 @@ const roleAliases = [
   ['Frontend', 'front[- ]?end|фронт[- ]?[эе]нд[а-я]*|разработ[а-я]*\\s+интерфейс[а-я]*'],
   ['Backend', 'back[- ]?end|б[эе]к[- ]?[эе]нд[а-я]*|серверн[а-я]*\\s+разработ[а-я]*'],
   ['Fullstack', 'full[- ]?stack|фулл?ст[эе]к[а-я]*|(?:универсальн[а-я]*\\s+)?(?:веб|web)[- ]?разработ[а-я]*|web[- ]developer[a-z]*'],
-  ['Mobile', 'mobile|мобильн[а-я]*\\s+разработ[а-я]*'],
+  ['Mobile', 'mobile|мобильн[а-я]*\\s+разработ[а-я]*|(?:ios|android|flutter)[- ]?(?:разработ[а-я]*|developer[a-z]*)'],
   ['ML', 'ml|machine\\s+learning|data\\s+scien(?:ce|tist)|машинн[а-я]*\\s+обучени[а-я]*'],
   ['DataAnalysis', 'data\\s+analys[а-яa-z]*|аналитик[а-я]*\\s+данных|аналитика данных|bi[- ]?аналитик[а-я]*'],
   ['DataEngineering', 'data\\s+engineer[а-яa-z]*|инженер[а-я]*\\s+данных|инженерия данных'],
@@ -359,15 +359,19 @@ export class DirectoryService {
     if (interpreted.unsupportedRole?.length) return {items:[],categories:[],selectedCategory:category,total:0,offset,limit,query,interpreted,effectiveFilters:filters,
       model:{...this.encoder.info,indexPolicy:PROFILE_INDEX_POLICY,categoryRecommendationPolicy:CATEGORY_RECOMMENDATION_POLICY},warnings:[]};
     // A specific requested method needs an affirmative professional claim.
-    // Apply this to each fresh snapshot, before both strong and approximate
-    // admission; a large neural score cannot turn a denial into experience.
-    const matching=()=>this.store.matching(sqlFilters,sqlConstraints).filter(row=>{
-      if (!this.accessible(owner,row)) return false;
-      if (!embeddingQuery || !evidenceRequirements.length) return true;
+    // An explicit denial excludes the profile from every snapshot; a large
+    // neural score cannot turn it into experience. A profile that does not
+    // mention the method is never admitted as a match, only as nearest.
+    const conceptLabels=new Map(professionalConcepts.map(concept=>[concept.id,concept.label]));
+    const evidenceGap=row=>{
+      if (!embeddingQuery || !evidenceRequirements.length) return [];
       const person=publicDirectoryCandidate(row);
-      return assessTaskEvidence(evidenceRequirements,semanticEvidenceSections(person),
-        { competencySections:semanticCompetencySections(person) }).eligible;
-    });
+      const outcome=assessTaskEvidence(evidenceRequirements,semanticEvidenceSections(person),
+        { competencySections:semanticCompetencySections(person) });
+      if (outcome.requirements.some(item=>item.status==='negative')) return null;
+      return outcome.requirements.filter(item=>item.status==='absent').map(item=>item.anyOf.map(id=>conceptLabels.get(id)||id).join(' или '));
+    };
+    const matching=()=>this.store.matching(sqlFilters,sqlConstraints).filter(row=>this.accessible(owner,row)&&evidenceGap(row)!==null);
     let rows=matching();
     let vector=null, vectors=null;
     if (embeddingQuery) {
@@ -424,6 +428,7 @@ export class DirectoryService {
         evidenceText:evidence,evidenceKind:semanticRerankingSections(person).some(section=>section.text.replace(/^Вымышленный проект /u, 'Проект ')===evidence && section.kind==='professional')?'professional':'competencies',
         sourceId:row.id,documentHash:row.document_hash,publicPayload:row.public_payload,
         taskSections:stage?semanticRerankingSections(person):[],reasonSuffix:reasons.slice(1),coverage:requirementCoverage(person,requirements),
+        evidenceMissing:evidenceGap(row)||[],
         roleLabel:specializationLabels[row.specialization] || row.specialization};
     });
     let items;
@@ -512,14 +517,15 @@ export class DirectoryService {
           return [{...item,rerankerScore:sectionScores[winning],rank:maximum,evidenceKind:section.kind,evidenceText:section.text,
             reason:[`${label}: ${section.text.replace(/^Вымышленный проект /u, 'Проект ').slice(0,350)}`,...item.reasonSuffix].join(' ')}];
         });
-        items=eligible.filter(item=>item.rank>=(fusion?.threshold??stage.threshold));
+        const admissible=eligible.filter(item=>!item.evidenceMissing.length);
+        items=admissible.filter(item=>item.rank>=(fusion?.threshold??stage.threshold));
         // A DEV applicability floor can offer a small nearest list only when
         // no current eligible profile passed the unchanged strong pair cutoff.
         if (!items.length && fusion?.admission) {
           // DEV's approximate floor was fitted on described professional
           // tasks. Sparse role/skill claims use the unchanged strong cutoff;
           // do not transfer a task-only floor to this new evidence type.
-          items=eligible.filter(item=>item.evidenceKind==='professional' && item.rank>=fusion.admission.threshold).sort(semanticOrder).slice(0,fusion.admission.limit)
+          items=admissible.filter(item=>item.evidenceKind==='professional' && item.rank>=fusion.admission.threshold).sort(semanticOrder).slice(0,fusion.admission.limit)
             .map(item=>({...item,approximate:true}));
           if (items.length) warnings.push('Точных совпадений нет. Показаны ближайшие профили.');
         }
@@ -531,7 +537,7 @@ export class DirectoryService {
             .sort((a,b)=>b.semanticScore-a.semanticScore||a.sourceId.localeCompare(b.sourceId)).map(item=>({...item,rank:-Infinity}))];
       } catch { throw new RequestError(503,'Поиск по смыслу недоступен. Повторите запрос или используйте фильтры без текста.'); }
     } else {
-      items=candidates.filter(item=>!embeddingQuery||item.semanticScore!==null&&item.semanticScore>=this.encoder.info.threshold);
+      items=candidates.filter(item=>!embeddingQuery||item.semanticScore!==null&&item.semanticScore>=this.encoder.info.threshold&&!item.evidenceMissing.length);
       nearest=candidates.filter(item=>embeddingQuery&&item.semanticScore!==null&&!items.includes(item)).sort(semanticOrder);
     }
     if (embeddingQuery && softRequirements) {
@@ -543,6 +549,7 @@ export class DirectoryService {
     // are filled from the same structural pool, explicitly marked as nearest;
     // a request with neither signal keeps the strict model cutoff.
     if (embeddingQuery && (primary.length || softRequirements) && items.length<MINIMUM_RESULTS) {
+      // The reserve keeps the order of the model; explicit denials never enter it.
       const reachable=new Set([...primary,...related]);
       const taken=new Set(items.map(item=>item.sourceId));
       const extra=nearest.filter(item=>!taken.has(item.sourceId)&&(primary.length
@@ -567,7 +574,7 @@ export class DirectoryService {
     const categories=recommendCategories(items,{semantic:Boolean(embeddingQuery)});
     const selected=category?items.filter(item=>item.person.confirmed?.specialization===category.specialization
       && item.person.confirmed?.grade===category.grade):items;
-    return {items:selected.slice(offset,offset+limit).map(({testScore,fsp,sourceId,documentHash,publicPayload,taskSections,reasonSuffix,roleLabel,evidenceText,rankingTrace,coverage,...item})=>
+    return {items:selected.slice(offset,offset+limit).map(({testScore,fsp,sourceId,documentHash,publicPayload,taskSections,reasonSuffix,roleLabel,evidenceText,rankingTrace,coverage,evidenceMissing,...item})=>
       this.freshness?{...item,freshness:this.freshness(item.person.id)}:item),
       categories,selectedCategory:category,total:selected.length,offset,limit,query,interpreted,effectiveFilters:filters,
       model:{...this.encoder.info,indexPolicy:PROFILE_INDEX_POLICY,taskEvidencePolicy:TASK_EVIDENCE_POLICY,

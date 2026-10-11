@@ -145,12 +145,14 @@ export function explainSearchResults(items, { semantic = false, scoreKind = 'log
       ? `Смежная специализация к запрошенной (${specializationLabels[filters.specialization] || filters.specialization}).` : '';
     const parts = [`${categoryInfo.label}. ${categoryInfo.explanation}`, adjacent, item.approximate === true
       ? 'Это ближайший профиль: уверенность модели ниже порога строгого совпадения.' : '',
-    item.coverage ? `Требования запроса: ${item.coverage.text}` : '', evidence.text ? `${evidence.explanation} ${evidence.text}` : evidence.explanation,
+    item.coverage ? `Требования запроса: ${item.coverage.text}` : '',
+    item.evidenceMissing?.length ? `В профиле не описан опыт: ${item.evidenceMissing.join(', ')}.` : '', evidence.text ? `${evidence.explanation} ${evidence.text}` : evidence.explanation,
     conditions.length ? `Условия: ${conditions.map(condition => condition.value).join('; ')}.` : '', testSummary,
     fsp.explanation, ordering.explanation];
     return { ...item, reason: parts.filter(Boolean).join(' '), explanation: { policy: SEARCH_EXPLANATION_POLICY,
       relevance, category: categoryInfo, evidence, conditions, test, fsp, ordering,
       ...(item.coverage ? { requirements: { matched: item.coverage.matched, missing: item.coverage.missing, total: item.coverage.total } } : {}),
+      ...(item.evidenceMissing?.length ? { evidenceMissing: [...item.evidenceMissing] } : {}),
       ...(adjacent ? { adjacentSpecialization: true } : {}) } };
   });
 }
