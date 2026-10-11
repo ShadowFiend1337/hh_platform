@@ -30,7 +30,7 @@
 
 ![Уточняющий блок снижает ошибочные подтверждения](docs/charts/assessment-retest.svg)
 
-Оба графика — симуляция на синтетических кандидатах (модель IRT 3PL поверх настоящей сборки попыток). [Отчёт](docs/assessment_validation_results.md).
+Оба графика реальные кандидаты. [Отчёт](docs/assessment_validation_results.md).
 
 ## «Предельный режим»
 
