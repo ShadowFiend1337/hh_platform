@@ -1,0 +1,821 @@
+{
+ "schemaVersion": 1,
+ "suiteVersion": "graded-relevance-v1",
+ "provenance": {
+  "kind": "team-reference-labels",
+  "labels": "Эталонная разметка команды по рубрике ниже; точные совпадения выбраны вручную по текстам задач профилей до первого запуска оценки.",
+  "catalog": "server/directory-seed.mjs (вымышленные демопрофили)",
+  "notEvidenceOf": [
+   "независимой экспертной оценки",
+   "реальных наймов",
+   "качества на реальных резюме"
+  ]
+ },
+ "rubric": {
+  "3": "Точное совпадение: описанная в профиле задача решает потребность (поле exact).",
+  "2": "Та же специализация; если в потребности назван стек (stackAny), у профиля есть хотя бы одна из этих технологий.",
+  "1": "Смежная специализация (related), либо та же специализация без названного стека, либо ручная оценка в overrides.",
+  "0": "Остальные профили."
+ },
+ "needs": [
+  {
+   "id": "F1",
+   "kind": "role-stack",
+   "query": "Фронтенд для SPA на React и TypeScript, вёрстка по макетам Figma",
+   "specialization": [
+    "Frontend"
+   ],
+   "related": [
+    "Fullstack"
+   ],
+   "exact": [
+    "demo-frontend-1",
+    "demo-frontend-2",
+    "demo-frontend-4",
+    "demo-frontend-7",
+    "demo-frontend-10"
+   ],
+   "stackAny": [
+    "React",
+    "TypeScript"
+   ]
+  },
+  {
+   "id": "F2",
+   "kind": "task-only",
+   "query": "Страницы большого каталога долго открываются, длинные списки подтормаживают при прокрутке. Нужен человек, который ускорит загрузку в браузере.",
+   "specialization": [
+    "Frontend"
+   ],
+   "related": [
+    "Fullstack"
+   ],
+   "exact": [
+    "demo-frontend-3"
+   ]
+  },
+  {
+   "id": "F3",
+   "kind": "role-stack",
+   "query": "Frontend-разработчик на Vue для графиков измерений в браузере: масштабирование, подсказки по точкам, пропуски данных",
+   "specialization": [
+    "Frontend"
+   ],
+   "related": [
+    "Fullstack"
+   ],
+   "exact": [
+    "demo-frontend-5"
+   ],
+   "stackAny": [
+    "Vue"
+   ]
+  },
+  {
+   "id": "F4",
+   "kind": "task-stack",
+   "query": "Нужно сделать оформление заказа на React доступным: заполнение с клавиатуры, экранный диктор, понятные ошибки ввода",
+   "specialization": [
+    "Frontend"
+   ],
+   "related": [
+    "Fullstack"
+   ],
+   "exact": [
+    "demo-frontend-1"
+   ],
+   "stackAny": [
+    "React"
+   ],
+   "overrides": {
+    "demo-uxui-6": 1,
+    "demo-qa-9": 1
+   }
+  },
+  {
+   "id": "F5",
+   "kind": "role-stack",
+   "query": "Фронтенд на Angular: сложные многошаговые анкеты с зависимыми полями и сохранением ответов",
+   "specialization": [
+    "Frontend"
+   ],
+   "related": [
+    "Fullstack"
+   ],
+   "exact": [
+    "demo-frontend-8"
+   ],
+   "stackAny": [
+    "Angular"
+   ]
+  },
+  {
+   "id": "B1",
+   "kind": "role-or",
+   "query": "Бэкенд-разработчик на Python или Go для API сервиса заказов с PostgreSQL",
+   "specialization": [
+    "Backend"
+   ],
+   "related": [
+    "Fullstack"
+   ],
+   "exact": [
+    "demo-backend-1"
+   ],
+   "stackAny": [
+    "Python",
+    "Go"
+   ]
+  },
+  {
+   "id": "B2",
+   "kind": "task-only",
+   "query": "Нужен человек, который сделает обработку платежей и возвратов так, чтобы повтор запроса после обрыва связи не списал деньги дважды",
+   "specialization": [
+    "Backend"
+   ],
+   "related": [
+    "Fullstack"
+   ],
+   "exact": [
+    "demo-backend-2"
+   ]
+  },
+  {
+   "id": "B3",
+   "kind": "role-stack",
+   "query": "Серверный разработчик на Go: снизить задержку нагруженного сервиса событий и настроить обратное давление очередей",
+   "specialization": [
+    "Backend"
+   ],
+   "related": [
+    "Fullstack"
+   ],
+   "exact": [
+    "demo-backend-7"
+   ],
+   "stackAny": [
+    "Go"
+   ]
+  },
+  {
+   "id": "B4",
+   "kind": "role-stack",
+   "query": "Backend на Node.js: вход в сервис, сессии, разграничение доступа и отзыв токенов",
+   "specialization": [
+    "Backend"
+   ],
+   "related": [
+    "Fullstack"
+   ],
+   "exact": [
+    "demo-backend-5"
+   ],
+   "stackAny": [
+    "Node.js"
+   ]
+  },
+  {
+   "id": "B5",
+   "kind": "role-stack",
+   "query": "Бэкенд на Java для интеграции с внешними поставщиками данных: версии схем, таймауты и повторы",
+   "specialization": [
+    "Backend"
+   ],
+   "related": [
+    "Fullstack"
+   ],
+   "exact": [
+    "demo-backend-6"
+   ],
+   "stackAny": [
+    "Java"
+   ]
+  },
+  {
+   "id": "S1",
+   "kind": "adjacent",
+   "query": "Универсальный веб-разработчик для сервиса онлайн-записи на занятия: интерфейс выбора времени и API бронирования",
+   "specialization": [
+    "Fullstack"
+   ],
+   "related": [
+    "Frontend",
+    "Backend"
+   ],
+   "exact": [
+    "demo-fullstack-1"
+   ]
+  },
+  {
+   "id": "S2",
+   "kind": "role-stack",
+   "query": "Fullstack-разработчик на React и Node.js для внутренней CRM: карточки клиентов, назначение ответственных, статусы обращений",
+   "specialization": [
+    "Fullstack"
+   ],
+   "related": [
+    "Frontend",
+    "Backend"
+   ],
+   "exact": [
+    "demo-fullstack-5"
+   ],
+   "stackAny": [
+    "React",
+    "Node.js"
+   ]
+  },
+  {
+   "id": "S3",
+   "kind": "task-only",
+   "query": "Один разработчик должен сделать образовательную платформу целиком: просмотр материалов, сдачу заданий, проверку доступа к курсу",
+   "specialization": [
+    "Fullstack"
+   ],
+   "related": [
+    "Frontend",
+    "Backend"
+   ],
+   "exact": [
+    "demo-fullstack-4"
+   ]
+  },
+  {
+   "id": "S4",
+   "kind": "adjacent",
+   "query": "Нужен веб-разработчик полного цикла для витрины маркетплейса и кабинета продавца",
+   "specialization": [
+    "Fullstack"
+   ],
+   "related": [
+    "Frontend",
+    "Backend"
+   ],
+   "exact": [
+    "demo-fullstack-7"
+   ]
+  },
+  {
+   "id": "M1",
+   "kind": "role-stack",
+   "query": "Мобильный разработчик на Kotlin: Android-приложение для инспекторов, работа без сети и прикрепление фотографий",
+   "specialization": [
+    "Mobile"
+   ],
+   "related": [],
+   "exact": [
+    "demo-mobile-1"
+   ],
+   "stackAny": [
+    "Kotlin"
+   ]
+  },
+  {
+   "id": "M2",
+   "kind": "role-stack",
+   "query": "iOS-разработчик на Swift для приложения с оплатой и историей заказов",
+   "specialization": [
+    "Mobile"
+   ],
+   "related": [],
+   "exact": [
+    "demo-mobile-2"
+   ],
+   "stackAny": [
+    "Swift"
+   ]
+  },
+  {
+   "id": "M3",
+   "kind": "role-or",
+   "query": "Мобильная разработка на Flutter или React Native: одно приложение для Android и iOS",
+   "specialization": [
+    "Mobile"
+   ],
+   "related": [],
+   "exact": [
+    "demo-mobile-3",
+    "demo-mobile-7",
+    "demo-mobile-8"
+   ],
+   "stackAny": [
+    "Flutter",
+    "React Native",
+    "Dart"
+   ]
+  },
+  {
+   "id": "M4",
+   "kind": "task-only",
+   "query": "Телефон должен находить BLE-датчик и стабильно переподключаться к нему после потери связи",
+   "specialization": [
+    "Mobile"
+   ],
+   "related": [],
+   "exact": [
+    "demo-mobile-4"
+   ],
+   "overrides": {
+    "demo-embedded-5": 1
+   }
+  },
+  {
+   "id": "L1",
+   "kind": "role-stack",
+   "query": "ML-инженер на Python и PyTorch для автоматической классификации обращений по тексту",
+   "specialization": [
+    "ML"
+   ],
+   "related": [],
+   "exact": [
+    "demo-ml-2"
+   ],
+   "stackAny": [
+    "PyTorch"
+   ]
+  },
+  {
+   "id": "L2",
+   "kind": "task-only",
+   "query": "Выявлять мошеннические операции, когда подтверждённых случаев мошенничества очень мало",
+   "specialization": [
+    "ML"
+   ],
+   "related": [],
+   "exact": [
+    "demo-ml-5"
+   ]
+  },
+  {
+   "id": "L3",
+   "kind": "role-stack",
+   "query": "Специалист по машинному обучению: вывести модель в сервис в Docker, пакетировать запросы и измерить задержку",
+   "specialization": [
+    "ML"
+   ],
+   "related": [],
+   "exact": [
+    "demo-ml-6",
+    "demo-ml-10"
+   ],
+   "stackAny": [
+    "Docker"
+   ]
+  },
+  {
+   "id": "L4",
+   "kind": "task-only",
+   "query": "Найти необычное поведение датчиков по временным рядам и не завалить операторов ложными тревогами",
+   "specialization": [
+    "ML"
+   ],
+   "related": [],
+   "exact": [
+    "demo-ml-8"
+   ],
+   "overrides": {
+    "demo-dataengineering-2": 1
+   }
+  },
+  {
+   "id": "L5",
+   "kind": "role-stack",
+   "query": "Data scientist для прогноза спроса с учётом сезонности и праздников, Python и Pandas",
+   "specialization": [
+    "ML"
+   ],
+   "related": [],
+   "exact": [
+    "demo-ml-4"
+   ],
+   "stackAny": [
+    "Pandas"
+   ]
+  },
+  {
+   "id": "D1",
+   "kind": "role-stack",
+   "query": "Аналитик данных с SQL и Power BI: разобраться, почему упала маржа продаж с учётом скидок и возвратов",
+   "specialization": [
+    "DataAnalysis"
+   ],
+   "related": [
+    "DataEngineering"
+   ],
+   "exact": [
+    "demo-dataanalysis-1"
+   ],
+   "stackAny": [
+    "Power BI"
+   ]
+  },
+  {
+   "id": "D2",
+   "kind": "task-only",
+   "query": "Посчитать удержание клиентов по когортам и отделить новые регистрации от активных пользователей",
+   "specialization": [
+    "DataAnalysis"
+   ],
+   "related": [
+    "DataEngineering"
+   ],
+   "exact": [
+    "demo-dataanalysis-5"
+   ],
+   "overrides": {
+    "demo-productmanagement-2": 1
+   }
+  },
+  {
+   "id": "D3",
+   "kind": "role-or",
+   "query": "Аналитик данных, Tableau или Power BI: отчёты по рекламе, стоимости привлечения и атрибуции",
+   "specialization": [
+    "DataAnalysis"
+   ],
+   "related": [
+    "DataEngineering"
+   ],
+   "exact": [
+    "demo-dataanalysis-8"
+   ],
+   "stackAny": [
+    "Tableau",
+    "Power BI"
+   ]
+  },
+  {
+   "id": "E1",
+   "kind": "role-stack",
+   "query": "Инженер данных: ежедневная загрузка из CRM в хранилище на Airflow с безопасным перезапуском",
+   "specialization": [
+    "DataEngineering"
+   ],
+   "related": [
+    "DataAnalysis"
+   ],
+   "exact": [
+    "demo-dataengineering-1",
+    "demo-dataengineering-6"
+   ],
+   "stackAny": [
+    "Airflow"
+   ]
+  },
+  {
+   "id": "E2",
+   "kind": "task-stack",
+   "query": "Обработка потока событий устройств в Kafka и Spark с учётом поздних сообщений",
+   "specialization": [
+    "DataEngineering"
+   ],
+   "related": [
+    "DataAnalysis"
+   ],
+   "exact": [
+    "demo-dataengineering-2"
+   ],
+   "stackAny": [
+    "Kafka",
+    "Spark"
+   ]
+  },
+  {
+   "id": "E3",
+   "kind": "task-only",
+   "query": "Перенести аналитические данные в новое хранилище и сверить количество строк и контрольные суммы",
+   "specialization": [
+    "DataEngineering"
+   ],
+   "related": [
+    "DataAnalysis"
+   ],
+   "exact": [
+    "demo-dataengineering-8"
+   ],
+   "overrides": {
+    "demo-businessanalysis-5": 1
+   }
+  },
+  {
+   "id": "O1",
+   "kind": "role-stack",
+   "query": "DevOps-инженер: CI/CD, сборка Docker-образов, выкладка на стенд и откат релиза",
+   "specialization": [
+    "DevOps"
+   ],
+   "related": [],
+   "exact": [
+    "demo-devops-1"
+   ],
+   "stackAny": [
+    "Docker"
+   ]
+  },
+  {
+   "id": "O2",
+   "kind": "task-or",
+   "query": "Нужен человек на Kubernetes или Terraform для инфраструктуры кодом и эксплуатации кластера",
+   "specialization": [
+    "DevOps"
+   ],
+   "related": [],
+   "exact": [
+    "demo-devops-2",
+    "demo-devops-3",
+    "demo-devops-10"
+   ],
+   "stackAny": [
+    "Kubernetes",
+    "Terraform"
+   ]
+  },
+  {
+   "id": "O3",
+   "kind": "task-stack",
+   "query": "Настроить наблюдение за сервисами: метрики, логи и сигналы тревоги в Prometheus",
+   "specialization": [
+    "DevOps"
+   ],
+   "related": [],
+   "exact": [
+    "demo-devops-4"
+   ],
+   "stackAny": [
+    "Prometheus"
+   ]
+  },
+  {
+   "id": "Q1",
+   "kind": "role-or",
+   "query": "Тестировщик для автотестов браузерного кабинета на Playwright или Selenium",
+   "specialization": [
+    "QA"
+   ],
+   "related": [],
+   "exact": [
+    "demo-qa-1",
+    "demo-qa-7"
+   ],
+   "stackAny": [
+    "Playwright",
+    "Selenium"
+   ]
+  },
+  {
+   "id": "Q2",
+   "kind": "role-stack",
+   "query": "QA-инженер для проверки REST API в Postman: неверные данные, права доступа, повторы",
+   "specialization": [
+    "QA"
+   ],
+   "related": [],
+   "exact": [
+    "demo-qa-2",
+    "demo-qa-8"
+   ],
+   "stackAny": [
+    "Postman"
+   ]
+  },
+  {
+   "id": "Q3",
+   "kind": "task-only",
+   "query": "Провести нагрузочное тестирование сервиса: реалистичный профиль запросов, задержка и предел системы",
+   "specialization": [
+    "QA"
+   ],
+   "related": [],
+   "exact": [
+    "demo-qa-4"
+   ],
+   "overrides": {
+    "demo-devops-6": 1
+   }
+  },
+  {
+   "id": "X1",
+   "kind": "task-stack",
+   "query": "Пентест веб-приложения по OWASP с Burp Suite: доступ к чужим объектам, инъекции",
+   "specialization": [
+    "Security"
+   ],
+   "related": [],
+   "exact": [
+    "demo-security-1"
+   ],
+   "stackAny": [
+    "OWASP",
+    "Burp Suite"
+   ]
+  },
+  {
+   "id": "X2",
+   "kind": "task-only",
+   "query": "Расследовать подозрительные входы в учётные записи и понять, была ли учётка захвачена",
+   "specialization": [
+    "Security"
+   ],
+   "related": [],
+   "exact": [
+    "demo-security-2",
+    "demo-security-7"
+   ]
+  },
+  {
+   "id": "X3",
+   "kind": "role",
+   "query": "Специалист по информационной безопасности для проверки облачной инфраструктуры: открытые хранилища, лишние роли",
+   "specialization": [
+    "Security"
+   ],
+   "related": [],
+   "exact": [
+    "demo-security-9"
+   ]
+  },
+  {
+   "id": "U1",
+   "kind": "role-stack",
+   "query": "UX/UI дизайнер в Figma: интерактивные прототипы и проверка навигации на пользователях",
+   "specialization": [
+    "UXUI"
+   ],
+   "related": [],
+   "exact": [
+    "demo-uxui-2"
+   ],
+   "stackAny": [
+    "Figma"
+   ]
+  },
+  {
+   "id": "U2",
+   "kind": "task-only",
+   "query": "Нужен дизайнер мобильных экранов записи и оплаты, удобных одной рукой",
+   "specialization": [
+    "UXUI"
+   ],
+   "related": [],
+   "exact": [
+    "demo-uxui-4"
+   ]
+  },
+  {
+   "id": "U3",
+   "kind": "task-only",
+   "query": "Пользователи бросают корзину на выборе доставки и оплаты. Нужен человек, который выяснит почему и предложит варианты экранов",
+   "specialization": [
+    "UXUI"
+   ],
+   "related": [],
+   "exact": [
+    "demo-uxui-8",
+    "demo-uxui-1"
+   ]
+  },
+  {
+   "id": "A1",
+   "kind": "role-stack",
+   "query": "Бизнес-аналитик: собрать требования к автоматизации заявок и описать процесс в BPMN",
+   "specialization": [
+    "BusinessAnalysis"
+   ],
+   "related": [
+    "ProductManagement"
+   ],
+   "exact": [
+    "demo-businessanalysis-1",
+    "demo-businessanalysis-3"
+   ],
+   "stackAny": [
+    "BPMN"
+   ]
+  },
+  {
+   "id": "A2",
+   "kind": "role-stack",
+   "query": "Системный аналитик для описания контракта интеграции сервисов: поля, ошибки, версии",
+   "specialization": [
+    "BusinessAnalysis"
+   ],
+   "related": [
+    "ProductManagement"
+   ],
+   "exact": [
+    "demo-businessanalysis-2"
+   ],
+   "stackAny": [
+    "UML"
+   ]
+  },
+  {
+   "id": "A3",
+   "kind": "task-only",
+   "query": "Разобрать правила расчёта тарифов, начислений и возвратов: граничные даты, округление, спорные случаи",
+   "specialization": [
+    "BusinessAnalysis"
+   ],
+   "related": [
+    "ProductManagement"
+   ],
+   "exact": [
+    "demo-businessanalysis-6"
+   ]
+  },
+  {
+   "id": "P1",
+   "kind": "role-stack",
+   "query": "Продакт-менеджер для роста активации и удержания, нужен SQL",
+   "specialization": [
+    "ProductManagement"
+   ],
+   "related": [
+    "BusinessAnalysis"
+   ],
+   "exact": [
+    "demo-productmanagement-2"
+   ],
+   "stackAny": [
+    "SQL"
+   ],
+   "overrides": {
+    "demo-dataanalysis-5": 1
+   }
+  },
+  {
+   "id": "P2",
+   "kind": "task-only",
+   "query": "Нужно пересмотреть тарифы и экономику подписки: доход, стоимость обслуживания, переходы между тарифами",
+   "specialization": [
+    "ProductManagement"
+   ],
+   "related": [
+    "BusinessAnalysis"
+   ],
+   "exact": [
+    "demo-productmanagement-4"
+   ]
+  },
+  {
+   "id": "P3",
+   "kind": "task-only",
+   "query": "Выбрать, какие инициативы делать при маленькой команде: эффект, свидетельства, стоимость и риски",
+   "specialization": [
+    "ProductManagement"
+   ],
+   "related": [
+    "BusinessAnalysis"
+   ],
+   "exact": [
+    "demo-productmanagement-6"
+   ]
+  },
+  {
+   "id": "H1",
+   "kind": "role-stack",
+   "query": "Embedded-разработчик на C для STM32 с FreeRTOS",
+   "specialization": [
+    "Embedded"
+   ],
+   "related": [],
+   "exact": [
+    "demo-embedded-3",
+    "demo-embedded-6",
+    "demo-embedded-10"
+   ],
+   "stackAny": [
+    "STM32",
+    "FreeRTOS"
+   ]
+  },
+  {
+   "id": "H2",
+   "kind": "task-stack",
+   "query": "Развести печатную плату в KiCad и проверить цепи питания перед изготовлением",
+   "specialization": [
+    "Embedded"
+   ],
+   "related": [],
+   "exact": [
+    "demo-embedded-4"
+   ],
+   "stackAny": [
+    "KiCad"
+   ]
+  },
+  {
+   "id": "H3",
+   "kind": "task-only",
+   "query": "Сделать обновление прошивки устройства с проверкой образа и восстановлением после пропадания питания",
+   "specialization": [
+    "Embedded"
+   ],
+   "related": [],
+   "exact": [
+    "demo-embedded-7"
+   ]
+  }
+ ]
+}
