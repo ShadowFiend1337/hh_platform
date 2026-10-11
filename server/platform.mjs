@@ -8,7 +8,7 @@ import { HIRING_NEED_LIMITS, MAX_HIRING_NEEDS } from '../shared/hiring-needs.ts'
 import { publicCandidate, publicDirectoryCandidate } from './directory-store.mjs';
 import { profilePublication } from './profile-publication.mjs';
 import { isDemoCatalogProfile } from './demo-catalog.mjs';
-import { confidentThreshold, nextGrade, RequestError, threshold } from './assessment.mjs';
+import { RequestError, threshold } from './assessment.mjs';
 import { syncMarketplaceCompany } from './marketplace.mjs';
 import { accountsShareRealm, isLocalFixtureAccount } from './local-fixtures.mjs';
 import { assessOfferRisk, blockedMessage, OFFER_RISK_POLICY } from './offer-risk.mjs';
@@ -434,11 +434,8 @@ export class PlatformService {
         const next = fromProof(selectedProof);
         const changed = oldProof && (oldProof.result.grade !== next.grade || oldProof.result.specialization !== next.specialization);
         const changedAt = oldProof ? oldProfile.gradeChangedAt || oldProof.result.date : next.date;
-        // A confident result (>= 90) opens the next grade of the same specialization at once;
-        // every other change waits 90 days since the previous change.
-        const fastTrack = changed && oldProof.result.score >= confidentThreshold && oldProof.result.specialization === next.specialization
-          && nextGrade(oldProof.result.grade) === next.grade;
-        if (changed && !fastTrack && this.now() < Date.parse(changedAt) + 90 * 86400000) throw new RequestError(409, 'Смена подтверждённой категории доступна раз в 90 дней.');
+        // A confident score recommends the next grade, but never bypasses the change interval.
+        if (changed && this.now() < Date.parse(changedAt) + 90 * 86400000) throw new RequestError(409, 'Смена подтверждённой категории доступна раз в 90 дней.');
         person.confirmed = next;
         // A delayed/replayed successful result is not a delayed category-change
         // timestamp: the next interval starts when this change is applied.

@@ -92,6 +92,7 @@ export function Assessment({ state, update, notify, onProfile, onSurvey, onActiv
     try { if (openText) sessionStorage.setItem(openDraftKey, openText); else sessionStorage.removeItem(openDraftKey); } catch { /* The draft stays in memory. */ }
   }, [openDraftKey, openText]);
   const unlock = categoryChangeUnlock(state.profile, specialization, grade);
+  const nextGradeUnlock = result?.nextGradeAvailable ? categoryChangeUnlock(state.profile, result.specialization, result.nextGradeAvailable) : 0;
   const retake = retakeUnlock(state.history, specialization, grade, Date.now(), program?.retryDays ?? 7);
   const locked = unlock > Date.now() || Boolean(retake);
   const codeLanguage = defaultCodeLanguage(specialization);
@@ -348,10 +349,10 @@ export function Assessment({ state, update, notify, onProfile, onSurvey, onActiv
         {result.competencies?.length ? <dl className="competency-results">{result.competencies.map(item => <div key={item.topic}><dt>{item.topic}</dt><dd>{item.score}/100</dd></div>)}</dl> : null}
         {result.clarified && <p className="field-help">Решение принято по {result.questionCount} вопросам: первые 12 дали пограничный результат, и тест добавил уточняющий блок.</p>}
         {!!result.timeouts && !result.annulled && <p className="field-help">Без ответа или после лимита времени: {result.timeouts}.</p>}
-        {result.nextGradeAvailable && <div className="next-grade-offer"><ArrowUpRight size={18} /><span>Уверенный результат: тест на {gradeLabels[result.nextGradeAvailable]} доступен без ожидания.</span><button className="text-button" onClick={onSurvey}>Выбрать грейд</button></div>}
+        {result.nextGradeAvailable && <div className="next-grade-offer"><ArrowUpRight size={18} /><span>Уверенный результат: можно претендовать на {gradeLabels[result.nextGradeAvailable]}.{nextGradeUnlock > Date.now() ? ` Смена категории доступна с ${dateLabel(new Date(nextGradeUnlock).toISOString())}.` : ' Тест доступен.'}</span><button className="text-button" onClick={onSurvey}>Выбрать грейд</button></div>}
         {!result.passed && !result.annulled && !result.pending && state.profile.confirmed && <p className="result-note">Ваша категория {specializationNames[state.profile.confirmed.specialization]} · {gradeLabels[state.profile.confirmed.grade]} сохранена.</p>}
         {!result.passed && !result.annulled && !result.pending && <p className="field-help">Повтор на этот грейд — через {program?.retryDays ?? 7} дн.{state.profile.confirmed ? '' : ' Тест на грейд ниже доступен сразу и не сжигает попытку.'}</p>}
-        <div className="button-group"><button className="button secondary" onClick={onSurvey}>Изменить анкету</button>{result.passed || result.pending ? <button className="button primary" onClick={onProfile}>К профилю</button> : <button className="button primary" onClick={() => setResult(null)}>К программе теста</button>}</div>
+        <div className="button-group"><button className="button secondary" onClick={onSurvey}>Изменить анкету</button>{!result.passed && !result.pending && <button className="button secondary" onClick={() => setResult(null)}>К программе теста</button>}<button className="button primary" onClick={onProfile}>К профилю</button></div>
       </section> : current && session ? <section className={'panel exam-panel' + (guard.fullscreen ? ' exam-fullscreen' : '')} aria-busy={busy === 'submitting'}>
         <div className="exam-header">
           <span>{specializationNames[specialization]} · {gradeLabels[grade]}</span>
@@ -432,7 +433,7 @@ export function Assessment({ state, update, notify, onProfile, onSurvey, onActiv
               <label className="checkbox-field"><input type="checkbox" checked={rulesAccepted} onChange={event => { setRulesAccepted(event.target.checked); setError(''); }} /><span>Ознакомлен с правилами и готов начать</span></label>
             </section>
           </>}
-          {state.profile.confirmed && <p className="assessment-rules">Неудачный тест сохраняет грейд. Смена категории — раз в 90 дней; результат от 90 баллов сразу открывает следующий грейд.</p>}
+          {state.profile.confirmed && <p className="assessment-rules">Неудачный тест сохраняет грейд. Смена категории — раз в 90 дней, включая результат от 90 баллов.</p>}
           {unlock > Date.now() && <div className="inline-notice"><Clock3 size={17} />Смена категории доступна с {dateLabel(new Date(unlock).toISOString())}</div>}
           {retryAt && !(unlock > Date.now()) && <div className="inline-notice"><Clock3 size={17} /><div><p>Повтор на этот грейд — с {dateLabel(new Date(retryAt).toISOString())}</p>{lowerGrades.length > 0 && <p>Сейчас доступен тест на: {lowerGrades.map(item => gradeLabels[item]).join(', ')}.</p>}</div></div>}
           <div className="form-actions"><button className="button primary" disabled={!survey || locked || !program || programBusy || !!busy || resumePending || !rulesAccepted} onClick={() => void start()}>{busy === 'starting' ? 'Формируем тест…' : 'Начать тест'}</button></div>

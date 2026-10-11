@@ -139,7 +139,7 @@ const schemas = {
   AssessmentResult: object({ id: string(), date: string(), specialization: string(), grade: string(), surveyId: string(), score: integer('0–100'),
     passed: boolean('Порог 70 пройден'), annulled: boolean('Аннулирована из-за уходов со страницы'), bankVersion: string(),
     competencies: array(object({ topic: string(), score: integer(), correct: integer(), total: integer() })), vacancySkills: array(string()),
-    questionCount: integer(), timeouts: integer('Ответы после лимита времени'), nextGradeAvailable: string('Грейд выше, открытый без ожидания при балле от 90'),
+    questionCount: integer(), timeouts: integer('Ответы после лимита времени'), nextGradeAvailable: string('Рекомендуемый следующий грейд при балле от 90; смена категории ограничена интервалом 90 дней'),
     clarified: boolean('Решение принято с уточняющим блоком'), integrity: ref('IntegritySummary'),
     pending: boolean('Только попытки, сохранённые до автоматической оценки: грейд ждёт модератора'), closedScore: integer('Балл закрытой части'),
     openStatus: string('`ai` — практику сразу оценила модель по рубрике, итог 50/50; `queued` — модель недоступна, грейд решён закрытой частью, практика ждёт эксперта; `expert` — перепроверено экспертом',

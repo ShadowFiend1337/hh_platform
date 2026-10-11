@@ -134,7 +134,7 @@ function Workspace({ authAccount: initialAccount }: { authAccount: AuthAccount |
       return { ...person, email: known?.email || '', phone: known?.phone || '', portfolio: known?.portfolio || '' };
     });
   const surveyComplete = Boolean(currentSurvey(state));
-  const candidatePage = resolveCandidatePage(route.page, surveyComplete, state.profile.confirmed, state.history);
+  const candidatePage = resolveCandidatePage(route.page, surveyComplete);
   const page = route.role === 'candidate' ? candidatePage : route.page;
   const candidateStarted = surveyComplete;
   const contactsAllowed = (id: string) => persistence.contactCandidateIds.includes(id) && !candidates.some(person => person.id === id && person.demoProfile);

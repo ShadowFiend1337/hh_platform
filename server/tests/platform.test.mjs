@@ -209,7 +209,7 @@ test('a passed category outlives the limited recent history without exposing its
 
 test('a category switch cannot bypass the server 90 day boundary by forging gradeChangedAt', t => {
   const { platform, assessments, setTime } = fixture(t);
-  // 83 is a pass but not a confident result, so the 90-day rule applies.
+  // The interval applies to all passing scores.
   const first = completed(assessments, ownerA, { score: 83 });
   const original = platform.save(ownerA, candidateState(first), 0);
   const second = completed(assessments, ownerA, { grade: 'Middle', at: time + 5000, score: 83 });
@@ -229,8 +229,8 @@ test('a category switch cannot bypass the server 90 day boundary by forging grad
     'Replaying a second old proof cannot cause another immediate category change');
 });
 
-test('a confident result opens only the next grade at once; skipping a grade still waits 90 days', t => {
-  const { platform, assessments } = fixture(t);
+test('consecutive confident results cannot promote Junior to Senior within the change interval', t => {
+  const { platform, assessments, setTime } = fixture(t);
   const junior = completed(assessments, ownerA);
   const saved = platform.save(ownerA, candidateState(junior), 0);
   assert.equal(saved.state.profile.confirmed.score, 100);
@@ -239,8 +239,24 @@ test('a confident result opens only the next grade at once; skipping a grade sti
   assert.throws(() => platform.save(ownerA, skip, saved.revision), errorStatus(409));
   const middle = completed(assessments, ownerA, { grade: 'Middle', at: time + 5000 });
   const next = candidateState(middle); next.surveys.push(...saved.state.surveys);
+  next.profile.gradeChangedAt = '1900-01-01';
+  setTime(time + 90 * 86400000 - 1);
+  assert.throws(() => platform.save(ownerA, next, saved.revision), errorStatus(409));
+  assert.equal(platform.read(ownerA).state.profile.confirmed.grade, 'Junior');
+  setTime(time + 90 * 86400000);
   const promoted = platform.save(ownerA, next, saved.revision);
   assert.equal(promoted.state.profile.confirmed.grade, 'Middle');
+  assert.equal(promoted.state.profile.gradeChangedAt, new Date(time + 90 * 86400000).toISOString());
+  assert.equal(promoted.state.profile.confirmed.score, 100);
+  const again = candidateState(senior); again.surveys.push(...promoted.state.surveys);
+  again.profile.gradeChangedAt = '1900-01-01';
+  setTime(time + 180 * 86400000 - 1);
+  assert.throws(() => platform.save(ownerA, again, promoted.revision), errorStatus(409));
+  assert.equal(platform.read(ownerA).state.profile.confirmed.grade, 'Middle');
+  setTime(time + 180 * 86400000);
+  const final = platform.save(ownerA, again, promoted.revision);
+  assert.equal(final.state.profile.confirmed.grade, 'Senior');
+  assert.equal(final.state.profile.gradeChangedAt, new Date(time + 180 * 86400000).toISOString());
 });
 
 test('first assignment uses server time even for an old proof; repeating the same category does not restart the interval', t => {

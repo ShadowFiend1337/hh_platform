@@ -2,8 +2,27 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { gradeOptions, gradeLabels, isGrade, detectGrade } from '../../shared/grading.ts';
 import { parseResumeText } from '../src/resume-parser.ts';
-import { createInitialState, currentSurvey, emptyFilters } from '../src/model.ts';
+import { categoryChangeUnlock, createInitialState, currentSurvey, emptyFilters } from '../src/model.ts';
 import { DirectoryStore } from '../../server/directory-store.mjs';
+
+test('every category change waits 90 days even after a confident result', () => {
+  const profile = createInitialState().profile;
+  const date = '2026-10-11T09:00:00.000Z';
+  const changedAt = '2026-10-10T09:00:00.000Z';
+  assert.equal(categoryChangeUnlock(profile, 'Frontend', 'Senior'), 0, 'First confirmation has no waiting period');
+  for (const score of [70, 89, 90, 100]) {
+    profile.confirmed = { specialization: 'Frontend', grade: 'Junior', score, date };
+    profile.gradeChangedAt = changedAt;
+    const until = Date.parse(changedAt) + 90 * 86400000;
+    for (const grade of ['Intern', 'Middle', 'Senior', 'Lead']) {
+      assert.equal(categoryChangeUnlock(profile, 'Frontend', grade), until);
+    }
+    assert.equal(categoryChangeUnlock(profile, 'Backend', 'Junior'), until);
+    assert.equal(categoryChangeUnlock(profile, 'Frontend', 'Junior'), 0, 'Repeating the same category stays available');
+    delete profile.gradeChangedAt;
+    assert.equal(categoryChangeUnlock(profile, 'Frontend', 'Middle'), Date.parse(date) + 90 * 86400000);
+  }
+});
 
 test('all five grades share stable IDs, readable labels and explicit resume aliases', () => {
   assert.deepEqual(gradeOptions.map(item => item.value), ['Intern', 'Junior', 'Middle', 'Senior', 'Lead']);

@@ -52,12 +52,29 @@ try {
       assert.equal(attempt.grade, grade);
       await answerExam(page, answerKey('Frontend', grade));
       await page.getByRole('heading', { name: 'Грейд подтверждён', exact: true }).waitFor();
+      if (grade !== 'Lead') {
+        assert.match(await page.locator('.next-grade-offer').innerText(), /Смена категории доступна с/);
+      }
       await page.getByRole('button', { name: 'К профилю', exact: true }).click();
       await page.getByRole('heading', { name: 'Мой профиль', exact: true }).waitFor();
       await page.locator('.main-content[data-sync-status="saved"]').waitFor();
       await page.reload();
       assert.equal(await page.getByLabel('Общий стаж').inputValue(), '3 года 10 месяцев');
       assert.match(await page.locator('.category-status').textContent(), new RegExp(label));
+      if (grade === 'Junior') {
+        await page.getByRole('button', { name: 'Пройти тест', exact: true }).click();
+        await page.getByRole('button', { name: 'Изменить анкету', exact: true }).click();
+        await page.getByLabel('Предполагаемый грейд').selectOption('Middle');
+        await page.getByRole('button', { name: 'К тесту', exact: true }).click();
+        await page.getByLabel('Ознакомлен с правилами и готов начать').check();
+        assert.match(await page.locator('.inline-notice').innerText(), /Смена категории доступна с/);
+        assert.equal(await page.getByRole('button', { name: 'Начать тест', exact: true }).isDisabled(), true,
+          'A confident Junior pass cannot start an immediate promotion to Middle');
+        await page.locator('.main-content[data-sync-status="saved"]').waitFor();
+        await page.reload();
+        await page.getByLabel('Ознакомлен с правилами и готов начать').waitFor();
+        assert.equal(await page.getByRole('button', { name: 'Начать тест', exact: true }).isDisabled(), true);
+      }
     } finally { await context.close(); }
 
     await employer.goto(isolated.base + '/app?role=employer&tab=candidates');
@@ -83,5 +100,5 @@ try {
     }
   }
   assert.deepEqual(errors, []);
-  console.log('PASS all five grades: resume dates and overlap, server test, confirmed category, reload, employer search by grade and mobile filters');
+  console.log('PASS all five grades: resume dates and overlap, server test, confirmed category, 90-day promotion lock after a confident pass and reload, employer search by grade and mobile filters');
 } finally { await browser.close(); await isolated.close(); }

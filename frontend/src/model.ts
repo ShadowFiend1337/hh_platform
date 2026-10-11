@@ -30,7 +30,7 @@ export interface TestResult {
   vacancySkills?: string[];
   questionCount?: number;
   timeouts?: number;
-  /** Set for a confident pass: the next grade's test is open without the 90-day wait. */
+  /** Recommended next grade after a confident pass; the category change interval still applies. */
   nextGradeAvailable?: Grade;
   annulled?: boolean;
   /** The decision used the clarifying block (18 items). */
@@ -262,18 +262,12 @@ export function currentSurvey(state: PlatformState): CandidateSurvey | undefined
 }
 
 const gradeOrder: Grade[] = ['Intern', 'Junior', 'Middle', 'Senior', 'Lead'];
-export const confidentScore = 90;
 export const retryDays = 7;
 
 export function categoryChangeUnlock(profile: Candidate, specialization: Specialization, grade: Grade): number {
   const category = profile.confirmed;
   if (!category || (category.specialization === specialization && category.grade === grade)) return 0;
-  // A confident result opens the next grade of the same specialization at once.
-  if (category.specialization === specialization && category.score >= confidentScore
-    && gradeOrder.indexOf(grade) === gradeOrder.indexOf(category.grade) + 1) return 0;
-  const date = new Date(profile.gradeChangedAt || category.date);
-  date.setDate(date.getDate() + 90);
-  return date.getTime();
+  return Date.parse(profile.gradeChangedAt || category.date) + 90 * 86400000;
 }
 
 /** Mirrors the server retake policy: a failure locks that grade and higher ones of the specialization. */

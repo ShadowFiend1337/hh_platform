@@ -1,11 +1,12 @@
 import { PRIVACY_POLICY_VERSION } from '../../shared/privacy.ts';
 import assert from 'node:assert/strict';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { createAttempt, evaluate } from '../../server/assessment.mjs';
 import { createInitialState } from '../src/model.ts';
 import { startIsolatedService } from './helpers/isolated-service.mjs';
+import { answerExam, answerKey, startExam } from './helpers/exam.mjs';
 
 const isolated = await startIsolatedService();
 const { base, service, codes } = isolated;
@@ -32,10 +33,10 @@ async function register(role, suffix) {
   const owner = service.auth.accountForToken(token).platformOwner;
   return { context, account, owner };
 }
-function seed(actor, { confirmed = false, visible = true, complete = true, legacyClaim = false } = {}) {
+function seed(actor, { confirmed = false, visible = true, complete = true, legacyClaim = false, grade = 'Senior' } = {}) {
   const time = Date.now();
   const survey = { id: `survey-${actor.account.login}`, date: new Date(time).toISOString(), industry: 'ИТ',
-    professionalRole: 'Frontend разработчик', specialization: 'Frontend', desiredGrade: confirmed ? 'Junior' : 'Senior',
+    professionalRole: 'Frontend разработчик', specialization: 'Frontend', desiredGrade: confirmed ? 'Junior' : grade,
     experience: '1 год', stack: ['React', 'TypeScript'], softSkills: ['Работа в команде'] };
   const state = createInitialState();
   Object.assign(state.profile, survey, { id: 'candidate-anna', name: actor.account.name, email: actor.account.email,
@@ -72,9 +73,11 @@ try {
   const hidden = await register('candidate', 'hidden');
   const incomplete = await register('candidate', 'incomplete');
   const legacy = await register('candidate', 'legacy');
+  const failed = await register('candidate', 'failed');
   const employer = await register('employer', 'employer');
   seed(candidate); seed(confirmed, { confirmed: true }); seed(hidden, { visible: false }); seed(incomplete, { complete: false });
   seed(legacy, { visible: false, legacyClaim: true });
+  seed(failed, { visible: false, grade: 'Junior' });
   const company = createInitialState(); Object.assign(company.company, { name: employer.account.companyName, contact: employer.account.email });
   service.platform.save(employer.owner, company, 0, 'employer');
   const page = await employer.context.newPage(); page.setDefaultTimeout(20000);
@@ -115,20 +118,66 @@ try {
   await page.screenshot({ path: artifacts + 'employer-unconfirmed.png', fullPage: true });
   const candidatePage = await candidate.context.newPage(); candidatePage.on('pageerror', error => errors.push(error.message));
   await candidatePage.goto(base + '/?role=candidate&tab=profile');
+  await candidatePage.getByRole('heading', { name: 'Мой профиль', exact: true }).waitFor();
+  assert.match(await candidatePage.locator('.category-status').innerText(), /Не подтверждён/);
+  await candidatePage.getByRole('button', { name: 'Привязать ФСП', exact: true }).waitFor();
+  await candidatePage.getByRole('button', { name: 'Подтвердить грейд', exact: true }).click();
   await candidatePage.getByRole('heading', { name: 'Тестирование', exact: true }).waitFor();
   await candidatePage.getByRole('button', { name: 'Начать тест', exact: true }).waitFor();
-  assert.equal(await candidatePage.getByRole('heading', { name: 'Мой профиль', exact: true }).count(), 0);
   const legacyPage = await legacy.context.newPage(); legacyPage.on('pageerror', error => errors.push(error.message));
   await legacyPage.goto(base + '/?role=candidate&tab=profile');
-  await legacyPage.getByRole('heading', { name: 'Тестирование', exact: true }).waitFor();
-  assert.equal(await legacyPage.getByRole('heading', { name: 'Мой профиль', exact: true }).count(), 0,
-    'A retained private legacy grade must not bypass the required server assessment');
+  await legacyPage.getByRole('heading', { name: 'Мой профиль', exact: true }).waitFor();
+  assert.equal(service.directory.store.forOwner(legacy.owner).grade, '',
+    'Reading a personal profile never publishes an unverifiable legacy grade');
+
+  const failedPage = await failed.context.newPage(); failedPage.on('pageerror', error => errors.push(error.message));
+  failedPage.setDefaultTimeout(20000);
+  failedPage.on('dialog', dialog => dialog.type() === 'beforeunload' ? dialog.accept() : dialog.dismiss());
+  await failedPage.goto(base + '/app?role=candidate&tab=assessment');
+  const attempt = await startExam(failedPage);
+  await answerExam(failedPage, answerKey('Frontend', 'Junior'), { correct: false });
+  await failedPage.getByRole('button', { name: 'К профилю', exact: true }).click();
+  await failedPage.getByRole('heading', { name: 'Мой профиль', exact: true }).waitFor();
+  await failedPage.locator('.main-content[data-sync-status="saved"]').waitFor();
+  assert.match(await failedPage.locator('.category-status').innerText(), /Не подтверждён/);
+  const entry = failedPage.locator(`[data-result-id="${attempt.id}"]`);
+  assert.match(await entry.innerText(), /Не пройден/);
+  await entry.click();
+  assert.match(await failedPage.getByRole('dialog', { name: 'Результат теста' }).innerText(), /0\/100/);
+  await failedPage.getByRole('dialog').getByRole('button', { name: 'Закрыть', exact: true }).click();
+  await failedPage.getByRole('button', { name: 'Анкеты', exact: true }).click();
+  assert.equal(await failedPage.locator('.history-entry[data-survey-id]').count(), 1);
+
+  await failedPage.getByRole('button', { name: 'Привязать ФСП', exact: true }).click();
+  const fspDialog = failedPage.getByRole('dialog');
+  await fspDialog.getByLabel('Привязать демонстрационный аккаунт и загрузить вымышленные достижения').check();
+  await fspDialog.getByRole('button', { name: 'Привязать', exact: true }).click();
+  await fspDialog.waitFor({ state: 'hidden' });
+  await failedPage.locator('.fsp-evidence-list strong').filter({ hasText: 'Демонстрационное соревнование ФСП' }).waitFor();
+  await failedPage.getByRole('button', { name: 'Предпросмотр', exact: true }).click();
+  const pdfDialog = failedPage.getByRole('dialog', { name: 'Профиль кандидата' });
+  const downloaded = failedPage.waitForEvent('download');
+  await pdfDialog.getByRole('button', { name: 'PDF-профиль', exact: true }).click();
+  const download = await downloaded;
+  assert.match(download.suggestedFilename(), /^predel-.*\.pdf$/u);
+  await download.saveAs(artifacts + 'failed-profile.pdf');
+  assert.equal((await readFile(artifacts + 'failed-profile.pdf')).subarray(0, 5).toString(), '%PDF-');
+  await pdfDialog.getByRole('button', { name: 'Закрыть', exact: true }).click();
+  await failedPage.reload();
+  await failedPage.getByRole('heading', { name: 'Мой профиль', exact: true }).waitFor();
+  assert.match(await failedPage.locator(`[data-result-id="${attempt.id}"]`).innerText(), /Не пройден/);
+  await failedPage.locator('.fsp-evidence-list strong').filter({ hasText: 'Демонстрационное соревнование ФСП' }).waitFor();
+  const snapshot = await failed.context.request.get(base + '/api/platform/state').then(response => response.json());
+  assert.equal(snapshot.state.profile.confirmed, null);
+  assert.equal(snapshot.state.history[0].passed, false);
+  assert.equal(snapshot.state.history[0].score, 0);
+  await failedPage.screenshot({ path: artifacts + 'candidate-failed-profile.png', fullPage: true });
   const incompletePage = await incomplete.context.newPage();
   await incompletePage.goto(base + '/?role=candidate&tab=assessment');
   await incompletePage.getByRole('heading', { name: 'Анкета', exact: true }).waitFor();
   assert.equal(await incompletePage.getByRole('button', { name: 'Начать тест', exact: true }).count(), 0);
   assert.deepEqual(errors, []);
-  console.log('Unconfirmed questionnaire UI passed: publication, truthful category and score, filters, confirmed-first semantic order and required candidate testing.');
+  console.log('Unconfirmed questionnaire UI passed: publication and filters; personal profile before testing and after a real failed attempt, histories, FSP binding, PDF download and reload without confirming a grade.');
 } finally {
   for (const context of contexts) await context.close();
   await browser.close(); await isolated.close();
