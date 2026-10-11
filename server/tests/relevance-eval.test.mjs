@@ -52,3 +52,17 @@ test('order effect counts needs and positions whose top-K order changed', () => 
   assert.deepEqual(orderEffect([{ id: 'a', ids: ['y', 'x', 'z'] }, { id: 'b', ids: ['x'] }], reference), { changedNeeds: 0.5, changedPositions: 1 });
   assert.deepEqual(orderEffect(reference, reference), { changedNeeds: 0, changedPositions: 0 });
 });
+
+test('agreement tooling samples a fixed blind set and computes weighted kappa', async () => {
+  const { samplePairs, kappa, agreement, parseCsv } = await import('../../ml/relevance-agreement.mjs');
+  const pairs = samplePairs();
+  assert.equal(pairs.length, labels.needs.length * 6);
+  assert.deepEqual(samplePairs(), pairs, 'The sample is reproducible');
+  assert.equal(new Set(pairs.map(pair => `${pair.need}:${pair.profile}`)).size, pairs.length);
+  assert.equal(kappa([[0, 0], [1, 1], [2, 2], [3, 3]], [0, 1, 2, 3]).kappa, 1);
+  assert.ok(kappa([[0, 3], [3, 0], [1, 2], [2, 1]], [0, 1, 2, 3]).kappa < 0);
+  const report = agreement([{ reference: 3, second: 3 }, { reference: 2, second: 2 }, { reference: 2, second: 1 }, { reference: 0, second: 0 }]);
+  assert.equal(report.exactAgreement, 0.75);
+  assert.equal(report.exactMatchKappa, 1);
+  assert.deepEqual(parseCsv('"a","b"\n"1","x, ""y"""\n'), [['a', 'b'], ['1', 'x, "y"']]);
+});
