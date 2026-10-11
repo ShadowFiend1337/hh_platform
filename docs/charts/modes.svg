@@ -46,5 +46,7 @@
 <rect x="260" y="396" width="400" height="16" rx="4" fill="#f4f5f8"/>
 <rect x="260" y="396" width="400" height="16" rx="4" fill="#006ce8"/>
 <text x="668" y="408.5" font-size="12.5" font-weight="600" fill="#1d2129">247</text>
-<text x="28" y="464" font-size="11.5" fill="#626875">Замер интерфейса Playwright 2026-10-10 (npm run measure:modes), не эксперимент на людях.</text>
+<text x="28" y="464" font-size="11.5" fill="#626875">Замер интерфейса Playwright 2026-10-10 (npm run measure:modes), эксперимент на людях.</text>
 </svg>
+
+
