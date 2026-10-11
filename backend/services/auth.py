@@ -29,7 +29,7 @@ PASSWORD_R = 8
 PASSWORD_P = 1
 PASSWORD_MAXMEM = 64 * 1024 * 1024
 LOGGER = logging.getLogger(__name__)
-PRIVACY_POLICY_VERSION = "2026-10-08"
+PRIVACY_POLICY_VERSION = "2026-10-11"
 
 
 def _aware(value: datetime) -> datetime:

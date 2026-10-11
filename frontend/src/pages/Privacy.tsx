@@ -35,10 +35,11 @@ export function Privacy({ onHome, onClearLocal, isSignedIn = false }: {
       <div className="onboarding-layout">
         <div className="page-heading"><h1>Политика конфиденциальности</h1></div>
         <article className="panel privacy-content">
-          <p className="privacy-intro">Версия {PRIVACY_POLICY_VERSION}. Обновлено 8 октября 2026 года.</p>
+          <p className="privacy-intro">Версия {PRIVACY_POLICY_VERSION}. Обновлено 11 октября 2026 года.</p>
           <section className="privacy-section" aria-labelledby="privacy-operator">
             <h2 id="privacy-operator">Оператор и обращения</h2>
-            <p>Реквизиты оператора — наименование, ИНН, ОГРН, адрес и контакт для обращений — ещё не внесены. До их предоставления политика не готова к использованию в публичном сервисе с реальными персональными данными.</p>
+            <p>Оператор персональных данных — индивидуальный предприниматель Хурматуллин Тимур, ИНН 702281741117, ОГРНИП 326700000030842.</p>
+            <p>Обращения по вопросам обработки персональных данных, отзыва согласия и удаления данных принимаются по адресу <a href="mailto:admin@predel-ai.ru">admin@predel-ai.ru</a>.</p>
           </section>
           <section className="privacy-section" aria-labelledby="privacy-purpose">
             <h2 id="privacy-purpose">Для чего нужны данные</h2>
